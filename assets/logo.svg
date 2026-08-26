@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="hdc-holo mark">
+<title>holo — a saguaro at the constructive node of a two-source interference field. Same resonance, desert canon.</title>
+<defs><clipPath id="badge"><circle cx="128" cy="128" r="118"/></clipPath></defs>
+<circle cx="128" cy="128" r="118" fill="#274f42"/>
+<g clip-path="url(#badge)">
+<circle cx="96" cy="150" r="16" fill="none" stroke="#C9A84C" stroke-width="1.2" opacity="0.28"/>
+<circle cx="96" cy="150" r="32" fill="none" stroke="#C9A84C" stroke-width="1.2" opacity="0.28"/>
+<circle cx="96" cy="150" r="48" fill="none" stroke="#C9A84C" stroke-width="1.2" opacity="0.28"/>
+<circle cx="96" cy="150" r="64" fill="none" stroke="#C9A84C" stroke-width="1.2" opacity="0.28"/>
+<circle cx="96" cy="150" r="80" fill="none" stroke="#C9A84C" stroke-width="1.2" opacity="0.28"/>
+<circle cx="96" cy="150" r="96" fill="none" stroke="#C9A84C" stroke-width="1.2" opacity="0.28"/>
+<circle cx="96" cy="150" r="112" fill="none" stroke="#C9A84C" stroke-width="1.2" opacity="0.28"/>
+<circle cx="96" cy="150" r="128" fill="none" stroke="#C9A84C" stroke-width="1.2" opacity="0.28"/>
+<circle cx="96" cy="150" r="144" fill="none" stroke="#C9A84C" stroke-width="1.2" opacity="0.28"/>
+<circle cx="96" cy="150" r="160" fill="none" stroke="#C9A84C" stroke-width="1.2" opacity="0.28"/>
+<circle cx="166" cy="108" r="16" fill="none" stroke="#B8860B" stroke-width="1.2" opacity="0.28"/>
+<circle cx="166" cy="108" r="32" fill="none" stroke="#B8860B" stroke-width="1.2" opacity="0.28"/>
+<circle cx="166" cy="108" r="48" fill="none" stroke="#B8860B" stroke-width="1.2" opacity="0.28"/>
+<circle cx="166" cy="108" r="64" fill="none" stroke="#B8860B" stroke-width="1.2" opacity="0.28"/>
+<circle cx="166" cy="108" r="80" fill="none" stroke="#B8860B" stroke-width="1.2" opacity="0.28"/>
+<circle cx="166" cy="108" r="96" fill="none" stroke="#B8860B" stroke-width="1.2" opacity="0.28"/>
+<circle cx="166" cy="108" r="112" fill="none" stroke="#B8860B" stroke-width="1.2" opacity="0.28"/>
+<circle cx="166" cy="108" r="128" fill="none" stroke="#B8860B" stroke-width="1.2" opacity="0.28"/>
+<circle cx="166" cy="108" r="144" fill="none" stroke="#B8860B" stroke-width="1.2" opacity="0.28"/>
+<circle cx="166" cy="108" r="160" fill="none" stroke="#B8860B" stroke-width="1.2" opacity="0.28"/>
+<path d="M 76,206 L 180,206" fill="none" stroke="#C2562E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+<path d="M 128,206 L 128,76" fill="none" stroke="#FAF6EF" stroke-width="23" stroke-linecap="round" stroke-linejoin="round" opacity="1.0"/>
+<path d="M 123,156 L 100,156 L 100,116" fill="none" stroke="#FAF6EF" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" opacity="1.0"/>
+<path d="M 133,130 L 157,130 L 157,94" fill="none" stroke="#FAF6EF" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" opacity="1.0"/>
+</g>
+<circle cx="128" cy="128" r="118" fill="none" stroke="#C9A84C" stroke-width="2" opacity="0.55"/>
+</svg>
