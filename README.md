@@ -13,6 +13,7 @@ superposed in one complex vector</p>
   <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-C2562E" alt="License: FSL-1.1-Apache-2.0"></a>
   <a href="docs/README.md"><img src="https://img.shields.io/badge/docs-per--technique-274f42" alt="Docs"></a>
   <a href="ROADMAP.md"><img src="https://img.shields.io/badge/roadmap-0.3-C9A84C" alt="Roadmap"></a>
+  <a href="https://zenodo.org/badge/latestdoi/1347417619"><img src="https://zenodo.org/badge/1347417619.svg" alt="DOI"></a>
 </p>
 
 Classical application data structures rebuilt as *holograms*: everything
