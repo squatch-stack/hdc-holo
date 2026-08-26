@@ -20,7 +20,7 @@ holo/hashmap.py, ...). Every public name is also exported flat here:
 package remains as a compatibility shim over this one.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from .fhrr import FHRR, ItemMemory, Permutation
 from .hashmap import HoloMap

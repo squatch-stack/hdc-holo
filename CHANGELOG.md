@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.2 lanes)
+## 0.2.0 — 2026-08-26
 
 - Licensed under FSL-1.1-Apache-2.0 (LICENSE.md): free for everything
   except competing commercial offerings; every release converts to
