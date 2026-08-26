@@ -86,6 +86,37 @@ def test_spz_gzip_and_size_check(tmp_path):
     assert len(lpos) == 3
 
 
+def test_ply_loader_both_variants(tmp_path):
+    from holo.capture import load_ply
+    rng = np.random.default_rng(9)
+    pts = rng.uniform(0, 1, (300, 3))
+    # binary little-endian, xyz only (the EigenCapture scan layout)
+    b = tmp_path / "scan.ply"
+    with open(b, "wb") as f:
+        f.write(b"ply\nformat binary_little_endian 1.0\n"
+                b"element vertex 300\nproperty float x\nproperty float y\n"
+                b"property float z\nend_header\n")
+        f.write(pts.astype("<f4").tobytes())
+    pos, scale, rgba, quat = load_ply(str(b))
+    assert np.allclose(pos, pts, atol=1e-6)
+    assert np.all(rgba == 1.0)                 # colorless -> white, alpha 1
+    assert scale.std() == 0 and scale[0, 0] > 0
+    # ascii with rgb (the SceneDepthPointCloud sample layout)
+    a = tmp_path / "cloud.ply"
+    rgb = rng.integers(0, 256, (300, 3))
+    with open(a, "w") as f:
+        f.write("ply\nformat ascii 1.0\nelement vertex 300\n"
+                "property float x\nproperty float y\nproperty float z\n"
+                "property uchar red\nproperty uchar green\n"
+                "property uchar blue\nelement face 0\n"
+                "property list uchar int vertex_indices\nend_header\n")
+        for p, c in zip(pts, rgb):
+            f.write(f"{p[0]} {p[1]} {p[2]} {c[0]} {c[1]} {c[2]}\n")
+    pos, scale, rgba, quat = load_ply(str(a))
+    assert np.allclose(pos, pts, atol=1e-5)
+    assert np.allclose(rgba[:, :3], rgb / 255.0, atol=1e-6)
+
+
 def test_build_scene_crops_floaters_and_clamps_scales(tmp_path):
     rng = np.random.default_rng(0)
     n_core, n_far = 60, 10
