@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.DS_Store
+data/
+.venv/
+__pycache__/
+hdc_holo.egg-info/

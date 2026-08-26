@@ -1,0 +1,14 @@
+# Gitleaks configuration: default ruleset, extended.
+# CI runs gitleaks/gitleaks-action over the FULL history on every push
+# and pull request (see .github/workflows/ci.yml).
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Binary evidence figures and sample scene data"
+paths = [
+  '''results/.*\.(png|gif)$''',
+  '''out/.*\.(png|gif)$''',
+  '''data/.*''',
+]

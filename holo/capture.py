@@ -1,0 +1,540 @@
+"""Real-capture pipeline: pretrained Gaussian-splat scenes as bundles.
+
+Loaders for the two common interchange formats, a mass-centered crop
+(real captures put most splats in a far background shell), scale
+clamping (a resolution floor + a reach cap), scale-banded spatial
+chunking with per-band mixture codebooks, cell-local decode/ground
+truth for slices, and closed-form X-ray projection straight from the
+cell bundles (with the dedicated mip encode projections need).
+`docs/real-scenes.md` carries the narrative; `run_real_scene.py` is the
+example driver that produced the evidence figures.
+
+Formats (both byte-verified against the reference implementations):
+  .splat (antimatter15) — 32 B/splat: float32[3] pos, float32[3] linear
+    scale, u8[4] RGBA (alpha = opacity), u8[4] quaternion ((v-128)/128,
+    w first).
+  .spz v2 (Niantic, gzip legacy layout from nianticlabs/spz
+    load-spz.cc) — 16 B header {magic, version, numPoints, shDegree,
+    fracBits, flags}, then per-attribute sections: positions 24-bit
+    signed fixed point, alpha u8 (sigmoid), color u8[3] (SH DC:
+    (v/255-0.5)/0.15), scale u8[3] (log: v/16-10), rotation u8[3]
+    (xyz*127.5+127.5, w recovered), SH last (skipped). The byte count
+    16 + N*(19 + shDim*3) must match exactly.
+
+Hard-won codebook rules (violations render as structured artifacts, not
+subtle noise — see docs/spectral.md): every band's mixture must span
+down to the GLOBAL scale floor (bands are assigned by max axis scale,
+but needle splats keep thin axes at the floor), and the finest
+component sits at beta = 1 (sigma_rho = 1/floor) so floor-scale
+directions sample as unit phasors.
+"""
+
+import gzip
+import struct
+import time
+
+import numpy as np
+
+from . import accel as _accel
+from .spectral import (SplatScene, decode_weights, sample_frequencies,
+                       spectral_bundle)
+
+# axis scales are clamped to [S_LO, S_HI] of the normalized scene extent
+# — a resolution floor (min) and a cap bounding every cell's query reach
+# (max); real 3DGS scale distributions span 5 decades
+S_LO, S_HI = 0.002, 0.05
+ALPHA_MIN = 0.1
+# bands by max axis scale: (name, upper cap, cell size); reach = 3 * cap.
+# The xfine/fine split at 0.004 exists because reach FOLLOWS the cap:
+# floor-scale splats (most of a real capture) don't need 0.024 of reach,
+# and halving it cuts each query's in-reach crosstalk volume ~3x —
+# measured 33-44% slice-error reduction on the saguaro capture for 1.5x
+# storage. Raising d instead does NOT buy this (2-4% for 1.5x memory):
+# dense-scene residual error is coherent, not Monte-Carlo.
+BANDS = [
+    ("xfine",  0.004, 1 / 32),
+    ("fine",   0.008, 1 / 32),
+    ("mid",    0.02,  1 / 8),
+    ("coarse", S_HI,  1 / 4),
+]
+DIM = 8192
+PIX = 1.0 / 224             # slice pixel size in normalized units
+SH_C0 = 0.28209479177
+
+# X-ray renders use a dedicated mip encode: only frequencies nearly
+# perpendicular to the view direction carry projection signal, so the
+# scene is blurred by SIGMA_MIP (concentrating its spectrum) and encoded
+# at DIM_R so the perpendicular slice holds enough effective dimensions
+SIGMA_MIP = 0.008
+DIM_R = 32768
+RENDER_BANDS = [
+    ("r-fine",   0.02,  1 / 8),
+    ("r-coarse", 0.055, 1 / 4),
+]
+
+
+# ---------------------------------------------------------------------------
+# Loaders
+# ---------------------------------------------------------------------------
+
+def load_splat(path):
+    raw = np.fromfile(path, dtype=np.uint8).reshape(-1, 32)
+    floats = raw[:, :24].copy().view(np.float32).reshape(-1, 6)
+    pos = floats[:, :3].astype(np.float64)
+    scale = floats[:, 3:6].astype(np.float64)
+    rgba = raw[:, 24:28].astype(np.float32) / 255.0
+    quat = (raw[:, 28:32].astype(np.float64) - 128.0) / 128.0
+    quat /= np.linalg.norm(quat, axis=1, keepdims=True)
+    return pos, scale, rgba, quat
+
+
+def load_spz(path):
+    with gzip.open(path, "rb") as f:
+        buf = f.read()
+    return parse_spz(buf)
+
+
+def parse_spz(buf):
+    """Parse decompressed SPZ v2 bytes (split out for testability)."""
+    magic, ver, n, sh_deg, frac_bits, flags, _ = struct.unpack_from(
+        "<IIIBBBB", buf, 0)
+    assert magic == 0x5053474E, "not an SPZ file"
+    assert ver == 2, f"only legacy v2 supported, got v{ver}"
+    sh_dim = {0: 0, 1: 3, 2: 8, 3: 15}[sh_deg]
+    expect = 16 + n * (19 + sh_dim * 3)
+    assert len(buf) == expect, f"size mismatch: {len(buf)} vs {expect}"
+    o = 16
+    p24 = np.frombuffer(buf, np.uint8, n * 9, o).reshape(n, 3, 3) \
+        .astype(np.int32)
+    o += n * 9
+    fixed = p24[..., 0] | (p24[..., 1] << 8) | (p24[..., 2] << 16)
+    fixed -= (fixed & 0x800000) << 1              # sign extension
+    pos = fixed.astype(np.float64) / (1 << frac_bits)
+    alpha = np.frombuffer(buf, np.uint8, n, o).astype(np.float32) / 255.0
+    o += n
+    col = np.frombuffer(buf, np.uint8, n * 3, o).reshape(n, 3) \
+        .astype(np.float32)
+    o += n * 3
+    color = np.clip(0.5 + SH_C0 * (col / 255.0 - 0.5) / 0.15, 0, 1)
+    slog = np.frombuffer(buf, np.uint8, n * 3, o).reshape(n, 3) \
+        .astype(np.float64)
+    o += n * 3
+    scale = np.exp(slog / 16.0 - 10.0)
+    r3 = np.frombuffer(buf, np.uint8, n * 3, o).reshape(n, 3) \
+        .astype(np.float64)
+    xyz = (r3 - 127.5) / 127.5
+    w = np.sqrt(np.clip(1.0 - (xyz**2).sum(axis=1), 0.0, None))
+    quat = np.concatenate([w[:, None], xyz], axis=1)   # -> (w, x, y, z)
+    rgba = np.concatenate([color, alpha[:, None]], axis=1)
+    return pos, scale, rgba, quat
+
+
+def load_scene_file(path):
+    return load_spz(path) if str(path).endswith(".spz") else load_splat(path)
+
+
+def quat_to_rot(q):
+    """(N, 4) quaternions (w, x, y, z) -> (N, 3, 3) rotation matrices."""
+    w, x, y, z = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    return np.stack([
+        np.stack([1 - 2 * (y**2 + z**2), 2 * (x*y - w*z), 2 * (x*z + w*y)], -1),
+        np.stack([2 * (x*y + w*z), 1 - 2 * (x**2 + z**2), 2 * (y*z - w*x)], -1),
+        np.stack([2 * (x*z - w*y), 2 * (y*z + w*x), 1 - 2 * (x**2 + y**2)], -1),
+    ], axis=1)
+
+
+# ---------------------------------------------------------------------------
+# Crop, normalize, clamp
+# ---------------------------------------------------------------------------
+
+def weighted_quantile(v, w, q):
+    o = np.argsort(v)
+    cw = np.cumsum(w[o])
+    return float(np.interp(q * cw[-1], cw, v[o]))
+
+
+def build_scene(path, alpha_min=ALPHA_MIN, s_lo=S_LO, s_hi=S_HI,
+                crop_quantile=0.75, crop_margin=1.2, verbose=True):
+    """Load, filter, crop to a mass-centered cube (real captures carry
+    background floaters out to +-100x the subject), normalize to the
+    unit box, clamp scales; returns scene, per-splat max axis scale, box.
+
+    Channels are premultiplied color: (alpha, alpha*R, alpha*G, alpha*B).
+    """
+    pos, scale, rgba, quat = load_scene_file(path)
+    keep = rgba[:, 3] >= alpha_min
+    pos, scale, rgba, quat = pos[keep], scale[keep], rgba[keep], quat[keep]
+    a = rgba[:, 3]
+    center = np.array([weighted_quantile(pos[:, i], a, 0.5)
+                       for i in range(3)])
+    radius = weighted_quantile(np.abs(pos - center).max(axis=1), a,
+                               crop_quantile)
+    lo, hi = center - crop_margin * radius, center + crop_margin * radius
+    inside = np.all((pos >= lo) & (pos <= hi), axis=1)
+    pos, scale, rgba, quat = (pos[inside], scale[inside], rgba[inside],
+                              quat[inside])
+    extent = float((hi - lo).max())
+    if verbose:
+        print(f"mass-centered crop: cube of {extent:.1f} scene units "
+              f"at {center.round(1)}")
+    pos = ((pos - lo) / extent).astype(np.float32)
+    scale = np.clip(scale / extent, s_lo, s_hi)
+    rots = quat_to_rot(quat)
+    cov = np.einsum("nij,nj,nkj->nik", rots, scale**2, rots) \
+        .astype(np.float32)
+    alpha = rgba[:, 3:4]
+    amp = np.concatenate([alpha, alpha * rgba[:, :3]], axis=1) \
+        .astype(np.float32)                      # premultiplied RGBA
+    smax = scale.max(axis=1)
+    box = ((hi - lo) / extent).astype(np.float32)
+    if verbose:
+        print(f"kept {len(pos):,} splats (alpha>={alpha_min}, "
+              f"mass-centered crop); normalized box {box.round(2)}")
+    return SplatScene(mu=pos, cov=cov, amp=amp), smax, box
+
+
+def render_mip(scene, sigma_b):
+    """Analytic mip: blur every splat by sigma_b (covariances add under
+    Gaussian convolution), rescaling peak amplitude to preserve mass."""
+    cov = scene.cov + (sigma_b ** 2) * np.eye(3, dtype=np.float32)
+    ratio = np.sqrt(np.linalg.det(scene.cov.astype(np.float64))
+                    / np.linalg.det(cov.astype(np.float64)))
+    return SplatScene(mu=scene.mu, cov=cov.astype(np.float32),
+                      amp=scene.amp * ratio[:, None].astype(np.float32))
+
+
+# ---------------------------------------------------------------------------
+# Bands, cells, codebooks
+# ---------------------------------------------------------------------------
+
+def band_codebooks(rng, bands=None, dim=DIM, s_floor=S_LO):
+    """Per band: a mixture codebook spanning [s_floor, band cap] — NOT
+    just the band's own scale range. Bands are assigned by MAX axis
+    scale, so a mid-band needle splat can still have thin axes at the
+    global floor; if the band's codebook does not sample out to
+    1/s_floor, the importance weights along those thin directions are
+    heavy-tailed and that cell decodes as plane-wave herringbone.
+    Finest component at beta = 1 so floor-scale directions sample as
+    unit phasors."""
+    books = {}
+    for name, cap, _cell in (bands or BANDS):
+        n_comp = 3 + max(2, int(round(np.log2(cap / s_floor))))
+        rho = list(1.0 / np.geomspace(s_floor, cap, n_comp))
+        freqs = sample_frequencies(dim, 3, rho, rng)
+        books[name] = (freqs, rho, decode_weights(freqs, rho))
+    return books
+
+
+def band_of(smax, bands=None):
+    """Index into the band list for each splat by its max axis scale."""
+    caps = np.array([cap for _, cap, _ in (bands or BANDS)])
+    return np.searchsorted(caps, smax, side="left")
+
+
+def encode_bands(scene, smax, books, bands=None, dim=DIM, verbose=True):
+    bands = bands or BANDS
+    bundles, members = {}, {}
+    bidx = band_of(smax, bands)
+    for b, (name, cap, cell) in enumerate(bands):
+        idx = np.where(bidx == b)[0]
+        freqs = books[name][0]
+        per_cell = {}
+        for i in idx:
+            k = tuple((scene.mu[i] // cell).astype(int))
+            per_cell.setdefault(k, []).append(i)
+        bundles[name], members[name] = {}, {}
+        t0 = time.time()
+        for k, ids in per_cell.items():
+            ids = np.array(ids)
+            sub = SplatScene(mu=scene.mu[ids], cov=scene.cov[ids],
+                             amp=scene.amp[ids])
+            bundles[name][k] = spectral_bundle(sub, freqs, chunk=2048)
+            members[name][k] = ids
+        if verbose:
+            nbytes = len(per_cell) * scene.channels * dim * 8
+            print(f"  {name}: {len(idx):,} splats -> {len(per_cell)} cells "
+                  f"({nbytes / (1 << 20):.0f} MB of complex64) "
+                  f"in {time.time() - t0:.0f}s")
+    return bundles, members
+
+
+def cell_mask(points, cell, cell_size, reach):
+    lo = np.array(cell, dtype=np.float32) * cell_size
+    nearest = np.clip(points, lo, lo + cell_size)
+    return ((points - nearest) ** 2).sum(axis=1) <= reach * reach
+
+
+# ---------------------------------------------------------------------------
+# Per-cell ridge fitting (the holo/fit.py idea, applied cell-by-cell)
+# ---------------------------------------------------------------------------
+
+def _exact_subset(scene, ids, pts, chunk=2048):
+    """Exact mixture of just the splats `ids`, evaluated at pts."""
+    out = np.zeros((len(pts), scene.channels), dtype=np.float32)
+    inv_cov = np.linalg.inv(scene.cov[ids].astype(np.float64)) \
+        .astype(np.float32)
+    for lo in range(0, len(ids), chunk):
+        sub = slice(lo, lo + chunk)
+        diff = pts[None, :, :] - scene.mu[ids[sub]][:, None, :]
+        quad = np.einsum("npi,nij,npj->np", diff, inv_cov[sub], diff)
+        out += np.exp(-0.5 * quad).T @ scene.amp[ids[sub]]
+    return out
+
+
+def fit_cells(scene, members, books, bands=None, lam=1e-3,
+              prior_frac=0.35, samples_per_splat=16, min_samples=1000,
+              max_samples=3000, rng=None, verbose=True):
+    """Ridge-fit every cell bundle to its members' exact field — the
+    regression view of holo/fit.py, cell by cell. The forward bundle is
+    a Monte-Carlo estimate with sqrt(1/d) crosstalk baked in; regression
+    finds the OPTIMAL vector in the same feature basis, so the fitted
+    bundles drop straight into decode_slice / render_xray with lower
+    noise at identical dimension and storage.
+
+    Per cell: sample points half near the member splats (signal), half
+    uniform over the cell + reach box (zeros — teaches the fit not to
+    hallucinate); targets are the cell-local exact mixture; solve the
+    dual ridge on the backend (accel.ridge_cell_fit) under a spectral
+    prior exp(-1/2 (prior_frac*cap)^2 |w|^2) — without it, minimum-norm
+    regression memorizes samples as bumps at the codebook's finest
+    scale — and divide out the band's importance weights so the result
+    stays in encode_bands' bundle convention.
+    Returns {band: {cell: (C, d) complex64}}.
+
+    MEASURED LIMIT (docs/real-scenes.md): fitting ties forward encoding
+    on sparse cells (few splats each: 0.037 vs 0.036 rel err on a toy)
+    but LOSES to it at real capture density — hundreds of floor-scale
+    splats per cell need target coverage at their own kernel width,
+    i.e. tens of thousands of samples per cell, beyond the dual solve's
+    reach (saguaro: forward 0.52/0.38 vs fitted 0.72/0.53, with
+    dropout speckle where sampling starved). Open direction: replace
+    point sampling with the analytic L2 projection — the region Gram
+    G_jk = integral over the cell+reach box of e^{i(w_j - w_k) . p} dp
+    is a separable product of sincs, so the closed-form optimum needs
+    no samples at all.
+    """
+    rng = rng or np.random.default_rng(0)
+    fitted = {}
+    for name, cap, cell in (bands or BANDS):
+        freqs, _, weights = books[name]
+        reach = 3.0 * cap
+        prior = np.exp(-0.5 * (prior_frac * cap) ** 2
+                       * (freqs ** 2).sum(axis=1)).astype(np.float32)
+        fitted[name] = {}
+        t0 = time.time()
+        for k, ids in members[name].items():
+            n_pts = int(np.clip(samples_per_splat * len(ids) + min_samples,
+                                min_samples, max_samples))
+            near_ids = ids[rng.integers(0, len(ids), n_pts // 2)]
+            spread = np.sqrt(scene.cov[near_ids, 0, 0]
+                             + scene.cov[near_ids, 1, 1]
+                             + scene.cov[near_ids, 2, 2])[:, None]
+            near = scene.mu[near_ids] \
+                + (1.5 * spread * rng.standard_normal((n_pts // 2, 3))) \
+                .astype(np.float32)
+            lo = np.array(k, dtype=np.float32) * cell - reach
+            hi = lo + cell + 2 * reach
+            far = rng.uniform(lo, hi, (n_pts - n_pts // 2, 3)) \
+                .astype(np.float32)
+            pts = np.clip(np.concatenate([near, far]), lo, hi) \
+                .astype(np.float32)
+            y = _exact_subset(scene, ids, pts)
+            weighted = _accel.ridge_cell_fit(freqs, pts, y, lam,
+                                             prior=prior)
+            fitted[name][k] = (weighted / weights[None, :]) \
+                .astype(np.complex64)
+        if verbose and members[name]:
+            print(f"  fit {name}: {len(members[name])} cells "
+                  f"in {time.time() - t0:.0f}s")
+    return fitted
+
+
+# ---------------------------------------------------------------------------
+# Cell-local decode and exact ground truth
+# ---------------------------------------------------------------------------
+
+def decode_slice(points, bundles, books, bands=None, chunk=4096):
+    n_ch = next(b.shape[0] for cells in bundles.values()
+                for b in cells.values())
+    out = np.zeros((len(points), n_ch), dtype=np.float32)
+    for name, cap, cell in (bands or BANDS):
+        freqs, _, weights = books[name]
+        reach = 3.0 * cap
+        if _accel.active():
+            pairs = [(cell_mask(points, k, cell, reach),
+                      b * weights[None, :])
+                     for k, b in bundles[name].items()]
+            pairs = [(m, b) for m, b in pairs if m.any()]
+            if pairs:
+                out += _accel.cell_decode(freqs, points, pairs)
+            continue
+        cells = {k: (b * weights[None, :]).T.astype(np.complex64)
+                 for k, b in bundles[name].items()}
+        for plo in range(0, len(points), chunk):
+            pts = points[plo:plo + chunk]
+            E = np.exp(1j * (pts @ freqs.T)).astype(np.complex64)
+            for k, wb in cells.items():
+                m = cell_mask(pts, k, cell, reach)
+                if m.any():
+                    out[plo:plo + chunk][m] += (E[m] @ wb).real
+    return out
+
+
+def exact_slice(points, scene, members, bands=None, chunk=2048):
+    """Ground truth with the same cell-locality cutoff as the hologram."""
+    out = np.zeros((len(points), scene.channels), dtype=np.float32)
+    inv_cov = np.linalg.inv(scene.cov.astype(np.float64)).astype(np.float32)
+    for name, cap, cell in (bands or BANDS):
+        reach = 3.0 * cap
+        for k, ids in members[name].items():
+            m = cell_mask(points, k, cell, reach)
+            if not m.any():
+                continue
+            pts = points[m]
+            acc = np.zeros((len(pts), scene.channels), dtype=np.float32)
+            for slo in range(0, len(ids), chunk):
+                sub = ids[slo:slo + chunk]
+                diff = pts[None, :, :] - scene.mu[sub][:, None, :]
+                quad = np.einsum("npi,nij,npj->np", diff, inv_cov[sub], diff)
+                acc += np.exp(-0.5 * quad).T @ scene.amp[sub]
+            out[m] += acc
+    return out
+
+
+# ---------------------------------------------------------------------------
+# X-ray projections (see holo/render.py for the single-bundle z-up form)
+# ---------------------------------------------------------------------------
+
+def camera_basis_yup(view):
+    """Orthonormal (v, u1, u2) with u2 as close to +y as possible, so
+    y-up captures render upright (holo/render.py assumes z-up)."""
+    v = np.asarray(view, dtype=np.float64)
+    v = v / np.linalg.norm(v)
+    up = np.array([0.0, 1.0, 0.0])
+    if abs(v @ up) > 0.98:
+        up = np.array([0.0, 0.0, 1.0])
+    u1 = np.cross(up, v)
+    u1 /= np.linalg.norm(u1)
+    u2 = np.cross(v, u1)
+    return (v.astype(np.float32), u1.astype(np.float32),
+            u2.astype(np.float32))
+
+
+def _pixel_grid(center, v, u1, u2, half, res, t_extent):
+    xs = np.linspace(-half, half, res, dtype=np.float32)
+    px, py = np.meshgrid(xs, xs)
+    uv = np.stack([px.ravel(), py.ravel()], axis=1)
+    origins = (np.asarray(center, dtype=np.float32)
+               + uv[:, :1] * u1 + uv[:, 1:] * u2
+               - (t_extent / 2) * v)
+    return uv, origins
+
+
+def _cell_uv_mask(uv, cell, cell_size, reach, center, u1, u2):
+    """Pixels whose ray passes within reach of the cell: distance on the
+    image plane from the cell's projected footprint."""
+    c3 = (np.asarray(cell, dtype=np.float32) + 0.5) * cell_size \
+        - np.asarray(center, dtype=np.float32)
+    cuv = np.array([c3 @ u1, c3 @ u2], dtype=np.float32)
+    r = np.sqrt(3.0) / 2.0 * cell_size + reach
+    return ((uv - cuv) ** 2).sum(axis=1) <= r * r
+
+
+def render_xray(bundles, books, view, center, half, res, t_extent,
+                bands=None, chunk=2048):
+    """Orthographic X-ray straight from the cell bundles: fold the
+    projection-slice factor (holo/render.py) AND the mixture importance
+    weights into each band's bundles; mask cells by their projected
+    footprint so ray crosstalk stays local, as in decode_slice."""
+    v, u1, u2 = camera_basis_yup(view)
+    uv, origins = _pixel_grid(center, v, u1, u2, half, res, t_extent)
+    n_ch = next(b.shape[0] for cells in bundles.values()
+                for b in cells.values())
+    out = np.zeros((len(origins), n_ch), dtype=np.float32)
+    for name, cap, cell in (bands or BANDS):
+        freqs, _, weights = books[name]
+        reach = 3.0 * cap
+        a = (freqs @ v).astype(np.float64)
+        T = float(t_extent)
+        F = np.where(np.abs(a) * T < 1e-6, T,
+                     (np.exp(1j * a * T) - 1.0)
+                     / (1j * np.where(a == 0, 1, a)))
+        wf = (weights * F).astype(np.complex64)
+        if _accel.active():
+            pairs = [(_cell_uv_mask(uv, k, cell, reach, center, u1, u2),
+                      b * wf[None, :]) for k, b in bundles[name].items()]
+            pairs = [(m, b) for m, b in pairs if m.any()]
+            if pairs:
+                out += _accel.cell_decode(freqs, origins, pairs)
+            continue
+        cells = {k: (b * wf[None, :]).T.astype(np.complex64)
+                 for k, b in bundles[name].items()}
+        masks = {k: _cell_uv_mask(uv, k, cell, reach, center, u1, u2)
+                 for k in cells}
+        for plo in range(0, len(origins), chunk):
+            pts = origins[plo:plo + chunk]
+            E = np.exp(1j * (pts @ freqs.T)).astype(np.complex64)
+            for k, wb in cells.items():
+                m = masks[k][plo:plo + chunk]
+                if m.any():
+                    out[plo:plo + chunk][m] += (E[m] @ wb).real
+    return out
+
+
+def exact_xray(scene, members, view, center, half, res, bands=None,
+               chunk=1024):
+    """Analytic full-line integral of every anisotropic splat:
+    integral = alpha sqrt(2 pi / q) exp(-1/2 (d^T S^-1 d - s^2/q)),
+    q = v^T S^-1 v, s = d^T S^-1 v — with the same cell footprint masks."""
+    v, u1, u2 = camera_basis_yup(view)
+    uv, _ = _pixel_grid(center, v, u1, u2, half, res, 0.0)
+    plane = (np.asarray(center, dtype=np.float32)
+             + uv[:, :1] * u1 + uv[:, 1:] * u2)
+    out = np.zeros((len(plane), scene.channels), dtype=np.float32)
+    inv_cov = np.linalg.inv(scene.cov.astype(np.float64)).astype(np.float32)
+    for name, cap, cell in (bands or BANDS):
+        reach = 3.0 * cap
+        for k, ids in members[name].items():
+            m = _cell_uv_mask(uv, k, cell, reach, center, u1, u2)
+            if not m.any():
+                continue
+            pts = plane[m]
+            acc = np.zeros((len(pts), scene.channels), dtype=np.float32)
+            for slo in range(0, len(ids), chunk):
+                sub = ids[slo:slo + chunk]
+                ic = inv_cov[sub]
+                delta = pts[None, :, :] - scene.mu[sub][:, None, :]
+                icv = ic @ v                                   # (n, 3)
+                q = (icv @ v)[:, None]                         # (n, 1)
+                s = np.einsum("npi,ni->np", delta, icv)
+                quad = np.einsum("npi,nij,npj->np", delta, ic, delta)
+                line = np.sqrt(2 * np.pi / q) \
+                    * np.exp(-0.5 * (quad - s * s / q))
+                acc += line.T @ scene.amp[sub]
+            out[m] += acc
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Slice placement helpers
+# ---------------------------------------------------------------------------
+
+def mass_mode(values, weights, extent):
+    """Center of the heaviest histogram bin — where the scene's mass is."""
+    hist, edges = np.histogram(values, bins=48, range=(0, extent),
+                               weights=weights)
+    k = int(np.argmax(hist))
+    return float(0.5 * (edges[k] + edges[k + 1]))
+
+
+def slice_grid(u_range, v_range, plane, w_value, pix=PIX):
+    """Points on an axis-aligned plane. 'y': u=x, v=z; 'x': u=z, v=y."""
+    nu = max(int(round((u_range[1] - u_range[0]) / pix)), 8)
+    nv = max(int(round((v_range[1] - v_range[0]) / pix)), 8)
+    us = np.linspace(*u_range, nu, dtype=np.float32)
+    vs = np.linspace(*v_range, nv, dtype=np.float32)
+    U, V = np.meshgrid(us, vs)
+    W = np.full_like(U, w_value)
+    axes = {"y": (U, W, V), "x": (W, V, U)}[plane]
+    pts = np.stack([a.ravel() for a in axes], axis=1)
+    return pts, (nv, nu)

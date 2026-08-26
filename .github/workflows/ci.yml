@@ -1,0 +1,103 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: nothing in CI writes to the repo.
+permissions:
+  contents: read
+
+# Superseded pushes cancel their in-flight runs; tag runs never cancel.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+# Actions are pinned to full commit SHAs (tag names are mutable and a
+# compromised tag is a supply-chain vector); the comment records the tag.
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0        # scan the full history, not just the tip
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Linux has no MLX wheel installed by the dev extra, so this job IS the
+  # NumPy-fallback proof: the backend must degrade gracefully and every
+  # test must pass on the identical-formulation cos/sin CPU path.
+  linux-numpy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -e '.[dev]'
+      - name: Backend must be the NumPy fallback
+        run: python -c "from holo import backend; assert backend.backend_name() == 'numpy', backend.backend_name()"
+      - run: python -m pytest tests/ -q
+      - name: Demo smoke test
+        run: hdc-demos hashmap --dim 2048
+
+  # Apple-silicon runner: exercises the MLX/Metal path when the VM
+  # exposes Metal (detected at runtime), and always re-runs the full
+  # suite on the forced NumPy path so both formulations stay green on
+  # the same OS.
+  #
+  # GATED: macOS minutes bill at 10x on private repos, so this job runs
+  # only on release tags and manual dispatch (Actions tab -> ci -> Run
+  # workflow), not on every push. The Linux matrix remains the
+  # every-push gate.
+  macos-mlx:
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e '.[dev,gpu]'
+      - name: Detect a working Metal device
+        id: metal
+        shell: bash
+        run: |
+          if python - <<'EOF'
+          import numpy as np
+          from holo import accel
+          assert accel.active()
+          out = accel.readout(np.zeros((4, 2), np.float32),
+                              np.ones((8, 2), np.float32),
+                              np.ones(8, np.complex64))
+          assert np.allclose(out, 1.0)
+          EOF
+          then
+            echo "backend=" >> "$GITHUB_OUTPUT"
+            echo "Metal OK — testing on the MLX path"
+          else
+            echo "backend=numpy" >> "$GITHUB_OUTPUT"
+            echo "No usable Metal device — forcing the NumPy path"
+          fi
+      - name: Tests (MLX when Metal is usable)
+        env:
+          HDC_BACKEND: ${{ steps.metal.outputs.backend }}
+        run: python -m pytest tests/ -q
+      - name: Tests (forced NumPy fallback)
+        env:
+          HDC_BACKEND: numpy
+        run: python -m pytest tests/ -q
