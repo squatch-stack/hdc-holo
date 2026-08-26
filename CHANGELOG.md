@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 — 2026-08-26
+
+- Launch polish: duet brand mark (sasquatch + saguaro, one interference
+  field), full-bleed avatar, banner, social cards; brand-only identity
+  throughout. First Zenodo-archived release (DOI).
+
 ## 0.2.0 — 2026-08-26
 
 - Licensed under FSL-1.1-Apache-2.0 (LICENSE.md): free for everything
