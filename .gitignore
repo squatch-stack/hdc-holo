@@ -6,3 +6,5 @@ data/
 .venv/
 __pycache__/
 hdc_holo.egg-info/
+gpubench/
+gpugate-*/
