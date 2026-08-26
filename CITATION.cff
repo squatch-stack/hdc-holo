@@ -5,6 +5,7 @@ type: software
 authors:
   - name: "Squatch CC"
 license: FSL-1.1-Apache-2.0
+doi: 10.5281/zenodo.22116367
 repository-code: "https://github.com/squatch-stack/hdc-holo"
 abstract: >-
   Holographic data structures, Gaussian-splat scene fields, ridge-fitted
