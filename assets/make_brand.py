@@ -371,3 +371,68 @@ def make_duet():
 
 if __name__ == "__main__":
     make_duet()
+
+
+def render_profile_social(path):
+    """1280x640 social card for the squatch-stack PROFILE repo: the duet
+    flanking the studio wordmark. (hdc-holo's own card is
+    social-preview.png; this one is the account's.)"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import PathPatch, Rectangle
+    from matplotlib.path import Path as MplPath
+
+    fig = plt.figure(figsize=(12.8, 6.4), dpi=100)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, 1280)
+    ax.set_ylim(640, 0)                      # SVG orientation, y down
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.add_patch(Rectangle((0, 0), 1280, 640, facecolor=FOREST_DEEP))
+    sasq = dict(s=1.15, cx=210)
+    sag = dict(s=1.70, cx=1070)
+    floor_y = 520
+    sources = [(sasq["cx"], 380), (sag["cx"], 350)]
+    for i, (sx, sy) in enumerate(sources):
+        color = GOLD if i == 0 else GOLD_DIM
+        for r in range(40, 1400, 40):
+            ax.add_patch(plt.Circle((sx, sy), r, facecolor="none",
+                                    edgecolor=color, linewidth=1.3,
+                                    alpha=0.14))
+    ax.add_line(Line2D([120, 1160], [floor_y, floor_y], linewidth=6,
+                       color=RUST, alpha=0.8, solid_capstyle="round"))
+    s, tx = sasq["s"], sasq["cx"] - SASQ_W * sasq["s"] / 2
+    ty = floor_y - SASQ_H * s
+    verts, codes = [], []
+    for poly in _sasquatch_polys():
+        pts = [(tx + x * s, ty + y * s) for x, y in poly]
+        verts += pts + [pts[0]]
+        codes += ([MplPath.MOVETO] + [MplPath.LINETO] * (len(pts) - 1)
+                  + [MplPath.CLOSEPOLY])
+    ax.add_patch(PathPatch(MplPath(verts, codes), facecolor=CREAM,
+                           edgecolor="none"))
+    sg_s = sag["s"]
+    sg_tx, sg_ty = sag["cx"] - 128 * sg_s, floor_y - 206 * sg_s
+    for pts, w in _saguaro_strokes(sg_tx, sg_ty, sg_s):
+        xs, ys = zip(*pts)
+        ax.add_line(Line2D(xs, ys, linewidth=w, color=CREAM,
+                           solid_capstyle="round",
+                           solid_joinstyle="round"))
+    ax.text(640, 305, "Squatch Stack", fontsize=62, fontweight="bold",
+            color=CREAM, fontfamily="Helvetica Neue", ha="center")
+    ax.text(640, 375, "Software that finds harmony, shipped.",
+            fontsize=25, color=GOLD, fontfamily="Helvetica Neue",
+            ha="center")
+    ax.text(640, 432, "squatch.cc   ·   github.com/squatch-stack   ·   "
+            "squatch.cc", fontsize=16, color=SAND,
+            fontfamily="Helvetica Neue", ha="center")
+    fig.savefig(path)
+    plt.close(fig)
+
+
+if __name__ == "__main__":
+    here = os.path.dirname(os.path.abspath(__file__))
+    render_profile_social(os.path.join(here, "profile-social.png"))
+    print("wrote profile-social.png")
