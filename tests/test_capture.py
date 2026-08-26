@@ -1,0 +1,193 @@
+"""holo/capture.py — loaders, crop/clamp, banded cells, slice/X-ray."""
+
+import gzip
+import struct
+
+import numpy as np
+
+from holo.capture import (BANDS, S_HI, S_LO, band_codebooks, band_of,
+                          build_scene, decode_slice, encode_bands,
+                          exact_slice, exact_xray, fit_cells, load_splat,
+                          parse_spz, render_mip, render_xray)
+from holo.spectral import SplatScene
+
+
+def _write_splat(path, pos, scale, rgba_u8, quat):
+    """Author antimatter15 .splat bytes: f32[3] pos, f32[3] scale,
+    u8[4] RGBA, u8[4] quaternion ((v-128)/128, w first)."""
+    n = len(pos)
+    raw = np.zeros((n, 32), dtype=np.uint8)
+    raw[:, :12] = np.asarray(pos, np.float32).view(np.uint8).reshape(n, 12)
+    raw[:, 12:24] = np.asarray(scale, np.float32).view(np.uint8) \
+        .reshape(n, 12)
+    raw[:, 24:28] = rgba_u8
+    raw[:, 28:32] = np.clip(np.asarray(quat) * 128.0 + 128.0,
+                            0, 255).astype(np.uint8)
+    raw.tofile(path)
+
+
+def test_splat_loader_roundtrip(tmp_path):
+    pos = np.array([[0.5, -1.25, 3.0], [10.0, 0.0, -2.5]], np.float32)
+    scale = np.array([[0.1, 0.2, 0.3], [0.05, 0.05, 0.4]], np.float32)
+    rgba = np.array([[200, 100, 50, 255], [10, 20, 30, 128]], np.uint8)
+    quat = np.array([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]])
+    path = tmp_path / "two.splat"
+    _write_splat(path, pos, scale, rgba, quat)
+    lpos, lscale, lrgba, lquat = load_splat(str(path))
+    assert np.allclose(lpos, pos)                 # f32 fields are exact
+    assert np.allclose(lscale, scale)
+    assert np.allclose(lrgba, rgba / 255.0)
+    # quaternions survive u8 quantization to ~1/128 per component
+    assert np.allclose(np.abs(np.sum(lquat * quat, axis=1)), 1.0, atol=0.02)
+
+
+def _spz_v2_bytes(pos, scale, alpha, color_u8, quat_xyz, frac_bits=12):
+    """Author SPZ v2 (uncompressed layout; caller gzips): the format
+    holo/capture.py parses, built independently from the spec."""
+    n = len(pos)
+    head = struct.pack("<IIIBBBB", 0x5053474E, 2, n, 0, frac_bits, 0, 0)
+    fixed = np.round(np.asarray(pos) * (1 << frac_bits)).astype(np.int64)
+    p24 = np.zeros((n, 3, 3), np.uint8)
+    for b in range(3):
+        p24[..., b] = (fixed >> (8 * b)) & 0xFF
+    a_u8 = np.round(np.asarray(alpha) * 255).astype(np.uint8)
+    s_u8 = np.round((np.log(np.asarray(scale)) + 10.0) * 16.0) \
+        .astype(np.uint8)
+    r_u8 = np.clip(np.asarray(quat_xyz) * 127.5 + 127.5, 0, 255) \
+        .astype(np.uint8)
+    return (head + p24.tobytes() + a_u8.tobytes() + color_u8.tobytes()
+            + s_u8.tobytes() + r_u8.tobytes())
+
+
+def test_spz_v2_parser_roundtrip():
+    pos = np.array([[1.5, -0.25, 0.0], [-3.0, 2.0, 4.5]])
+    scale = np.array([[0.05, 0.1, 0.2], [0.3, 0.02, 0.02]])
+    alpha = np.array([1.0, 0.5])
+    color = np.array([[128, 200, 60], [10, 128, 250]], np.uint8)
+    quat_xyz = np.array([[0.0, 0.0, 0.0], [0.6, 0.0, 0.0]])  # w recovered
+    buf = _spz_v2_bytes(pos, scale, alpha, color, quat_xyz)
+    lpos, lscale, lrgba, lquat = parse_spz(buf)
+    assert np.allclose(lpos, pos, atol=1.5 / (1 << 12))   # 24-bit fixed
+    assert np.allclose(lscale, scale, rtol=0.04)          # log-u8 grid
+    assert np.allclose(lrgba[:, 3], alpha, atol=1 / 255)
+    assert np.allclose(lquat[0], [1, 0, 0, 0], atol=0.01)
+    assert np.allclose(lquat[1], [0.8, 0.6, 0, 0], atol=0.01)
+
+
+def test_spz_gzip_and_size_check(tmp_path):
+    buf = _spz_v2_bytes(np.zeros((3, 3)), np.full((3, 3), 0.1),
+                        np.ones(3), np.full((3, 3), 128, np.uint8),
+                        np.zeros((3, 3)))
+    path = tmp_path / "tiny.spz"
+    with gzip.open(path, "wb") as f:
+        f.write(buf)
+    from holo.capture import load_spz
+    lpos, _, _, _ = load_spz(str(path))
+    assert len(lpos) == 3
+
+
+def test_build_scene_crops_floaters_and_clamps_scales(tmp_path):
+    rng = np.random.default_rng(0)
+    n_core, n_far = 60, 10
+    pos = np.concatenate([rng.normal(0, 1.0, (n_core, 3)),
+                          rng.normal(0, 80.0, (n_far, 3)) + 200])
+    scale = np.concatenate([np.full((n_core, 3), 0.02),
+                            np.full((n_far, 3), 5.0)])
+    rgba = np.full((n_core + n_far, 4), 255, np.uint8)
+    quat = np.tile([1.0, 0, 0, 0], (n_core + n_far, 1))
+    path = tmp_path / "scene.splat"
+    _write_splat(path, pos, scale, rgba, quat)
+    scene, smax, box = build_scene(str(path), verbose=False)
+    # the mass-centered cube keeps the core and drops the 200-away shell
+    assert n_core * 0.7 <= scene.n <= n_core + 1
+    assert np.all(scene.mu >= -1e-6) and np.all(scene.mu <= 1 + 1e-6)
+    assert np.all(smax >= S_LO - 1e-9) and np.all(smax <= S_HI + 1e-9)
+
+
+def _toy_scene(rng, n=40):
+    mu = rng.uniform(0.2, 0.8, (n, 3)).astype(np.float32)
+    s = rng.uniform(0.004, 0.03, (n, 1)) * np.ones((1, 3))
+    cov = np.einsum("ni,ij->nij", (s**2)[:, 0:1].repeat(3, 1),
+                    np.eye(3)).astype(np.float32)
+    cov = np.stack([np.eye(3) * (si[0] ** 2) for si in s]) \
+        .astype(np.float32)
+    amp = rng.uniform(0.5, 1.0, (n, 1)).astype(np.float32)
+    return SplatScene(mu=mu, cov=cov, amp=amp), s.max(axis=1) \
+        .astype(np.float32)
+
+
+def test_banded_cell_encode_decodes_the_mixture():
+    rng = np.random.default_rng(1)
+    scene, smax = _toy_scene(rng)
+    books = band_codebooks(np.random.default_rng(2))
+    bundles, members = encode_bands(scene, smax, books, verbose=False)
+    # probe near centers, where the field carries signal: a uniform grid
+    # is mostly zeros and the relative error degenerates to noise/0
+    pts = (scene.mu[rng.integers(0, scene.n, 300)]
+           + 0.005 * rng.standard_normal((300, 3))).astype(np.float32)
+    truth = exact_slice(pts, scene, members)
+    holo = decode_slice(pts, bundles, books)
+    # signal ~ amp >= 0.5, crosstalk ~ sqrt(local/2d) ~ few %: 0.15 is
+    # several sigma of margin on both backends
+    rel = (np.linalg.norm(holo[:, 0] - truth[:, 0])
+           / np.linalg.norm(truth[:, 0]))
+    assert rel < 0.15
+
+
+def test_band_assignment_respects_caps():
+    smax = np.array([0.003, 0.01, 0.03], np.float32)
+    idx = band_of(smax)
+    caps = [cap for _, cap, _ in BANDS]
+    for s, b in zip(smax, idx):
+        assert s <= caps[b]
+        assert b == 0 or s > caps[b - 1]
+
+
+def test_fit_cells_decodes_the_mixture():
+    rng = np.random.default_rng(11)
+    n = 12
+    mu = rng.uniform(0.25, 0.75, (n, 3)).astype(np.float32)
+    s = rng.uniform(0.006, 0.02, n)
+    cov = np.stack([np.eye(3) * (si ** 2) for si in s]).astype(np.float32)
+    scene = SplatScene(mu=mu, cov=cov,
+                       amp=np.ones((n, 1), dtype=np.float32))
+    smax = s.astype(np.float32)
+    # small d keeps the CPU-only CI runner fast; the fit's sampling
+    # floor, not d, dominates its error here
+    books = band_codebooks(np.random.default_rng(12), dim=1024)
+    _, members = encode_bands(scene, smax, books, dim=1024, verbose=False)
+    fitted = fit_cells(scene, members, books, min_samples=600,
+                       max_samples=900, rng=np.random.default_rng(13),
+                       verbose=False)
+    pts = (scene.mu[rng.integers(0, n, 300)]
+           + 0.004 * rng.standard_normal((300, 3))).astype(np.float32)
+    truth = exact_slice(pts, scene, members)
+    est = decode_slice(pts, fitted, books)
+    rel = (np.linalg.norm(est[:, 0] - truth[:, 0])
+           / np.linalg.norm(truth[:, 0]))
+    assert rel < 0.2   # sampling-limited fit floor ~0.05 at these sizes
+
+
+def test_xray_render_matches_analytic_projection():
+    rng = np.random.default_rng(3)
+    # a few fat splats: fat spectra keep the projection slice populated
+    scene = SplatScene(
+        mu=rng.uniform(0.35, 0.65, (6, 3)).astype(np.float32),
+        cov=np.stack([np.eye(3) * 0.04**2] * 6).astype(np.float32),
+        amp=np.ones((6, 1), np.float32))
+    mip = render_mip(scene, 0.01)
+    smax = np.full(6, np.sqrt(0.04**2 + 0.01**2), np.float32)
+    bands = [("r", 0.055, 0.25)]
+    books = band_codebooks(np.random.default_rng(4), bands,
+                           dim=1 << 14, s_floor=0.01)
+    bundles, members = encode_bands(mip, smax, books, bands,
+                                    dim=1 << 14, verbose=False)
+    view, center = [1.0, 0.0, 0.3], [0.5, 0.5, 0.5]
+    truth = exact_xray(mip, members, view, center, 0.4, 48, bands=bands)
+    holo = render_xray(bundles, books, view, center, 0.4, 48, 2.0,
+                       bands=bands)
+    # projections use only the ~perpendicular spectrum slice, so the
+    # budget is far looser than point decodes (docs/render.md)
+    rel = (np.linalg.norm(holo[:, 0] - truth[:, 0])
+           / np.linalg.norm(truth[:, 0]))
+    assert rel < 0.35

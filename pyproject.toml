@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hdc-holo"
+description = "Holographic data structures, splat fields, learning, rendering, and CRDT replication on FHRR hypervectors"
+readme = "README.md"
+license = { text = "FSL-1.1-Apache-2.0" }  # aka FSL-1.1-ALv2; see LICENSE.md
+requires-python = ">=3.9"
+dynamic = ["version"]
+# numpy < 2.0 keeps the OpenBLAS wheels on macOS: the Accelerate-backed
+# 2.0 wheels corrupt float32 GEMV with heap-layout-dependent NaNs
+# (see hdc/fit.py and SDK.md).
+dependencies = ["numpy>=1.26,<2.0"]
+
+[project.optional-dependencies]
+crdt = ["loro>=1.0"]
+viz = ["matplotlib>=3.5", "pillow>=8"]
+gpu = ["mlx>=0.5"]  # Apple Metal backend (hdc/accel.py); macOS only
+dev = ["pytest>=7", "loro>=1.0", "matplotlib>=3.5", "pillow>=8"]
+
+[project.scripts]
+hdc-demos = "holo.cli:main"
+holo-demos = "holo.cli:main"
+
+[tool.setuptools]
+packages = ["hdc", "holo"]
+
+[tool.setuptools.dynamic]
+version = { attr = "holo.__version__" }
