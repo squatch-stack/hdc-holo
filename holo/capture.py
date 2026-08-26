@@ -129,8 +129,74 @@ def parse_spz(buf):
     return pos, scale, rgba, quat
 
 
+def load_ply(path, sigma_scale=0.75):
+    """Point-cloud PLY -> points as isotropic splats (iPhone LiDAR
+    captures: EigenCapture's binary xyz scans, the SceneDepthPointCloud
+    sample's ascii xyz+rgb clouds). Not a Gaussian-splat PLY parser —
+    plain clouds only; each point becomes an isotropic splat with sigma
+    = sigma_scale * (median nearest-neighbor distance, estimated on a
+    subsample), full opacity, identity rotation, and the point's color
+    (white when the cloud is colorless)."""
+    with open(path, "rb") as f:
+        assert f.readline().strip() == b"ply", "not a PLY file"
+        fmt = None
+        n = 0
+        props = []
+        while True:
+            line = f.readline().strip()
+            if line == b"end_header":
+                break
+            parts = line.split()
+            if parts[0] == b"format":
+                fmt = parts[1].decode()
+            elif parts[0] == b"element":
+                in_vertex = parts[1] == b"vertex"
+                if in_vertex:
+                    n = int(parts[2])
+            elif parts[0] == b"property" and in_vertex \
+                    and parts[1] != b"list":
+                props.append((parts[2].decode(), parts[1].decode()))
+        names = [p[0] for p in props]
+        assert names[:3] == ["x", "y", "z"], f"unsupported layout {names}"
+        has_rgb = names[3:6] == ["red", "green", "blue"]
+        if fmt == "binary_little_endian":
+            typemap = {"float": "<f4", "uchar": "u1", "double": "<f8"}
+            dt = np.dtype([(nm, typemap[t]) for nm, t in props])
+            rec = np.frombuffer(f.read(n * dt.itemsize), dtype=dt, count=n)
+            pos = np.stack([rec["x"], rec["y"], rec["z"]], 1) \
+                .astype(np.float64)
+            rgb = (np.stack([rec["red"], rec["green"], rec["blue"]], 1)
+                   .astype(np.float32) / 255.0) if has_rgb else None
+        elif fmt == "ascii":
+            data = np.loadtxt(f, dtype=np.float64, max_rows=n,
+                              usecols=range(len(props)))
+            pos = data[:, :3]
+            rgb = (data[:, 3:6] / 255.0).astype(np.float32) \
+                if has_rgb else None
+        else:
+            raise AssertionError(f"unsupported PLY format {fmt}")
+
+    # sigma from the cloud's own sampling density (subsampled brute NN)
+    rng = np.random.default_rng(0)
+    sub = pos[rng.choice(len(pos), min(2000, len(pos)), replace=False)]
+    d2 = ((sub[None, :, :] - sub[:, None, :]) ** 2).sum(-1)
+    d2[np.diag_indices_from(d2)] = np.inf
+    sigma = sigma_scale * float(np.median(np.sqrt(d2.min(1))))
+    scale = np.full((len(pos), 3), sigma)
+    rgba = np.concatenate(
+        [rgb if rgb is not None else np.ones((len(pos), 3), np.float32),
+         np.ones((len(pos), 1), np.float32)], axis=1)
+    quat = np.tile([1.0, 0.0, 0.0, 0.0], (len(pos), 1))
+    return pos, scale, rgba, quat
+
+
 def load_scene_file(path):
-    return load_spz(path) if str(path).endswith(".spz") else load_splat(path)
+    p = str(path)
+    if p.endswith(".spz"):
+        return load_spz(p)
+    if p.endswith(".ply"):
+        return load_ply(p)
+    return load_splat(p)
 
 
 def quat_to_rot(q):
