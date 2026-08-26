@@ -41,13 +41,21 @@ copies.
 
 **Failure modes / contract.** Public APIs take and return NumPy;
 backends must match to float32 rounding (pinned by test, both paths vs
-the complex-arithmetic definition). Platform caveat (found on an RTX
-5090 during job-runner bring-up): CUDA fp32 matmuls default to TF32
-tensor cores on Ampere+/Blackwell, silently costing ~2 orders of
-magnitude (1e-7 -> ~1e-5 relative) — any future CUDA backend must
-disable TF32 (`torch.backends.cuda.matmul.allow_tf32 = False`; leave
-`CUPY_TF32` unset) or document the lower bar, exactly as the macOS
-Accelerate float32-GEMV corruption forced the numpy<2 pin. Results are reproducible
+the complex-arithmetic definition).
+
+**Platform precision gotchas** — defaults that silently trade accuracy,
+each discovered by tests/bring-up rather than documentation:
+
+- *macOS Accelerate float32 GEMV corruption*: the Accelerate-backed
+  numpy 2.0 wheels produce heap-layout-dependent NaNs — hence the
+  `numpy<2` pin (OpenBLAS wheels are clean).
+- *CUDA TF32 by default* (found on an RTX 5090 during job-runner
+  bring-up): fp32 matmuls use TF32 tensor cores on Ampere+/Blackwell,
+  costing ~2 orders of magnitude (1e-7 -> ~1e-5 relative). Disable it
+  (`torch.backends.cuda.matmul.allow_tf32 = False`; leave `CUPY_TF32`
+  unset) or document the lower bar. With TF32 off, the verified
+  cross-hardware bench (`bench/holo_bench_job.py`) agrees to 2.5e-8
+  across M1 Max Metal, RTX 5090 CUDA, and CPU. Results are reproducible
 semantically, not bitwise (~1 ulp between formulations and across
 allocations) — see the determinism caveat in `SDK.md`. CI proves
 graceful degradation: the Linux job runs the entire suite with no MLX

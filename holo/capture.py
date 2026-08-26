@@ -158,6 +158,28 @@ def load_ply(path, sigma_scale=0.75):
                 props.append((parts[2].decode(), parts[1].decode()))
         names = [p[0] for p in props]
         assert names[:3] == ["x", "y", "z"], f"unsupported layout {names}"
+        if {"f_dc_0", "opacity", "scale_0", "rot_0"} <= set(names):
+            # full 3DGS Gaussian PLY (INRIA layout; Scaniverse raw
+            # exports use it): SH DC color, sigmoid opacity, log scales,
+            # wxyz quaternion. Ignores normals and higher SH bands.
+            assert fmt == "binary_little_endian", fmt
+            dt = np.dtype([(nm, "<f4") for nm, _ in props])
+            rec = np.frombuffer(f.read(n * dt.itemsize), dtype=dt, count=n)
+            pos = np.stack([rec["x"], rec["y"], rec["z"]], 1) \
+                .astype(np.float64)
+            color = np.clip(0.5 + SH_C0 * np.stack(
+                [rec["f_dc_0"], rec["f_dc_1"], rec["f_dc_2"]], 1), 0, 1) \
+                .astype(np.float32)
+            alpha = (1.0 / (1.0 + np.exp(-rec["opacity"])))[:, None] \
+                .astype(np.float32)
+            scale = np.exp(np.stack(
+                [rec["scale_0"], rec["scale_1"], rec["scale_2"]], 1)) \
+                .astype(np.float64)
+            quat = np.stack([rec["rot_0"], rec["rot_1"], rec["rot_2"],
+                             rec["rot_3"]], 1).astype(np.float64)
+            quat /= np.maximum(np.linalg.norm(quat, axis=1, keepdims=True),
+                               1e-9)
+            return pos, scale, np.concatenate([color, alpha], 1), quat
         has_rgb = names[3:6] == ["red", "green", "blue"]
         if fmt == "binary_little_endian":
             typemap = {"float": "<f4", "uchar": "u1", "double": "<f8"}

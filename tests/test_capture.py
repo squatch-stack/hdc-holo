@@ -117,6 +117,39 @@ def test_ply_loader_both_variants(tmp_path):
     assert np.allclose(rgba[:, :3], rgb / 255.0, atol=1e-6)
 
 
+def test_ply_loader_gaussian_3dgs_layout(tmp_path):
+    from holo.capture import SH_C0, load_ply
+    rng = np.random.default_rng(21)
+    n = 50
+    fields = (["x", "y", "z", "nx", "ny", "nz",
+               "f_dc_0", "f_dc_1", "f_dc_2"]
+              + [f"f_rest_{i}" for i in range(9)]
+              + ["opacity", "scale_0", "scale_1", "scale_2",
+                 "rot_0", "rot_1", "rot_2", "rot_3"])
+    rec = np.zeros(n, dtype=np.dtype([(f, "<f4") for f in fields]))
+    pos = rng.uniform(-2, 2, (n, 3)).astype(np.float32)
+    for i, ax in enumerate("xyz"):
+        rec[ax] = pos[:, i]
+    rec["f_dc_0"] = 1.0                       # -> 0.5 + SH_C0, clipped
+    rec["opacity"] = 0.0                      # sigmoid -> 0.5
+    for i in range(3):
+        rec[f"scale_{i}"] = np.log(0.05)      # log-stored -> 0.05
+    rec["rot_0"] = 2.0                        # w-first, unnormalized
+    p = tmp_path / "gauss.ply"
+    with open(p, "wb") as f:
+        f.write(b"ply\nformat binary_little_endian 1.0\n"
+                + f"element vertex {n}\n".encode()
+                + b"".join(f"property float {f_}\n".encode()
+                           for f_ in fields)
+                + b"end_header\n" + rec.tobytes())
+    lpos, scale, rgba, quat = load_ply(str(p))
+    assert np.allclose(lpos, pos, atol=1e-6)
+    assert np.allclose(rgba[:, 0], min(0.5 + SH_C0, 1.0), atol=1e-6)
+    assert np.allclose(rgba[:, 3], 0.5, atol=1e-6)      # sigmoid(0)
+    assert np.allclose(scale, 0.05, atol=1e-6)          # exp(log 0.05)
+    assert np.allclose(quat, [[1, 0, 0, 0]] * n, atol=1e-6)  # normalized
+
+
 def test_build_scene_crops_floaters_and_clamps_scales(tmp_path):
     rng = np.random.default_rng(0)
     n_core, n_far = 60, 10
