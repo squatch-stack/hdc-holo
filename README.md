@@ -1,6 +1,19 @@
-# Holographic Data Structures (FHRR / HDC-VSA)
+<p align="center">
+  <img src="assets/logo-512.png" width="150" alt="holo — a saguaro at the constructive node of a two-source interference field">
+</p>
 
-[![ci](https://github.com/squatch-stack/hdc-holo/actions/workflows/ci.yml/badge.svg)](https://github.com/squatch-stack/hdc-holo/actions/workflows/ci.yml)
+<h1 align="center">holo</h1>
+
+<p align="center"><b>Holographic computing on FHRR hypervectors</b><br>
+data structures · splat scenes · learning · rendering · CRDT sync —
+superposed in one complex vector</p>
+
+<p align="center">
+  <a href="https://github.com/squatch-stack/hdc-holo/actions/workflows/ci.yml"><img src="https://github.com/squatch-stack/hdc-holo/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-C2562E" alt="License: FSL-1.1-Apache-2.0"></a>
+  <a href="docs/README.md"><img src="https://img.shields.io/badge/docs-per--technique-274f42" alt="Docs"></a>
+  <a href="ROADMAP.md"><img src="https://img.shields.io/badge/roadmap-0.3-C9A84C" alt="Roadmap"></a>
+</p>
 
 Classical application data structures rebuilt as *holograms*: everything
 lives superposed in one (or a few) high-dimensional complex64 vectors,
