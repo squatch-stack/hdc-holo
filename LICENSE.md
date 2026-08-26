@@ -6,7 +6,7 @@ FSL-1.1-ALv2
 
 ## Notice
 
-Copyright 2026 Thomas Rankin
+Copyright 2026 Squatch CC
 
 ## Terms and Conditions
 
