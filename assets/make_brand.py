@@ -436,3 +436,53 @@ if __name__ == "__main__":
     here = os.path.dirname(os.path.abspath(__file__))
     render_profile_social(os.path.join(here, "profile-social.png"))
     print("wrote profile-social.png")
+
+
+def render_avatar(path, px=1024):
+    """Full-bleed avatar variant of the duet: GitHub crops avatars to a
+    circle, so the ground fills the square edge-to-edge and both
+    silhouettes sit inside the inscribed-circle safe zone."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import PathPatch, Rectangle
+    from matplotlib.path import Path as MplPath
+
+    fig = plt.figure(figsize=(px / 100, px / 100), dpi=100)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, 256)
+    ax.set_ylim(256, 0)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.add_patch(Rectangle((0, 0), 256, 256, facecolor=FOREST))
+    for i, (sx, sy) in enumerate(D_SOURCES):
+        color = GOLD if i == 0 else GOLD_DIM
+        for r in range(15, 260, 15):
+            ax.add_patch(plt.Circle((sx, sy), r, facecolor="none",
+                                    edgecolor=color,
+                                    linewidth=1.2 * px / 256, alpha=0.26))
+    (fx1, fy1), (fx2, fy2) = D_FLOOR
+    ax.add_line(Line2D([fx1, fx2], [fy1, fy2], linewidth=4 * px / 256,
+                       color=RUST, alpha=0.85, solid_capstyle="round"))
+    s, tx, ty = D_SASQ["s"], D_SASQ["tx"], D_SASQ["ty"]
+    verts, codes = [], []
+    for poly in _sasquatch_polys():
+        pts = [(tx + x * s, ty + y * s) for x, y in poly]
+        verts += pts + [pts[0]]
+        codes += ([MplPath.MOVETO] + [MplPath.LINETO] * (len(pts) - 1)
+                  + [MplPath.CLOSEPOLY])
+    ax.add_patch(PathPatch(MplPath(verts, codes), facecolor=CREAM,
+                           edgecolor="none"))
+    for pts, w in _saguaro_strokes(D_SAG["tx"], D_SAG["ty"], D_SAG["s"]):
+        xs, ys = zip(*pts)
+        ax.add_line(Line2D(xs, ys, linewidth=w * px / 256, color=CREAM,
+                           solid_capstyle="round", solid_joinstyle="round"))
+    fig.savefig(path)
+    plt.close(fig)
+
+
+if __name__ == "__main__":
+    here = os.path.dirname(os.path.abspath(__file__))
+    render_avatar(os.path.join(here, "avatar-1024.png"))
+    print("wrote avatar-1024.png")
