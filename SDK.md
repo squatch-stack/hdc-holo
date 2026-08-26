@@ -277,8 +277,11 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   (1e-7 -> ~1e-5 relative) — the job script now disables TF32 on torch
   and documents CUPY_TF32; caveat recorded in docs/backend.md. First
   5090 numbers (box's own sweep, TF32 off): d=8192 encode 18 ms, 31-44x
-  its host CPU. The aligned three-way comparison (same scene.npz, same
-  checksums) runs once the box-side recipe executes the submitted
-  payload through the job file — cupy backend added for exactly that.
+  its host CPU. VERIFIED three-way table (identical scene.npz, float64
+  checksums agree to 2.5e-8 across hardware): RTX 5090 (cupy, TF32
+  off) encode 0.20 s / readout 0.17 s; M1 Max (mlx) 0.85 / 2.4; CPU
+  numpy ~42 / ~42 on an idle machine — the 5090 lands ~9x the M1 Max
+  and >200x CPU on the capture-shaped workload. The CUDA seam the
+  roadmap left open is now measured, remote, and sandboxed.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP).
