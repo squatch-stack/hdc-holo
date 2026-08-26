@@ -7,7 +7,7 @@ example driver `run_real_scene.py`)*
 
 ```mermaid
 flowchart LR
-    LOAD[".splat / .spz v2<br/>byte-verified parsers"] --> CROP["mass-centered<br/>cube crop"]
+    LOAD[".splat / .spz v2 / .ply<br/>byte-verified parsers"] --> CROP["mass-centered<br/>cube crop"]
     CROP --> CLAMP["scale clamp<br/>(floor + reach cap)"]
     CLAMP --> BAND["3 scale bands<br/>by max axis scale"]
     BAND --> CELLS["chunked cells,<br/>reach = 3 × cap"]
@@ -18,12 +18,15 @@ flowchart LR
 ```
 
 **What.** The whole stack pointed at real pretrained Gaussian-splatting
-scenes: antimatter15 `.splat` (Tanks & Temples "train") and Niantic
-`.spz` v2 (the Tucson saguaro capture, ~519k splats). Both parsers are
-byte-verified against the reference implementations (`.splat`: 32
-B/splat pos/scale/RGBA/quaternion; `.spz` v2: gzip, 24-bit fixed-point
-positions, log-encoded scales, sigmoid alpha — byte counts must match
-the header exactly).
+scenes: antimatter15 `.splat` (Tanks & Temples "train"), Niantic
+`.spz` v2 (the Tucson saguaro capture, ~519k splats), and `.ply` in
+both flavors — plain point clouds (iPhone LiDAR) and the full INRIA
+Gaussian layout (SH DC color, sigmoid opacity, log scales, wxyz
+quaternions; the studio's raw Scaniverse exports load natively). All
+parsers are byte-verified against reference implementations or
+synthetic-bytes tests (`.splat`: 32 B/splat pos/scale/RGBA/quaternion;
+`.spz` v2: gzip, 24-bit fixed-point positions, log-encoded scales,
+sigmoid alpha — byte counts must match the header exactly).
 
 The encode composes three documented techniques: the spectral encoder
 ([spectral.md](spectral.md)) so every splat keeps its own anisotropic
@@ -64,6 +67,10 @@ The same scan orbited entirely from 135 cell bundles — no geometry at
 render time ([render.md](render.md)):
 
 ![saguaro turntable from cell bundles](../results/real_turntable-scan-tucson.gif)
+
+Red Rock (a raw Scaniverse 3DGS export, 547k splats after crop)
+through the same pipeline — the best Gaussian-capture slice numbers so
+far (23%/23%): `results/real_redrock.png`.
 
 Tanks & Temples "train" through the same fixed pipeline:
 `results/real_train.png`, `results/real_train_xray.png` (the

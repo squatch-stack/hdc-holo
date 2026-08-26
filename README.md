@@ -78,8 +78,10 @@ compose. Figures land in `results/`.
 
 `holo/capture.py` (driven by `run_real_scene.py`) runs the whole stack
 on real captures — Tanks &
-Temples "train" (`.splat`) and the studio's own Tucson saguaro scan
-(`.spz` v2; parser verified byte-for-byte against nianticlabs/spz):
+Temples "train" (`.splat`), the studio's own Tucson saguaro scan
+(`.spz` v2; parser verified byte-for-byte against nianticlabs/spz), and
+the studio's raw Scaniverse exports (`.ply`, both iPhone-LiDAR point
+clouds and full INRIA Gaussian layouts — Red Rock, 547k splats):
 ~519k splats, mass-centered crop, four scale bands x chunked cells x
 mixture codebooks (reach follows each band's scale cap — the xfine
 split is why), color slices against the exact mixture, and

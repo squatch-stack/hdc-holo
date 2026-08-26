@@ -20,7 +20,13 @@ and in `docs/`, with figures. Nothing unproven enters the SDK surface.
   analytic-projection direction, fine-band reach split promoted to
   the capture default (reach follows the band cap; 33-44% slice-error
   cut on the saguaro at 1.5x storage — raising d instead bought 2-4%:
-  dense-scene residual is coherent, not Monte-Carlo).
+  dense-scene residual is coherent, not Monte-Carlo), measured codec
+  rules on real bundles (HG-8 faithful; HM-4 an accidental denoiser),
+  cross-hardware verified kernel bench (RTX 5090 ~9x M1 Max, >200x
+  CPU, float64 checksums to 2.5e-8; the TF32 platform gotcha found and
+  neutralized), and native capture ingestion for iPhone LiDAR point
+  clouds and raw 3DGS Gaussian PLYs (Scaniverse Red Rock, 547k splats:
+  best Gaussian-capture slice numbers yet, 23%/23%).
 
 ## 0.3 candidates (unclaimed unless noted)
 
