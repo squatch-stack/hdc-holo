@@ -9,7 +9,7 @@ example driver `run_real_scene.py`)*
 flowchart LR
     LOAD[".splat / .spz v2 / .ply<br/>byte-verified parsers"] --> CROP["mass-centered<br/>cube crop"]
     CROP --> CLAMP["scale clamp<br/>(floor + reach cap)"]
-    CLAMP --> BAND["3 scale bands<br/>by max axis scale"]
+    CLAMP --> BAND["4 scale bands<br/>by max axis scale"]
     BAND --> CELLS["chunked cells,<br/>reach = 3 × cap"]
     CELLS --> ENC["spectral encode,<br/>mixture codebook per band"]
     ENC --> BUN[("cell bundles<br/>(4-channel complex64)")]
@@ -31,9 +31,10 @@ sigmoid alpha — byte counts must match the header exactly).
 The encode composes three documented techniques: the spectral encoder
 ([spectral.md](spectral.md)) so every splat keeps its own anisotropic
 covariance; a mixture-of-Gaussians codebook per band with the finest
-component AT the global scale floor; and three scale bands x chunked
-cells ([spatial.md](spatial.md)) with reach = 3x the band's scale cap,
-so query crosstalk follows LOCAL density, not N_total. Channels are
+component AT the global scale floor; and four scale bands x chunked
+cells ([spatial.md](spatial.md)) with reach = 3x the band's scale cap —
+the xfine/fine split exists because reach follows the cap — so query
+crosstalk follows LOCAL density, not N_total. Channels are
 premultiplied color (`alpha, alpha*R, alpha*G, alpha*B`) so decoded
 slices render in color; ground truth is the exact mixture evaluated
 cell-locally; slice planes sit at the mode of the alpha-weighted mass
@@ -70,7 +71,9 @@ render time ([render.md](render.md)):
 
 Red Rock (a raw Scaniverse 3DGS export, 547k splats after crop)
 through the same pipeline — the best Gaussian-capture slice numbers so
-far (23%/23%): `results/real_redrock.png`.
+far (23%/23%): `results/real_redrock.png`. An iPhone LiDAR room cloud
+(291k points as density-matched isotropic splats) decodes at 22%/30%
+with sub-second slices: `results/real_lidar-dense.png`.
 
 Tanks & Temples "train" through the same fixed pipeline:
 `results/real_train.png`, `results/real_train_xray.png` (the
