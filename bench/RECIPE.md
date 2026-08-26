@@ -19,9 +19,12 @@ backend.
 
 - **Command**: `python3 holo_bench_job.py` (add `--backend torch-cuda`
   to fail loudly rather than fall back to CPU if CUDA is missing).
-- **Environment**: python3 with `numpy` and CUDA-enabled `torch`
-  preinstalled — the sandbox has no network, so nothing can be
-  installed at job time.
+- **Environment**: python3 with `numpy` and either CUDA-enabled
+  `torch` or `cupy` preinstalled — the sandbox has no network, so
+  nothing can be installed at job time. TF32 must stay off (the script
+  disables it on torch; on cupy leave `CUPY_TF32` unset): fp32 matmuls
+  on Ampere+/Blackwell otherwise silently drop to ~1e-5 relative
+  accuracy against the repo's 1e-7 cross-backend bar.
 - **Input**: one file, `scene.npz` (~12 MB), submitted by the client.
 - **Artifact**: `bench.json` (~1 KB), written to the working directory.
 - **Budgets**: the reference workload (131,072 splats / 262,144 points
