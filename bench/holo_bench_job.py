@@ -10,9 +10,17 @@ fixed workload shipped as scene.npz:
     readout: out  = cos(P F^T) @ (w*S_re)^T - sin(P F^T) @ (w*S_im)^T
 
 Backends, auto-selected best-first (override with --backend):
-    torch-cuda   (NVIDIA; the job-runner case)
+    torch-cuda   (NVIDIA)
+    cupy         (NVIDIA; the job-runner case when torch is absent)
     mlx          (Apple silicon)
     numpy        (the reference everywhere)
+
+Precision contract: TF32 is DISABLED on the CUDA paths. Blackwell/
+Ampere fp32 matmuls default to TF32 tensor cores, which costs ~2 orders
+of magnitude of relative error (1e-7 -> 1e-5) — discovered on the
+studio's RTX 5090 during recipe bring-up. hdc-holo's cross-backend
+agreement bar is float32 rounding, so the benchmark measures true-fp32
+clocks; a TF32 mode would be a different (documented) trade.
 
 Written to run inside a locked-down job sandbox: stdlib + numpy required,
 everything else optional; reads ./scene.npz; writes ./bench.json. No
@@ -38,11 +46,21 @@ def pick_backend(name):
         try:
             import torch
             if torch.cuda.is_available():
+                torch.backends.cuda.matmul.allow_tf32 = False   # see docstring
+                torch.backends.cudnn.allow_tf32 = False
                 return "torch-cuda", torch
         except ImportError:
             pass
         if name == "torch-cuda":
             sys.exit("torch with CUDA requested but not available")
+    if name in (None, "cupy"):
+        try:
+            import cupy
+            cupy.cuda.Device(0).compute_capability
+            return "cupy", cupy
+        except Exception:
+            if name == "cupy":
+                sys.exit("cupy requested but not available")
     if name in (None, "mlx"):
         try:
             import mlx.core as mx
@@ -55,7 +73,8 @@ def pick_backend(name):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--backend", choices=["torch-cuda", "mlx", "numpy"])
+    ap.add_argument("--backend",
+                    choices=["torch-cuda", "cupy", "mlx", "numpy"])
     ap.add_argument("--payload", default="scene.npz")
     ap.add_argument("--out", default="bench.json")
     args = ap.parse_args()
@@ -77,6 +96,16 @@ def main():
         sync = lib.cuda.synchronize
         back = lambda t: t.cpu().numpy()
         device_name = lib.cuda.get_device_name(0)
+    elif backend == "cupy":
+        # cupy fp32 GEMMs use cuBLAS default math mode (no TF32 unless
+        # CUPY_TF32=1 is set in the environment — leave it unset)
+        T = lib.asarray
+        cos, sin, exp = lib.cos, lib.sin, lib.exp
+        zeros = lambda s: lib.zeros(s, dtype=lib.float32)
+        sync = lib.cuda.Stream.null.synchronize
+        back = lib.asnumpy
+        props = lib.cuda.runtime.getDeviceProperties(0)
+        device_name = props["name"].decode()
     elif backend == "mlx":
         T = lib.array
         cos, sin, exp = lib.cos, lib.sin, lib.exp

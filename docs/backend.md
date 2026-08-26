@@ -41,7 +41,13 @@ copies.
 
 **Failure modes / contract.** Public APIs take and return NumPy;
 backends must match to float32 rounding (pinned by test, both paths vs
-the complex-arithmetic definition). Results are reproducible
+the complex-arithmetic definition). Platform caveat (found on an RTX
+5090 during job-runner bring-up): CUDA fp32 matmuls default to TF32
+tensor cores on Ampere+/Blackwell, silently costing ~2 orders of
+magnitude (1e-7 -> ~1e-5 relative) — any future CUDA backend must
+disable TF32 (`torch.backends.cuda.matmul.allow_tf32 = False`; leave
+`CUPY_TF32` unset) or document the lower bar, exactly as the macOS
+Accelerate float32-GEMV corruption forced the numpy<2 pin. Results are reproducible
 semantically, not bitwise (~1 ulp between formulations and across
 allocations) — see the determinism caveat in `SDK.md`. CI proves
 graceful degradation: the Linux job runs the entire suite with no MLX

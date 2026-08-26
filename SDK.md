@@ -266,5 +266,19 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   empty-band edge case fixed in decode_slice/render_xray. Historical
   note: earlier log entries and the fit experiment quote the pre-split
   baseline (0.52/0.38) — those numbers were correct at their date.
+- **Cross-hardware bench + the TF32 finding** (capture/spectral lane +
+  the job-runner session): bench/holo_bench_job.py runs the two dominant
+  kernels from ONE file on torch-cuda/cupy/mlx/numpy with float64
+  checksums for cross-hardware verification (run_gpu_bench.py drives;
+  local M1 Max: MLX 25x numpy on the capture-shaped workload). Recipe
+  bring-up on the studio's RTX 5090 surfaced a platform gotcha worthy of
+  the Accelerate-bug shelf: **fp32 matmuls default to TF32 tensor cores
+  on Ampere+/Blackwell**, silently costing ~2 orders of magnitude
+  (1e-7 -> ~1e-5 relative) — the job script now disables TF32 on torch
+  and documents CUPY_TF32; caveat recorded in docs/backend.md. First
+  5090 numbers (box's own sweep, TF32 off): d=8192 encode 18 ms, 31-44x
+  its host CPU. The aligned three-way comparison (same scene.npz, same
+  checksums) runs once the box-side recipe executes the submitted
+  payload through the job file — cupy backend added for exactly that.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP).
