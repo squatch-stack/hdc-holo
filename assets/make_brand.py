@@ -8,8 +8,8 @@ repo actually encodes. Palette bridges the family sites:
 
     deep forest  #274f42   (squatch.cc ground)
     gold rings   #C9A84C / #B8860B (squatch.cc resonance field)
-    warm cream   #FAF6EF   (squatch.cc paper)
-    desert rust  #C2562E   (squatch.cc accent)
+    warm cream   #FAF6EF   (desert paper)
+    desert rust  #C2562E   (desert accent)
 
 Outputs: logo.svg, logo-512.png, logo-1024.png, social-preview.png.
 Run: python assets/make_brand.py
@@ -159,8 +159,8 @@ def render_social(path):
     ax.text(592, 152, "squatch-stack/hdc-holo",
             fontsize=18, color=CREAM, alpha=0.9,
             fontfamily="Menlo")
-    ax.text(592, 96, "FSL-1.1, converting to Apache-2.0   ·   squatch.cc"
-            "   ·   squatch.cc", fontsize=15, color=GOLD_DIM,
+    ax.text(592, 96, "FSL-1.1, converting to Apache-2.0   ·   "
+            "squatch.cc", fontsize=15, color=GOLD_DIM,
             fontfamily="Helvetica Neue")
     fig.savefig(path, dpi=100)
     plt.close(fig)
@@ -425,8 +425,8 @@ def render_profile_social(path):
     ax.text(640, 375, "Software that finds harmony, shipped.",
             fontsize=25, color=GOLD, fontfamily="Helvetica Neue",
             ha="center")
-    ax.text(640, 432, "squatch.cc   ·   github.com/squatch-stack   ·   "
-            "squatch.cc", fontsize=16, color=SAND,
+    ax.text(640, 432, "squatch.cc   ·   github.com/squatch-stack",
+            fontsize=16, color=SAND,
             fontfamily="Helvetica Neue", ha="center")
     fig.savefig(path)
     plt.close(fig)

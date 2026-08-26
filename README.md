@@ -77,7 +77,7 @@ compose. Figures land in `results/`.
 
 `holo/capture.py` (driven by `run_real_scene.py`) runs the whole stack
 on real captures — Tanks &
-Temples "train" (`.splat`) and the Tucson saguaro scan from squatch.cc
+Temples "train" (`.splat`) and the studio's own Tucson saguaro scan
 (`.spz` v2; parser verified byte-for-byte against nianticlabs/spz):
 ~519k splats, mass-centered crop, four scale bands x chunked cells x
 mixture codebooks (reach follows each band's scale cap — the xfine
