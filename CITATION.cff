@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use holo in your research, please cite it as below."
+title: "holo: holographic computing on FHRR hypervectors"
+type: software
+authors:
+  - family-names: Rankin
+    given-names: Thomas
+license: FSL-1.1-Apache-2.0
+repository-code: "https://github.com/squatch-stack/hdc-holo"
+abstract: >-
+  Holographic data structures, Gaussian-splat scene fields, ridge-fitted
+  holograms, closed-form X-ray rendering, and CRDT replication with
+  observed-remove deletion, all on one substrate: bundles of complex64
+  FHRR phasors. Includes measured capacity laws, tagged wire/storage
+  formats, a real-capture pipeline (.splat/.spz), and an MLX/Metal
+  backend with a NumPy fallback.
+keywords:
+  - hyperdimensional computing
+  - vector symbolic architectures
+  - holographic reduced representations
+  - gaussian splatting
+  - random fourier features
+  - CRDT
