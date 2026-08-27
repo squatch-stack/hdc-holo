@@ -47,6 +47,7 @@ to transfer") — order-sensitive conditions need permuted position tags
 
 import numpy as np
 
+from .demokit import banner
 from .fhrr import FHRR, ItemMemory
 from .ngram import NGramEncoder
 
@@ -201,25 +202,8 @@ def _corrupt(rng, kws, vocab, typo, drop, distract=2):
     return " ".join(out)
 
 
-def demo(dim=2048, seed=0, save_png=True):
-    print(f"== near-enough dispatch: rules without Boolean gates "
-          f"(d={dim}) ==")
-    rng = np.random.default_rng(seed)
-    n_actions, per_topic = 16, 40
-    topics = [[_mkword(rng) for _ in range(per_topic)]
-              for _ in range(n_actions)]
-    vocab = [w for t in topics for w in t]
-
-    def build(n_rules):
-        rules = []
-        for i in range(n_rules):
-            a = i % n_actions
-            kws = rng.choice(topics[a], 6, replace=False)
-            rules.append((" ".join(kws), f"route-{a}"))
-        return rules
-
-    rules = build(256)
-    d = NearEnoughDispatcher(rules, dim=dim, seed=seed)
+def _typo_table(rng, rules, dispatcher, vocab):
+    """How the three engines degrade as the input corrupts."""
     print(f"  {'typo':>6} {'exact-AND':>10} {'matrix':>7} {'bundle':>7}"
           "   (256 rules, 1 keyword dropped)")
     for typo in [0.0, 0.1, 0.3]:
@@ -231,11 +215,14 @@ def demo(dim=2048, seed=0, save_png=True):
             exact = next((a for c, a in rules
                           if all(k in toks for k in c.split())), None)
             hits["exact"] += exact == rules[ci][1]
-            hits["matrix"] += d.dispatch_matrix(text)[0] == rules[ci][1]
-            hits["bundle"] += d.dispatch_bundle(text)[0] == rules[ci][1]
+            hits["matrix"] += dispatcher.dispatch_matrix(text)[0] == rules[ci][1]
+            hits["bundle"] += dispatcher.dispatch_bundle(text)[0] == rules[ci][1]
         print(f"  {typo:>6.1f} {hits['exact']/150:>10.2f} "
               f"{hits['matrix']/150:>7.2f} {hits['bundle']/150:>7.2f}")
 
+
+def _banding_table(rng, build, vocab, dim, seed):
+    """One flat bundle drowns at N=d; bands and clustered routing don't."""
     print("  -- banding rescues the bundle (typo 0.1, 1 dropped) --")
     print(f"  {'N':>6} {'flat':>6} {'B=32':>6} {'clustered top-1':>16} "
           f"{'floor sqrt(N/2d)':>17}")
@@ -255,13 +242,16 @@ def demo(dim=2048, seed=0, save_png=True):
         print(f"  {n:>6} {hits['flat']/150:>6.2f} {hits['b32']/150:>6.2f} "
               f"{hits['cl']/150:>16.2f} {np.sqrt(n/(2*dim)):>17.2f}")
 
+
+def _abstention(rng, rules, dispatcher, vocab):
+    """Refusing to answer is a THRESHOLD, not a branch in the logic."""
     print("  -- abstention: threshold is policy, not logic --")
     ok, bad = [], []
     for _ in range(400):
         ci = rng.integers(len(rules))
         text = _corrupt(rng, rules[ci][0].split(), vocab, 0.35, 3,
                         distract=4)
-        a, s = d.dispatch_matrix(text)
+        a, s = dispatcher.dispatch_matrix(text)
         (ok if a == rules[ci][1] else bad).append(s)
     ok, bad = np.array(ok), np.array(bad)
     alls = np.concatenate([ok, bad])
@@ -271,7 +261,28 @@ def demo(dim=2048, seed=0, save_png=True):
         print(f"  θ={th:.1f}: answers {answered.mean():>4.0%} of inputs "
               f"at {prec:.0%} precision"
               + ("" if th == 0 else "  (the rest escalate — by design)"))
+
+
+def demo(dim=2048, seed=0, save_png=True):
+    banner("near-enough dispatch: rules without Boolean gates", dim)
+    rng = np.random.default_rng(seed)
+    n_actions, per_topic = 16, 40
+    topics = [[_mkword(rng) for _ in range(per_topic)]
+              for _ in range(n_actions)]
+    vocab = [w for t in topics for w in t]
+
+    def build(n_rules):
+        rules = []
+        for i in range(n_rules):
+            a = i % n_actions
+            kws = rng.choice(topics[a], 6, replace=False)
+            rules.append((" ".join(kws), f"route-{a}"))
+        return rules
+
+    rules = build(256)
+    dispatcher = NearEnoughDispatcher(rules, dim=dim, seed=seed)
+    # the RNG is shared and stateful, so these run in a FIXED order
+    _typo_table(rng, rules, dispatcher, vocab)
+    _banding_table(rng, build, vocab, dim, seed)
+    _abstention(rng, rules, dispatcher, vocab)
     print()
-
-
-__all__ = ["BandedDispatcher", "FastNGramProfiler", "NearEnoughDispatcher"]
