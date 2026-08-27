@@ -57,7 +57,7 @@ weighted bundles). Capacity is that signal-to-noise budget — never a
 table size. Structures fail SOFT: noise, then errors, no allocation
 cliff. Every demo (`holo-demos`) prints the measured curve next to this
 prediction; nearby items in dense scenes correlate their noise through
-the shared frequencies, inflating sigma by ~1.5-2x over the i.i.d. law.
+the shared frequencies, inflating sigma by ~1.5-3x over the i.i.d. law.
 
 ## Pages
 
@@ -93,6 +93,7 @@ the shared frequencies, inflating sigma by ~1.5-2x over the i.i.d. law.
 | [sync.md](sync.md) | CRDT replication on Loro | `holo/crdt.py`, `live_sync.py` |
 | [orset.md](orset.md) | observed-remove deletion & undo | `holo/orset.py` |
 | [storage.md](storage.md) | phase-only + magnitude codecs | `holo/phase.py` |
+| [facts.md](facts.md) | claims registry + stale-claim gate | `holo/facts/` |
 
 ## Reading paths
 

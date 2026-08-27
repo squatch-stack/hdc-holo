@@ -50,6 +50,8 @@ jobs:
       - name: Backend must be the NumPy fallback
         run: python -c "from holo import backend; assert backend.backend_name() == 'numpy', backend.backend_name()"
       - run: python -m pytest tests/ -q
+      - name: Claims must not be stale
+        run: holo-facts check --strict
       - name: Demo smoke test
         run: hdc-demos hashmap --dim 2048
 

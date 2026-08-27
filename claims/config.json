@@ -1,0 +1,42 @@
+{
+  "surfaces": [
+    "README.md",
+    "ROADMAP.md",
+    "SDK.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "bench/RECIPE.md",
+    "tests/TESTING.md",
+    "docs/*.md",
+    "holo/*.py",
+    "run_gpu_bench.py",
+    "pyproject.toml",
+    "CITATION.cff",
+    ".zenodo.json"
+  ],
+  "historical_markers": [
+    "Historical note",
+    "were correct at",
+    "at their date",
+    "superseded",
+    "retracted",
+    "retraction",
+    "(0.1 finding)",
+    "at the time",
+    "pre-split baseline",
+    "used to"
+  ],
+  "historical_after_heading": {
+    "SDK.md": "## 0.2 findings (running log)"
+  },
+  "evidence_unverifiable_prefixes": [
+    "gpubench/"
+  ],
+  "fuzzy_threshold": 0.18,
+  "kb_path": null,
+  "unregistered_skip": [
+    "CHANGELOG.md",
+    "docs/related-work.md"
+  ]
+}
