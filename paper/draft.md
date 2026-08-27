@@ -7,10 +7,13 @@ claims checker drift-tests every number below against
 `claims/registry.jsonl`. Conversion is mechanical once a toolchain
 exists.*
 
-**Status.** Sections 1–5 are drafted prose. Sections 6–9 are drafted at
-outline-plus-argument density and need a second pass. Nothing here is
-citation-formatted yet; references are named inline and collected in
-[PAPER.md §9](../PAPER.md).
+**Status.** Complete first draft, ~4,000 words: every section is prose.
+Nothing here is citation-formatted yet — references are named inline
+and collected with their bounding sentences in
+[PAPER.md §9](../PAPER.md) — and the numbers are gated by the claims
+checker, so the draft cannot drift from the measurements it rests on.
+Next passes: citation formatting, figure placement, and a read-through
+for length against the target venue.
 
 ---
 
@@ -265,95 +268,230 @@ merging literature usually enjoys.
 
 ## 6. The law, and where it bends
 
-*(Draft density: argument complete, prose needs a pass.)*
+Section 2 states the capacity law; this section is where it is tested
+rather than asserted. Every demonstration in this work prints its
+measured curve beside the prediction, and the agreement is close enough
+that the interesting content is in the four places where it is not.
+Each deviation is a case where an assumption behind the i.i.d. law
+fails, and each names either its remedy or its open problem.
 
-The capacity law is the paper's spine, and this section is where it is
-tested rather than asserted. Every demonstration prints the measured
-curve against prediction. Four honest deviations:
+**Dense scenes correlate their noise.** The law assumes bundled items
+are independent. Splats that sit near each other in a dense capture are
+not: they share frequencies, and their crosstalk adds coherently rather
+than in quadrature, inflating σ by roughly 1.5–3× over prediction. The
+practical consequence is that the obvious remedy does not work. If the
+residual were Monte-Carlo noise, more dimensions would wash it out —
+so we doubled `d` on the densest capture and measured the result: a 2–4%
+improvement for 600 MB of additional storage. That negative result is
+what identifies the error as coherent, and it redirects the problem
+from "spend dimensions" to "decorrelate or denoise", which we return to
+in §9.
 
-- **Dense scenes correlate their noise.** Nearby splats share
-  frequencies, inflating σ roughly 1.5–3× over the i.i.d. law. The error
-  is *coherent*, not Monte-Carlo, which we established by the negative
-  result that doubling `d` bought 2–4% for +600 MB. More dimensions
-  cannot wash out correlated error.
-- **Per-cell ridge fitting is sampling-limited.** Fitting a hologram to
-  samples beats forward encoding by ~70× held-out on synthetic mixtures,
-  but at real capture density the fit *loses* (0.72/0.53 vs 0.52/0.38),
-  because hundreds of floor-scale splats per cell need coverage at their
-  own kernel width. A spectral prior was required even to make the fit
-  competitive. This places the open direction — a zero-sample analytic
-  projection — inside the classical Fourier-extension problem, which is
-  severely ill-conditioned but provably stable under regularization.
-- **The scale floor is radiometric.** Clamping a thin axis while holding
-  peak amplitude fixed raises each splat's integral, inflating total
-  scene mass 11× on one capture. Measuring what the floor costs by point
-  sampling is ill-posed: needles thinner than a pixel are nearly
-  invisible to point evaluation, so we integrate over the pixel
-  footprint instead — a convolution that is exact because covariances
-  add. Matched to a pixel-integrated target the pipeline reports 11.5%
-  where the sharp-vs-sharp pair reports 18.1%.
-- **Storage has a rate-distortion boundary.** Phase-only codes floor
-  amplitude fields at ~0.24 relative RMSE at any bit depth, because a
-  bundle's magnitude carries information that unit-magnitude codes
-  discard. Magnitude-preserving codes cross that boundary; a
-  gamma-companded polar code is the faithful choice for
-  wide-dynamic-range bundles.
+**Fitting is sampling-limited at real density.** Because the readout is
+linear in the bundle, the bundle is literally the weight vector of a
+random-feature regression, and it can be *fitted* to samples rather than
+accumulated from splats. On synthetic mixtures this is dramatic: the
+fitted vector beats the forward-encoded one by roughly 70× in held-out
+error, because regression finds the optimal vector in the same basis
+and corrects crosstalk that forward bundling simply carries. On real
+captures it loses (0.72/0.53 against forward encoding's 0.52/0.38).
+The diagnosis is coverage: hundreds of floor-scale splats per cell need
+samples at their own kernel width, which is tens of thousands of
+samples per cell, beyond what the dual solve can absorb. A spectral
+prior was necessary even to make the fit competitive — without it,
+minimum-norm regression spreads energy into the codebook's finest
+frequencies and memorizes samples as kernel-width bumps, twelve times
+worse than forward encoding. The natural next step, a zero-sample
+analytic projection with a closed-form region Gram, lands inside the
+classical Fourier-extension problem: severely ill-conditioned, but
+provably stable under regularized least squares, which tells us the
+route needs Tikhonov or truncated-SVD treatment from the first line
+rather than as a rescue.
+
+**The scale floor is radiometric, not merely geometric.** Encoding
+imposes a resolution floor on axis scales, and real captures hit it
+constantly — 99.4–99.7% of encoded splats in every Gaussian capture we
+tested have a thin axis pinned to it, because 3DGS splats are
+overwhelmingly needle-shaped. Raising a thin axis while holding peak
+amplitude fixed raises that splat's integral, and across one capture
+the floor inflates total scene mass by 11×. Quantifying what this costs
+turns out to be a trap worth documenting: measured by point sampling,
+the answer is meaningless, because a sheet thinner than the sampling
+grid is nearly invisible to point evaluation regardless of how much
+mass it carries. Integrating over a pixel footprint instead is exact
+and cheap — a Gaussian convolved with a Gaussian is a Gaussian, so
+covariances simply add — and against a footprint-integrated target the
+pipeline reports 11.5% where the sharp-against-sharp pair reports
+18.1%. The lesson generalizes past this system: the referee has to
+measure the same field the representation was asked to encode.
+
+**Storage has a rate-distortion boundary at magnitude.** Phase-only
+codes, which store each dimension's angle and discard its length, floor
+amplitude-carrying fields at roughly 0.24 relative RMSE at *any* bit
+depth. The reason is structural rather than numerical: a bundle
+accumulated from weighted contributions carries information in its
+magnitudes, and a unit-magnitude code throws that away before the first
+bit is allocated. Magnitude-preserving codes cross the boundary, and a
+gamma-companded polar code is the faithful choice for the
+wide-dynamic-range bundles real captures produce. Recent independent
+work on quantized-phase FHRR reaches the same boundary from the
+opposite side: its bundling operation is not closed under phase
+quantization and must project back onto the unit circle, discarding
+exactly the magnitude our measurements identify as necessary.
+
+Taken together these four say something more useful than any of them
+alone. The law is not a decoration: it predicts well enough that its
+failures are informative, and every failure here was found by measuring
+against it rather than by noticing an artifact.
 
 ## 7. What it costs
 
-*(Draft density: numbers final, framing needs a pass.)*
-
-We score every representation by one referee: reconstruct the field,
-evaluate at the same query points, compare to the source's exact
-mixture. Per-splat formats lose to quantization; bundles lose to
-crosstalk.
+A representation should be judged by a referee it did not choose. We
+score every candidate identically: reconstruct the field it encodes,
+evaluate that field at the same query points, and compare against the
+exact Gaussian mixture of the source capture. Per-splat formats lose to
+quantization, holographic bundles lose to crosstalk, and the referee is
+indifferent to which.
 
 | representation | MB | bytes/splat | field error |
 |---|---:|---:|---:|
-| PLY (SH-0) | 3.9 | 85 | 0.0% |
+| PLY (SH degree 0) | 3.9 | 85 | 0.0% |
 | SPZ v3 | 1.0 | 22 | 0.0% |
 | SOG (SH palette) | 0.8 | 18 | 0.3% |
-| holographic bundles (d=8,192) | 382.8 | 8,354 | 17.4% |
+| holographic bundles (d = 8,192) | 382.8 | 8,354 | 17.4% |
 | same, 8-bit magnitude codec | 95.7 | 2,089 | 17.0% |
+| same, 4-bit magnitude codec | 47.9 | 1,045 | 25.8% |
 
-Two observations survive the loss. The 8-bit codec is *free*: four times
-smaller at slightly **better** error, because max-scaled quantization
-zeroes small components that on a forward-encoded bundle are mostly
-crosstalk — an accidental shrinkage denoiser. And the two families scale
-differently: bundle bytes follow occupied cells while per-splat bytes
-follow content, so ten times the splats in a fixed volume costs a codec
-10× and costs bundles 2.6×. The gap narrows fourfold per decade of
-density and does not close on real captures.
+The result is a loss, and reporting it precisely is the point of
+running the experiment. A bundle is approximately 400× larger and 50×
+less accurate at reproducing the field than a current splat codec. A
+reader whose problem is to store a scene and rasterize it later should
+use the codec; nothing in this paper argues otherwise.
+
+What the bytes buy is the subject of §§3–5: query by algebra rather
+than by traversal, an entire view as a second vector of the same kind,
+and merge by addition with no coordination. A codec sells none of
+those, and sells bytes extremely well.
+
+Two observations survive the loss. The first is that the 8-bit
+magnitude codec is *free*: four times smaller at slightly better error
+than the uncompressed bundle. Max-scaled quantization zeroes the
+smallest components, and on a forward-encoded bundle those components
+are mostly crosstalk, so the codec acts as an accidental shrinkage
+denoiser. Pushing to 4 bits finally costs accuracy, which places the
+useful operating point at 8.
+
+The second is that the two families scale differently with density.
+Bundle bytes are fixed per occupied cell however many splats fall
+inside it, while every per-splat format grows linearly with content.
+Holding the scene volume fixed and increasing splat count tenfold costs
+a codec 10× and costs bundles 2.6×, narrowing the gap fourfold per
+decade. Honesty requires the other half of that sentence: the gap
+narrows but does not close at any density a real capture produces. The
+useful form of the claim is about shape rather than crossover —
+per-splat formats scale with detail, bundles scale with occupied
+volume, so a bundle's cost is predictable from a scene's extent before
+its contents are known.
 
 ## 8. Related work
 
-*(To expand from PAPER.md §9, which lists each work with the sentence it
-forces. Structure: foundations → the four works that bound our claims →
-nearest neighbours → the graphics paragraph.)*
+**Foundations.** The algebra is Plate's Holographic Reduced
+Representations in its Fourier form, with Kanerva's Sparse Distributed
+Memory as the ancestor of the capacity-as-signal-to-noise framing. The
+bridge from that algebra to continuous geometry is fractional power
+encoding, developed as Vector Function Architectures by Frady et al.
+and as Spatial Semantic Pointers by Komer and Eliasmith; the kernel
+identity it relies on is Bochner's theorem in the practical form
+Rahimi and Recht introduced as random Fourier features. Kleyko et al.'s
+surveys are the field's own account of what is settled.
 
-The graphics paragraph should say plainly: rasterization is better at
-rasterizing; anti-aliasing in this family is solved by sampling-rate
-filters and analytic pixel integration, and our scale floor is an ad-hoc
-version of the former.
+**Work that bounds these claims.** Four results remove things this
+paper might otherwise have claimed, and we adopt each rather than
+rediscover it. Quantized-phase FHRR with integer-only binding is
+published: our phase codec is that representation reached from storage
+rather than from hardware, so we claim only the measured boundary where
+it fails and not the representation itself. Anti-aliasing in Gaussian
+splatting is solved by constraining primitive size to the input views'
+sampling rate and by integrating over the pixel window analytically;
+our resolution floor is an ad-hoc version of the former, and our
+footprint evaluator is the pre-projection form of the latter.
+Trajectory simulation via the shift property of fractional binding
+already exists for single and multiple objects, so translation as a
+phase ramp is not a contribution of this work. And recent work wrapping
+neural-network model merging in CRDT semantics is the nearest
+neighbour to §5 — different object, same shape, and the source of our
+sharpest contrast.
+
+**Nearest neighbours.** VSA-OGM is the closest published relative
+overall: SSP-encoded occupancy fields with sparse local updates,
+achieving large latency and memory wins over dense baselines, but
+representing scalar occupancy only — without per-splat covariance,
+colour, rendering, learning, or replication. GVKF arrives at the
+"splatting is a kernel mixture" bridge from the graphics side while
+retaining per-Gaussian parametric storage. CryoSplat and R2-Gaussian
+both apply the Fourier slice theorem to Gaussian primitives for
+closed-form projection, per primitive rather than per view. HyperSpace
+is the nearest VSA-framework effort and contains no scene, splat, or
+replication content.
+
+**Graphics.** Rasterization is better at rasterizing, and the
+compression literature this work is measured against in §7 is better at
+compression. The contribution here is not a faster or smaller renderer;
+it is that a scene, a view of it, and a merge of two edits to it are
+the same kind of object, with one budget that predicts the error of
+each.
 
 ## 9. Limitations and future work
 
-*(Draft density: list complete, prose needed.)*
+The hard limit is occlusion. Alpha compositing requires ordering and
+non-linear accumulation, neither of which superposition admits, so the
+representation renders what integrates. A hybrid — holographic density
+with a classical compositing pass — is the obvious shape of a solution
+and remains unexplored.
 
-Occlusion is outside the algebra. Storage is large in absolute terms.
-Rotation is not a phase ramp — translation is, but rotation remixes
-frequencies across the codebook and needs its own mechanism. Determinism
-is semantic rather than bitwise. Banded and clustered readout require
-structure in the data to pay off.
+Storage is large in absolute terms, as §7 quantifies. Rotation is not a
+phase ramp: translation is exactly a phase ramp, but rotation remixes
+frequencies across the codebook and needs a mechanism of its own.
+Determinism is semantic rather than bitwise — recomputed vectors agree
+to about a part in 10⁷, far under any decision threshold, but digests
+must hash transmitted bytes rather than recomputed sums. Banded and
+clustered readout strategies pay off only when the data has structure
+to exploit: spatial locality for scenes, and its analogue elsewhere.
 
-One generality result belongs here in a sentence rather than as a
-claim: the same capacity law and the same partition-plus-locality remedy
-transfer intact from geometric scenes to *rule tables*, where a
-similarity-dispatch engine reaches 0.98 accuracy at 43× less compute
-than exhaustive matching. That the law governs a domain with no
-geometry in it is the strongest evidence we have that it is a property
-of superposition rather than of splats.
+The open directions follow the deviations in §6. The coherent
+dense-scene residual needs a denoiser rather than more dimensions, and
+the accidental shrinkage observed in §7 suggests that deliberate
+thresholding at the crosstalk noise level is the first thing to try.
+The zero-sample analytic projection needs regularization from the start
+for the reasons the Fourier-extension literature gives. Dynamic scenes
+are the natural extension of §5's mergeable state, with the caveat that
+the underlying shift mechanism is established work and only the
+capture-scale combination would be new.
+
+One result belongs here as evidence of generality rather than as a
+claim. The same capacity law and the same partition-plus-locality
+remedy transfer intact from geometric scenes to *rule tables*, where a
+similarity-dispatch engine over messy text reaches 0.98 accuracy at 43×
+less compute than exhaustive matching, and fails in exactly the way the
+law predicts when its budget is exceeded. That the law governs a domain
+containing no geometry is the strongest evidence available that it is a
+property of superposition rather than of splats.
 
 ## 10. Conclusion
 
-*(To write once §§6–9 settle.)*
+A 3D Gaussian splatting scene can be superposed into a single
+fixed-size complex vector, and once it is, three capabilities stop
+being separate mechanisms. Evaluating the scene is an inner product.
+Rendering an orthographic view of it is folding one factor into that
+vector and taking more inner products. Merging two independently
+edited copies is addition, needing only the single missing axiom to be
+supplied. One capacity law predicts the error of all three and, more
+usefully, predicts well enough that its four failures are diagnostic.
+
+The cost is real and we have measured it: two orders of magnitude more
+storage than a modern splat codec, at fifty times the error, for a
+representation that does not composite and therefore does not render
+what a rasterizer renders. What it offers in exchange is that a scene
+becomes an object with an algebra — one where a query, a view, and a
+merge are the same operation applied differently, and where the noise
+budget of each is known before it is run.
