@@ -159,6 +159,18 @@ slice perpendicular to the view and needs its own dimension budget.
 with the MLX backend ([backend.md](backend.md)) — the pipeline that
 motivated the GPU work.
 
+**Two ground truths.** `exact_slice` point-samples the mixture by
+default; `exact_slice(..., footprint=pix)` integrates over a pixel
+instead (`footprint_blur` — covariances add, so it is `render_mip` at
+sigma = pix/sqrt(12)). The distinction matters here because 99%+ of a
+real capture's splats are needles thinner than a pixel: they are
+nearly invisible to point samples and plainly visible to a pixel that
+integrates across them. Matched pairs are what mean anything — encode
+the field the referee measures. Doing that on Red Rock gives 11.5%
+against a pixel-integrated target where the sharp-vs-sharp pair gives
+18.1%, since blurring concentrates each splat's spectrum for the
+codebook (the mechanism behind the X-ray mip encode).
+
 **Failure modes.** Every band's codebook must reach the GLOBAL scale
 floor or needle splats paint herringbone ([spectral.md](spectral.md));
 mass-centered cropping matters (captures put most splats in a shell of
