@@ -72,9 +72,17 @@ Tracked as GitHub issues under the [0.3 milestone](https://github.com/squatch-st
   stored frames, from a 128 KB vector. Stored-frame noise grows
   slower than the sqrt(T) guide (frame content is correlated);
   undersampled motion ghosts into motion blur rather than failing.
-  Open: rotation is NOT a phase ramp (remixes frequencies — needs its
-  own idea), object identity via OR-Set epochs, CRDT-merged animated
-  scenes, promotion to a module + docs page per the charter bar.
+  Prior art, per the 2026-08-27 sweep: the shift property itself is
+  standard in the Spatial Semantic Pointer literature, and Voelker et
+  al. (Neural Computation 2021) already simulate multi-object
+  trajectories in this algebra — `translate_bundle` is that shift
+  theorem, not a new idea, and this lane must be claimed narrowly:
+  the combination at capture scale, the one-vector animation with
+  time-bound frames, `where_is(object, t)`, CRDT-merged animated
+  scenes, and the cost model. Open: rotation is NOT a phase ramp
+  (remixes frequencies — needs its own idea), object identity via
+  OR-Set epochs, promotion to a module + docs page per the charter
+  bar.
 - **Interop** (LANDED) — `save_ply` + `save_spz` export, and
   `examples/run_viewer.py` renders any capture in real time through Spark.
   Measured: SPZ v2 is 16.4x smaller at 0.04-0.07% field error,

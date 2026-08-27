@@ -582,6 +582,36 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   encode and the referee must describe the SAME field. Comparing a
   sharp encode against a footprint referee (or the reverse) measures
   the blur, not the hologram.
+- **Publication-prep sweep** (2026-08-27, `docs/related-work.md` 0.3
+  delta): four findings, two of which move our own framing rather than
+  someone else's. (a) **qFHRR** (arXiv:2604.25939) publishes
+  quantized-phase FHRR at 3-4 bits with integer-only binding — our HP
+  codec from the hardware side — so phase-only quantized FHRR is no
+  longer a novel representation for us to claim. It CORROBORATES the
+  codec split, though: their bundling is not closed under quantized
+  phase and projects back to the unit circle, discarding exactly the
+  magnitude our measurements showed amplitude fields need (the ~0.24
+  rel RMSE floor that motivated HM/HG). Two routes, one boundary; our
+  contribution is the measured curve across it. (b) **Mip-Splatting**
+  (CVPR 2024) and **Analytic-Splatting** (ECCV 2024) already solve the
+  sampling problem the footprint evaluator rediscovered — S_LO is an
+  ad-hoc version of their 3D smoothing filter — so that lane is adopt
+  and cite, not research; the piece worth keeping is the radiometric
+  one (peak-preserving clamp inflates scene mass 11x). (c) **Motion as
+  a phase ramp has prior art**: the SSP shift property and Voelker et
+  al. (Neural Computation 2021) simulating multi-object trajectories.
+  An earlier session's framing of that lane as unclaimed was WRONG and
+  ROADMAP now says so; what stays open is the capture-scale
+  combination and the cost model. (d) **CRDT model merging**
+  (arXiv:2605.19373) is the nearest neighbour to holo/orset.py, and
+  gives a sharp contrast for a writeup: they find all 26 merge
+  strategies fail commutativity/associativity/idempotency, where
+  superposition hands us the first two free and fails only the third —
+  the exact gap our G-Counter and observed-remove recipes close.
+  Unchallenged and still the claims to lead with: splat scenes as
+  holographic bundles with algebraic queries, projection-slice
+  rendering folded into a bundle, mixture spectral codebooks for
+  per-splat covariance, and a rule engine with a capacity contract.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,
