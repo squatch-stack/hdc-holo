@@ -26,6 +26,15 @@ law to internalize, and one page per proven technique with the math,
 measured budgets, failure modes, and evidence figures inline. New
 contributors: [CONTRIBUTING.md](CONTRIBUTING.md).
 
+<p align="center">
+  <img src="results/real_turntable-scan-tucson.gif" width="380" alt="Tucson saguaro capture orbited from holographic cell bundles"><br>
+  <sub>A real 519k-splat capture orbited entirely from 135 cell
+  bundles — no geometry at render time, no rasterizer: every pixel of
+  every frame is one inner product against a complex64 vector.
+  Evidence and error bars: <a href="docs/real-scenes.md">real
+  scenes</a>.</sub>
+</p>
+
 The substrate is FHRR (Fourier Holographic Reduced Representation): a
 hypervector is `d` unit phasors `e^{i theta}`. Binding is elementwise
 complex multiply (phases add), unbinding by the conjugate is an *exact*
@@ -77,19 +86,22 @@ bands quantize, the mixture keeps covariance continuous, and the two
 compose. Figures land in `results/`.
 
 `holo/capture.py` (driven by `run_real_scene.py`) runs the whole stack
-on real captures — Tanks &
-Temples "train" (`.splat`), the studio's own Tucson saguaro scan
-(`.spz` v2; parser verified byte-for-byte against nianticlabs/spz), and
-the studio's raw Scaniverse exports (`.ply`, both iPhone-LiDAR point
-clouds and full INRIA Gaussian layouts — Red Rock, 547k splats). Each
-scene: mass-centered crop, four scale bands x chunked cells x
+on real captures. The recommended input is the raw Gaussian `.ply`
+(INRIA 3DGS layout — what Scaniverse exports from a phone): full
+per-splat covariance and color, nothing quantized away, and the best
+slice numbers of any format so far (Red Rock, 547k splats: 19%/22%).
+The same loaders take iPhone-LiDAR point-cloud `.ply`, antimatter15
+`.splat` (Tanks & Temples "train"), and Niantic `.spz` v2 (the Tucson
+saguaro scan; parser verified byte-for-byte against nianticlabs/spz).
+Each scene: mass-centered crop, four scale bands x chunked cells x
 mixture codebooks (reach follows each band's scale cap — the xfine
 split is why), color slices against the exact mixture, and
 orthographic X-ray views from a dedicated mip encode (blur is covariance
 addition; a projection only uses frequencies perpendicular to the view,
 so renders need their own dimension budget — and every band's codebook
 must reach the *global* scale floor, or needle splats paint herringbone).
-See `results/real_scan-tucson.png` and `..._xray.png`.
+See `results/real_redrock.png`, `results/real_scan-tucson.png` and
+`..._xray.png`.
 
 [SDK.md](SDK.md) is the charter for packaging the proven parts into a
 distributable SDK: the technique inventory with its evidence, the
