@@ -47,16 +47,35 @@ historical marker ("Historical note", "retraction", …) passes; and
 Supersession is how values change: the old line becomes
 `base.id@<version>` with `status: "superseded"` and stays forever.
 
-**Dogfooding budget (phase 2, honest math).** The fuzzy layer — one
-L2-normalized trigram-profile hypervector per doc chunk, ranked by
-`Re(mat.conj() @ q)` — is a *matrix*, never a bundle. At the ~600-900
-chunks this corpus produces, a flat bundle's crosstalk floor
-`sqrt(N/(2d))` at d=2048 would be ~0.42-0.47 — above any usable
-threshold, and with K=N the bundle's O(K) readout advantage is zero
-anyway. Our own capacity law forbids the romantic design. Fuzzy recall
-is WARN-only in the gate: trigram cosine cannot distinguish a
-corrected restatement from a stale one, so exact value matching owns
+**The fuzzy layer (dogfooding, honest math).** One L2-normalized
+trigram-profile hypervector per doc chunk
+(`holo.dispatch.FastNGramProfiler`, d=2048, seed 0; 274 chunks at this
+writing), ranked by `Re(mat.conj() @ q)`, persisted through the SDK's
+own HG-8 codec (`pack_polar`; never HP — profiles carry magnitudes)
+with a plaintext-free sidecar whose per-chunk sha256 detects a stale
+index at read time. It is a *matrix*, never a bundle: at N≈274-900
+chunks a flat bundle's crosstalk floor `sqrt(N/(2d))` at d=2048 is
+0.26-0.47 — at or above any usable threshold — and with K=N the
+bundle's O(K) readout advantage is zero anyway. Our own capacity law
+forbids the romantic design. Fuzzy recall is WARN-only in the gate:
+trigram cosine cannot distinguish a corrected restatement from a stale
+one (measured: the ROADMAP line that *fixes* the license question
+scores 0.21 against the retracted claim), so exact value matching owns
 the failure decision.
+
+**Calibration (measured on this corpus, `holo-facts calibrate`).**
+Signal = each current claim's rendered statement vs its best own-cite
+chunk: min 0.295, median 0.392, max 0.485. Noise = the same statements
+character-scrambled, best chunk anywhere: median 0.072, p95 0.101, max
+0.130. The threshold (0.18, `claims/config.json`) sits in the gap —
+~1.8x the noise p95, ~0.6x the weakest signal. Negative result worth
+keeping: word-shuffled statements are NOT a noise model — trigram
+profiles largely ignore word order, so shuffled probes scored 0.54 at
+p95, *above* real signal; noise must scramble characters. The first
+calibration run also exposed a chunking defect (consecutive bullets
+merged into one 216-line paragraph, which was silently masking the
+SDK dated-record zone behind marker proximity) — both fixed, both
+test-pinned.
 
 **Failure modes.** The checker sees only registered claims — an
 unregistered number drifts freely until someone registers it (the WARN
@@ -71,6 +90,10 @@ degrade those checks to WARNs rather than failing falsely.
 ```bash
 holo-facts check               # warn mode (pre-commit)
 holo-facts check --strict      # CI gate: exit 1 on FAIL findings
+holo-facts check --strict --fuzzy   # + WARN-only paraphrase probes
+holo-facts index               # (re)build the fuzzy chunk index
+holo-facts search "query" -k 8 # rank chunks; (abstain) below threshold
+holo-facts calibrate           # signal/noise histograms + advice
 holo-facts check --json        # machine-readable findings
 holo-facts new                 # print a registry line template
 git config core.hooksPath .githooks   # opt into the warn hook
