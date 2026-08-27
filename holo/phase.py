@@ -20,8 +20,11 @@ demo measures the retrieval cost — but magnitude matters at high load,
 so quantize codewords freely and think before phase-projecting bundles.
 """
 
+import collections
+
 import numpy as np
 
+from .demokit import Table, banner
 from .fhrr import FHRR
 from .hashmap import HoloMap
 
@@ -233,6 +236,26 @@ def _unpack_polar(buf):
 
 # -- rate-distortion: bytes vs task fidelity --------------------------------
 
+#: everything a codec measurement needs that is fixed for one d — the
+#: alternative was a twelve-argument function or a late-binding closure
+_Cell = collections.namedtuple(
+    "_Cell", "d field truth peak holomap pairs probes")
+
+
+def _codec_measure(cell, S_field, M_map, nbytes, bits, kind):
+    """One (d, codec, bits) cell: field RMSE against the exact mixture,
+    and HoloMap retrieval accuracy, after a codec round trip."""
+    from .accel import readout
+    rmse = float(np.sqrt(np.mean(
+        (readout(cell.probes, cell.field.W, S_field) - cell.truth) ** 2)))
+    rmse /= cell.peak
+    hits = sum(cell.holomap.values.cleanup(
+        np.conj(cell.holomap.keys.get(k)) * M_map)[0] == v
+        for k, v in cell.pairs)
+    return {"d": cell.d, "bits": bits, "nbytes": nbytes, "kind": kind,
+            "field_rmse": rmse, "map_acc": hits / len(cell.pairs)}
+
+
 def codec_curve(dims=(512, 1024, 2048, 4096, 8192),
                 bits_list=(2, 3, 4, 6, 8, 16),
                 n_splats=40, n_pairs=200, n_probe=1500, seed=0):
@@ -248,7 +271,6 @@ def codec_curve(dims=(512, 1024, 2048, 4096, 8192),
         64-value codebook.
     Plus the raw complex64 baseline per d (bits=64). Returns dict rows:
     {d, bits, nbytes, field_rmse (rel peak), map_acc}."""
-    from .accel import readout
     from .fhrr import FHRR
     from .field import GaussianSplatField
     from .hashmap import HoloMap
@@ -270,14 +292,15 @@ def codec_curve(dims=(512, 1024, 2048, 4096, 8192),
         for k, v in pairs:
             m.put(k, v)
 
-        def measure(S_field, M_map, nbytes, bits, kind):
-            rmse = float(np.sqrt(np.mean(
-                (readout(P, field.W, S_field) - truth) ** 2))) / peak
-            hits = sum(m.values.cleanup(
-                np.conj(m.keys.get(k)) * M_map)[0] == v for k, v in pairs)
-            rows.append({"d": d, "bits": bits, "nbytes": nbytes,
-                         "kind": kind, "field_rmse": rmse,
-                         "map_acc": hits / len(pairs)})
+        cell = _Cell(d, field, truth, peak, m, pairs, P)
+
+        def measure(S_field, M_map, nbytes, bits, kind, cell=cell):
+            # `cell` bound as a default, not captured: this closure is
+            # called in-iteration today, but a late-binding capture
+            # would silently measure the LAST d for every row if anyone
+            # ever deferred the call
+            rows.append(_codec_measure(cell, S_field, M_map, nbytes,
+                                       bits, kind))
 
         measure(field.S, m.M, 8 * d, 64, "raw")       # complex64 baseline
         for bits in bits_list:
@@ -294,31 +317,34 @@ def codec_curve(dims=(512, 1024, 2048, 4096, 8192),
     return rows
 
 
-def demo_codec(dim=4096, seed=0, save_png=True):
-    print("== Codec rate-distortion: bytes vs task fidelity ==")
-    rows = codec_curve(seed=seed)
-    print(f"  {'d':>6} {'codec':>6} {'bits':>5} {'bytes':>8} "
-          f"{'field RMSE':>11} {'map acc':>8}")
+def _codec_table(rows):
+    t = Table(("d", 6), ("codec", 6), ("bits", 5), ("bytes", 8, ","),
+              ("field RMSE", 11, ".3f"), ("map acc", 8, ".1%"),
+              indent="  ")
+    t.header()
     for r in rows:
-        print(f"  {r['d']:>6} {r['kind']:>6} {r['bits']:>5} "
-              f"{r['nbytes']:>8,} {r['field_rmse']:>11.3f} "
-              f"{r['map_acc']:>8.1%}")
+        t.row(r["d"], r["kind"], r["bits"], r["nbytes"],
+              r["field_rmse"], r["map_acc"])
 
-    # the punchline: the two tasks SPLIT.
-    # Symbols: phase-only + few bits wins big at equal bytes (cleanup
-    # needs directions, not magnitudes). Fields: the phase PROJECTION
-    # itself sets a hard error floor at any bit depth — a weighted
-    # mixture's signal lives in component magnitudes.
-    best_sym = min((r for r in rows if r["map_acc"] >= 0.995),
-                   key=lambda r: r["nbytes"], default=None)
-    base_sym = min((r for r in rows if r["map_acc"] >= 0.995
-                    and r["bits"] == 64),
-                   key=lambda r: r["nbytes"], default=None)
-    if best_sym and base_sym:
-        print(f"  symbols: {best_sym['bits']}-bit d={best_sym['d']} reaches "
-              f"~100% in {best_sym['nbytes']:,} B — "
-              f"{base_sym['nbytes'] / best_sym['nbytes']:.0f}x fewer bytes "
-              f"than the cheapest complex64 config")
+
+def _codec_symbols_finding(rows):
+    """Cleanup needs DIRECTIONS, so phase-only plus few bits wins big
+    at equal bytes."""
+    solid = [r for r in rows if r["map_acc"] >= 0.995]
+    best = min(solid, key=lambda r: r["nbytes"], default=None)
+    base = min((r for r in solid if r["bits"] == 64),
+               key=lambda r: r["nbytes"], default=None)
+    if not (best and base):
+        return
+    print(f"  symbols: {best['bits']}-bit d={best['d']} reaches "
+          f"~100% in {best['nbytes']:,} B — "
+          f"{base['nbytes'] / best['nbytes']:.0f}x fewer bytes "
+          f"than the cheapest complex64 config")
+
+
+def _codec_fields_finding(rows):
+    """The other half of the split: a weighted mixture's signal lives
+    in component MAGNITUDES, so the phase projection sets a floor."""
     floor = min(r["field_rmse"] for r in rows if r["kind"] == "HP")
     raw = min(r["field_rmse"] for r in rows if r["kind"] == "raw")
     hm = min((r for r in rows if r["kind"] == "HM"),
@@ -330,18 +356,21 @@ def demo_codec(dim=4096, seed=0, save_png=True):
           f"{hm['field_rmse']:.3f} in {hm['nbytes']:,} B "
           f"({8 * hm['d'] / hm['nbytes']:.0f}x smaller than complex64)")
 
-    def _at(kind, bits):
+
+def _codec_companding_finding(rows):
+    def mean_rmse(kind, bits):
         sub = [r for r in rows if r["kind"] == kind and r["bits"] == bits]
+        if not sub:
+            return float("nan")
         return min(np.mean([r["field_rmse"] for r in sub if r["d"] >= 2048]),
-                   9.9) if sub else float("nan")
+                   9.9)
     print(f"  companding (HG, gamma 0.5) vs linear (HM) at the low-bit "
           f"end, field RMSE averaged over d>=2048: "
-          f"4-bit {_at('HG', 4):.3f} vs {_at('HM', 4):.3f}; "
-          f"8-bit {_at('HG', 8):.3f} vs {_at('HM', 8):.3f}")
+          f"4-bit {mean_rmse('HG', 4):.3f} vs {mean_rmse('HM', 4):.3f}; "
+          f"8-bit {mean_rmse('HG', 8):.3f} vs {mean_rmse('HM', 8):.3f}")
 
-    if not save_png:
-        print()
-        return
+
+def _codec_plot(rows):
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -390,6 +419,19 @@ def demo_codec(dim=4096, seed=0, save_png=True):
     print()
 
 
+def demo_codec(dim=4096, seed=0, save_png=True):
+    banner("Codec rate-distortion: bytes vs task fidelity")
+    rows = codec_curve(seed=seed)
+    _codec_table(rows)
+    # the punchline: the two tasks SPLIT
+    _codec_symbols_finding(rows)
+    _codec_fields_finding(rows)
+    _codec_companding_finding(rows)
+    if not save_png:
+        print()
+        return
+    _codec_plot(rows)
+
 def demo(dim=4096, seed=0):
     print(f"== Phase-only & quantized storage (d={dim}) ==")
     space = FHRR(dim, seed=seed)
@@ -411,7 +453,7 @@ def demo(dim=4096, seed=0):
         for k, val in pairs:
             m.put(k, val)
 
-        def accuracy(bundle):
+        def accuracy(bundle, m=m, pairs=pairs, n_pairs=n_pairs):
             hits = 0
             for k, val in pairs:
                 v_hat = FHRR.unbind(bundle, m.keys.get(k))
