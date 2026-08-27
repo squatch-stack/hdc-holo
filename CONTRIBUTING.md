@@ -76,6 +76,19 @@ Present-tense summary line stating the capability or finding, body
 explaining the why and the measured numbers. Evidence figures are
 committed under `results/` (real-scene strand) or `out/` (demos).
 
+## Quality gates
+
+`holo-quality check` enforces the project-structure rules and a lint
+ratchet: existing violations are frozen in `quality/baseline.json` and
+CI fails only on NEW ones, so nothing has to be cleaned up before you
+can commit. Complexity is capped at 10, drivers belong in `examples/`,
+and nothing in `holo/` may import an example. Install with
+`pip install -e '.[quality]'`; editor setup (ruff server +
+basedpyright, both reading `pyproject.toml`) and the full rule
+rationale are in [docs/quality.md](docs/quality.md). Paying debt down
+(`ruff check --fix` then `holo-quality baseline`) is welcome and
+separate from feature work.
+
 ## Claims
 
 Every measured number stated in prose (README, docs/, docstrings —
