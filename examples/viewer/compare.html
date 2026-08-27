@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>holo — splat codec comparison</title>
+<!--
+  Two splat files, one camera: the rate-distortion look. Serve with
+
+      examples/run_viewer.py A.spz --compare B.sog
+
+  Query: ?a=<url>&b=<url>&la=<label>&lb=<label>. Files ending .spz
+  are y-up already; everything else gets the 180-deg-about-x flip our
+  loaders apply (see capture._to_y_up).
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #0d0b09; overflow: hidden; }
+  #wrap { display: grid; grid-template-columns: 1fr 1fr; height: 100vh; }
+  .pane { position: relative; overflow: hidden; }
+  .pane + .pane { border-left: 1px solid #3a332a; }
+  .tag {
+    position: absolute; left: 12px; top: 12px; z-index: 2;
+    color: #cfc7b8; font: 12px/1.5 ui-monospace, Menlo, monospace;
+    background: rgba(13, 11, 9, 0.78); border: 1px solid #3a332a;
+    border-radius: 6px; padding: 7px 11px; pointer-events: none;
+    max-width: calc(100% - 34px);
+  }
+  .tag b { color: #e58a5e; }
+  #load, #err {
+    position: fixed; inset: 0; display: grid; place-items: center; z-index: 5;
+    background: #0d0b09; color: #cfc7b8; transition: opacity .4s;
+    font: 14px ui-monospace, Menlo, monospace; padding: 2rem;
+    text-align: center;
+  }
+  #err { color: #e58a5e; display: none; }
+  #hint {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: 12px;
+    z-index: 3; color: #8a8378; font: 11px ui-monospace, Menlo, monospace;
+    background: rgba(13, 11, 9, .78); border: 1px solid #3a332a;
+    border-radius: 6px; padding: 6px 12px; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="load">loading both scenes…</div>
+<div id="err"></div>
+<div id="wrap">
+  <div class="pane" id="left"><div class="tag"><b id="la">A</b></div></div>
+  <div class="pane" id="right"><div class="tag"><b id="lb">B</b></div></div>
+</div>
+<div id="hint">one camera drives both · drag orbit / right-drag pan / scroll zoom</div>
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.1.0/spark.module.js"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { SparkRenderer, SplatLoader, SplatMesh } from "@sparkjsdev/spark";
+
+const p = new URLSearchParams(location.search);
+const srcA = p.get("a"), srcB = p.get("b");
+document.getElementById("la").textContent = p.get("la") || srcA || "A";
+document.getElementById("lb").textContent = p.get("lb") || srcB || "B";
+const isSpz = (s) => /\.spz(\?|$)/i.test(s);
+
+const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 1000);
+
+async function pane(elId, src) {
+  const el = document.getElementById(elId);
+  const renderer = new THREE.WebGLRenderer({ antialias: false });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  el.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const spark = new SparkRenderer({ renderer });
+  scene.add(spark);
+  // load first, then add: a mesh added before its bytes arrive can
+  // sit unsorted (a black first frame) until something pokes it
+  const packedSplats = await new SplatLoader().loadAsync(src);
+  const mesh = new SplatMesh({ packedSplats });
+  if (!isSpz(src)) mesh.quaternion.set(1, 0, 0, 0);
+  scene.add(mesh);
+  return { renderer, scene, spark, packedSplats, flipped: !isSpz(src) };
+}
+
+let L, R;
+try {
+  [L, R] = await Promise.all([pane("left", srcA), pane("right", srcB)]);
+} catch (e) {
+  document.getElementById("load").remove();
+  const err = document.getElementById("err");
+  err.style.display = "grid";
+  err.textContent = `could not load both scenes — ${e}`;
+  throw e;
+}
+
+// Frame the SUBJECT, not the bounding box: captures trail background
+// out at ~40x the subject, so a box-framed camera aims at empty sky.
+// Median center + a low quantile of distance, as build_scene crops.
+const xs = [], ys = [], zs = [];
+R.packedSplats.forEachSplat((i, c) => {
+  if (i % 37 === 0) { xs.push(c.x); ys.push(c.y); zs.push(c.z); }
+});
+const pct = (a, q) => {
+  const b = a.slice().sort((u, v) => u - v);
+  return b[Math.min(b.length - 1, Math.max(0, Math.floor(q * b.length)))];
+};
+const target = new THREE.Vector3(pct(xs, 0.5), pct(ys, 0.5), pct(zs, 0.5));
+const dist = xs.map((x, i) => Math.max(
+  Math.abs(x - target.x), Math.abs(ys[i] - target.y),
+  Math.abs(zs[i] - target.z)));
+const span = Math.max(2.4 * pct(dist, 0.4), 0.5);
+if (R.flipped) { target.y *= -1; target.z *= -1; }
+camera.position.set(target.x + span, target.y + span * 0.45,
+                    target.z + span);
+
+const controls = new OrbitControls(camera, document.getElementById("wrap"));
+controls.target.copy(target);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+function resize() {
+  const w = innerWidth / 2, h = innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  L.renderer.setSize(w, h);
+  R.renderer.setSize(w, h);
+}
+addEventListener("resize", resize);
+resize();
+
+await Promise.all([L.spark.update({ scene: L.scene, camera }),
+                   R.spark.update({ scene: R.scene, camera })]);
+const ld = document.getElementById("load");
+ld.style.opacity = "0";
+setTimeout(() => ld.remove(), 450);
+
+L.renderer.setAnimationLoop(() => {
+  controls.update();
+  L.renderer.render(L.scene, camera);
+  R.renderer.render(R.scene, camera);      // same camera, both panes
+});
+</script>
+</body>
+</html>

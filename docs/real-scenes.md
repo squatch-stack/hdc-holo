@@ -99,7 +99,10 @@ correctly either way under the spec's own arithmetic, so 1024 is the
 tested default.
 
 `python examples/export_formats.py` writes all three and prints the
-table. Beyond these, [splat-transform](https://github.com/playcanvas/splat-transform)
+table; `examples/run_viewer.py A --compare B` puts any two of them
+side by side under one camera, which is how the SH difference is
+actually judged (it reads as slightly warmer, more angle-dependent
+highlights on lit faces, not as a dramatic gap). Beyond these, [splat-transform](https://github.com/playcanvas/splat-transform)
 adds LOD chunks and standalone HTML viewers, and
 [SuperSplat](https://superspl.at) does hand editing. Note the
 layering: these formats compress *per-splat attribute arrays*, while

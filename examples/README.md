@@ -10,7 +10,8 @@ deeper *evidence drivers* (which generate the figures cited in
 | [hello_hologram.py](hello_hologram.py) | the algebra in 5 minutes: bind/unbind/bundle, a map, a record, the capacity law failing *soft* | nothing |
 | [near_enough_rules.py](near_enough_rules.py) | a rule engine with no Boolean gates: messy-text dispatch, abstention as policy, a 4096-rule book routed at ~43x less compute via clustered bands | nothing |
 | [splats_from_ply.py](splats_from_ply.py) | phone capture → holographic bundles → queries and X-ray renders, ~60 lines (figure: `out/example_splats.png`) | a raw 3DGS `.ply` (Scaniverse export) |
-| [viewer/](viewer/index.html) | real-time splat rendering with occlusion (Spark/three.js): `python examples/run_viewer.py <scene>` from the repo root, any `.ply`/`.spz`/`.splat` | a capture file; CDN access in the browser |
+| [viewer/](viewer/index.html) | real-time splat rendering with occlusion (Spark/three.js): `python examples/run_viewer.py <scene>`, any `.ply`/`.spz`/`.sog`/`.splat` | a capture file; CDN access in the browser |
+| [viewer/compare.html](viewer/compare.html) | two codecs, one camera, side by side — the rate-distortion look: `python examples/run_viewer.py A.spz --compare B.sog` | two files of the same capture |
 
 Run any of them from the repo root:
 
