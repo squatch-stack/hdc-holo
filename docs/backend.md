@@ -41,13 +41,15 @@ copies.
 
 **Failure modes / contract.** Public APIs take and return NumPy;
 backends must match to float32 rounding (pinned by test, both paths vs
-the complex-arithmetic definition). One extension gotcha, learned when
-an out-of-tree CUDA backend was patched in at import time:
-`holo/backend.py` and the `hdc/*` shims bind accel's function
-*objects* at import (`from .accel import readout, ...`), so replacing
-`holo.accel.readout` at runtime leaves every facade on the original —
-patch before the first `holo` import, or patch every binding site (the
-shim-resolution test catches the mismatch).
+the complex-arithmetic definition). Runtime patching works: `holo/backend.py` and every `hdc/*` shim
+resolve through a module `__getattr__` on each access rather than
+binding accel's function objects at import, so an out-of-tree backend
+that replaces `holo.accel.readout` is picked up by the facades and the
+shims immediately. That was a real bug (issue #10) — an out-of-tree
+CUDA backend patched in at import time had every facade-routed call
+silently stay on NumPy, results still correct and the GPU never
+engaged — and it is now pinned by
+`tests/test_holo_facade.py::test_runtime_backend_patch_reaches_the_facade_and_the_shim`.
 
 **Platform precision gotchas** — defaults that silently trade accuracy,
 each discovered by tests/bring-up rather than documentation:

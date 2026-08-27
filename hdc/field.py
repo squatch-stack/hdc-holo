@@ -1,3 +1,5 @@
 """Compatibility shim: the implementation lives in holo/field.py."""
 
-from holo.field import *  # noqa: F403
+from ._shim import delegate
+
+__getattr__, __dir__ = delegate("holo.field")
