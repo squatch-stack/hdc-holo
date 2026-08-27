@@ -15,6 +15,7 @@ the subtraction corrupts the store (there is no rollback in a hologram).
 
 import numpy as np
 
+from .demokit import Table, banner
 from .fhrr import FHRR, ItemMemory, Permutation
 
 
@@ -59,8 +60,10 @@ class SequenceMemory:
 
 
 def demo(dim=4096, seed=0):
-    print(f"== Stack & sequence via permutation (d={dim}) ==")
-    print(f"{'depth':>7} {'LIFO pop accuracy':>18} {'first error at':>15}")
+    banner("Stack & sequence via permutation", dim)
+    table = Table(("depth", 7), ("LIFO pop accuracy", 18, ".1%"),
+                  ("first error at", 15))
+    table.header()
     alphabet = 64
     for depth in [50, 200, 800, 1600]:
         space = FHRR(dim, seed=seed)
@@ -77,8 +80,8 @@ def demo(dim=4096, seed=0):
                 correct += 1
             elif first_err is None:
                 first_err = i + 1
-        print(f"{depth:>7} {correct/depth:>18.1%} "
-              f"{first_err if first_err else '-':>15}")
+        table.row(depth, correct / depth,
+                  first_err if first_err else "-")
 
     space = FHRR(dim, seed=seed)
     seq = SequenceMemory(space)

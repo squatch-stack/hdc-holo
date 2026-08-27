@@ -13,6 +13,7 @@ like a count-min sketch whose 'rows' are the d phasor dimensions.
 
 import numpy as np
 
+from .demokit import Table, banner
 from .fhrr import FHRR, ItemMemory
 
 
@@ -49,8 +50,10 @@ class FrequencySketch:
 
 
 def demo(dim=4096, seed=0):
-    print(f"== Sketches: membership + frequency by bundling (d={dim}) ==")
-    print(f"{'members N':>10} {'pred FPR':>9} {'meas FPR':>9} {'meas FNR':>9}")
+    banner("Sketches: membership + frequency by bundling", dim)
+    table = Table(("members N", 10), ("pred FPR", 9, ".2%"),
+                  ("meas FPR", 9, ".2%"), ("meas FNR", 9, ".2%"))
+    table.header()
     n_probes = 4000
     for n_members in [100, 200, 500, 1000]:
         space = FHRR(dim, seed=seed)
@@ -63,7 +66,7 @@ def demo(dim=4096, seed=0):
         from math import erfc, sqrt
         z = f.threshold / np.sqrt(n_members / (2 * dim))
         pred = 0.5 * erfc(z / sqrt(2))
-        print(f"{n_members:>10} {pred:>9.2%} {fpr:>9.2%} {fnr:>9.2%}")
+        table.row(n_members, pred, fpr, fnr)
 
     space = FHRR(dim, seed=seed)
     sk = FrequencySketch(space)
