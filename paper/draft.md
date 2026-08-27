@@ -495,3 +495,69 @@ what a rasterizer renders. What it offers in exchange is that a scene
 becomes an object with an algebra — one where a query, a view, and a
 merge are the same operation applied differently, and where the noise
 budget of each is known before it is run.
+
+## References
+
+*Generated from [`references.bib`](references.bib) — edit the
+`.bib`, not this list. Every arXiv entry there is verbatim from the
+arXiv API and every DOI from Crossref, both resolved 2026-08-27;
+four book and proceedings entries that neither service indexes are
+marked UNVERIFIED in the file and need a human check before
+submission.*
+
+- **Plate, Tony A.** (1995). *Holographic Reduced Representations* IEEE
+  Transactions on Neural Networks 6(3):623--641 doi:10.1109/72.377968
+- **Plate, Tony A.** (2003). *Holographic Reduced Representation:
+  Distributed Representation for Cognitive Structures* CSLI Publications
+- **Kanerva, Pentti** (1988). *Sparse Distributed Memory* MIT Press
+- **Kanerva, Pentti** (2009). *Hyperdimensional Computing: An Introduction
+  to Computing in Distributed Representation with High-Dimensional Random
+  Vectors* Cognitive Computation 1(2):139--159 doi:10.1007/s12559-009-9009-8
+- **Rahimi, Ali; Recht, Benjamin** (2007). *Random Features for Large-
+  Scale Kernel Machines* Advances in Neural Information Processing Systems
+  20 (NIPS)
+- **Frady, E. Paxon, et al.** (2021). *Computing on Functions Using
+  Randomized Vector Representations* arXiv:2109.03429
+- **Komer, Brent, et al.** (2019). *A Neural Representation of Continuous
+  Space Using Fractional Binding* Proceedings of the 41st Annual Meeting of
+  the Cognitive Science Society (CogSci)
+- **Kleyko, Denis, et al.** (2021). *A Survey on Hyperdimensional
+  Computing aka Vector Symbolic Architectures, Part I: Models and Data
+  Transformations* arXiv:2111.06077
+- **Kleyko, Denis, et al.** (2021). *A Survey on Hyperdimensional
+  Computing aka Vector Symbolic Architectures, Part II: Applications,
+  Cognitive Models, and Challenges* arXiv:2112.15424
+- **Voelker, Aaron R., et al.** (2021). *Simulating and Predicting
+  Dynamical Systems With Spatial Semantic Pointers* Neural Computation
+  33(8):2033--2067 doi:10.1162/neco_a_01410
+- **Snyder, Shay; Poursiami, Hamed; Parsa, Maryam** (2026). *qFHRR:
+  Rethinking Fourier Holographic Reduced Representations through Quantized
+  Phase and Integer Arithmetic* arXiv:2604.25939
+- **Yu, Zehao, et al.** (2023). *Mip-Splatting: Alias-free 3D Gaussian
+  Splatting* IEEE/CVF Conference on Computer Vision and Pattern Recognition
+  (CVPR) (arXiv:2311.16493)
+- **Liang, Zhihao, et al.** (2024). *Analytic-Splatting: Anti-Aliased 3D
+  Gaussian Splatting via Analytic Integration* European Conference on
+  Computer Vision (ECCV) (arXiv:2403.11056)
+- **Adcock, Ben; Huybrechs, Daan; Martin-Vaquero, Jesus** (2012). *On the
+  numerical stability of Fourier extensions* arXiv:1206.4111
+- **Gillespie, Ryan** (2026). *Conflict-Free Replicated Data Types for
+  Neural Network Model Merging: A Two-Layer Architecture Enabling CRDT-
+  Compliant Model Merging Across 26 Strategies* arXiv:2605.19373
+- **Snyder, Shay, et al.** (2024). *Brain Inspired Probabilistic Occupancy
+  Grid Mapping with Vector Symbolic Architectures* arXiv:2408.09066
+- **Snyder, Shay, et al.** (2026). *HyperSpace: A Generalized Framework
+  for Spatial Encoding in Hyperdimensional Representations* arXiv:2604.15113
+- **Song, Gaochao; Cheng, Chong; Wang, Hao** (2024). *GVKF: Gaussian Voxel
+  Kernel Functions for Highly Efficient Surface Reconstruction in Open
+  Scenes* arXiv:2411.01853
+- **Chen, Suyi; Ling, Haibin** (2025). *CryoSplat: Gaussian Splatting for
+  Cryo-EM Homogeneous Reconstruction* arXiv:2508.04929
+- **Zha, Ruyi, et al.** (2024). *R$^2$-Gaussian: Rectifying Radiative
+  Gaussian Splatting for Tomographic Reconstruction* arXiv:2405.20693
+- **Ali, Muhammad Salman, et al.** (2025). *Compression in 3D Gaussian
+  Splatting: A Survey of Methods, Trends, and Future Directions*
+  arXiv:2502.19457
+- **Kerbl, Bernhard, et al.** (2023). *3D Gaussian Splatting for Real-Time
+  Radiance Field Rendering* ACM Transactions on Graphics 42(4)
+  doi:10.1145/3592433
