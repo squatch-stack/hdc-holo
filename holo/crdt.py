@@ -454,6 +454,52 @@ class ReplicatedAttributeScene:
         return out
 
 
+def _demo_plot(view_a, view_b, merged_a, attr_b, P, grid):
+    """The demo's two figures: divergence-then-merge, and a label only
+    one peer ever used being rendered by the other."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("  matplotlib not available; skipping image")
+        return
+
+    vmax = merged_a.max()
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.4))
+    for ax, (title, img) in zip(axes, [
+            ("peer A before sync (left half)", view_a),
+            ("peer B before sync (right half)", view_b),
+            ("either peer after Loro sync", merged_a)]):
+        ax.imshow(img.reshape(grid, grid), origin="lower", cmap="magma",
+                  vmin=0, vmax=vmax)
+        ax.set_title(title, fontsize=10)
+        ax.set_xticks([])
+        ax.set_yticks([])
+    fig.suptitle("Holographic scene as a CRDT: bundles merge by "
+                 "addition, Loro makes the exchange exactly-once",
+                 fontsize=11)
+    fig.tight_layout()
+    import os
+    os.makedirs("out", exist_ok=True)
+    fig.savefig("out/crdt_scene.png", dpi=110)
+    plt.close(fig)
+
+    fig, axes = plt.subplots(1, 2, figsize=(9, 4.4))
+    for ax, lab in zip(axes, ["tree", "rock"]):
+        img = attr_b.eval_where(lab, P).reshape(grid, grid)
+        ax.imshow(img, origin="lower", cmap="magma", vmin=0, vmax=1.1)
+        ax.set_title(f'peer B renders where_is("{lab}")', fontsize=10)
+        ax.set_xticks([])
+        ax.set_yticks([])
+    fig.suptitle("Attributed splats over CRDT sync — B renders "
+                 "'tree', a label only A ever used", fontsize=11)
+    fig.tight_layout()
+    fig.savefig("out/crdt_attributes.png", dpi=110)
+    plt.close(fig)
+    print("  saved out/crdt_scene.png, out/crdt_attributes.png")
+
+
 def demo(dim=4096, seed=0, save_png=True):
     if not HAVE_LORO:
         print("== CRDT demo skipped: pip install loro ==\n")
@@ -572,43 +618,5 @@ def demo(dim=4096, seed=0, save_png=True):
           f"roles and fillers rebuilt from the registry, schema included")
 
     if save_png:
-        try:
-            import matplotlib
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-        except ImportError:
-            print("  matplotlib not available; skipping image")
-            print()
-            return
-        vmax = merged_a.max()
-        fig, axes = plt.subplots(1, 3, figsize=(13, 4.4))
-        for ax, (title, img) in zip(axes, [
-                ("peer A before sync (left half)", view_a),
-                ("peer B before sync (right half)", view_b),
-                ("either peer after Loro sync", merged_a)]):
-            ax.imshow(img.reshape(grid, grid), origin="lower", cmap="magma",
-                      vmin=0, vmax=vmax)
-            ax.set_title(title, fontsize=10)
-            ax.set_xticks([]), ax.set_yticks([])
-        fig.suptitle("Holographic scene as a CRDT: bundles merge by "
-                     "addition, Loro makes the exchange exactly-once",
-                     fontsize=11)
-        fig.tight_layout()
-        import os
-        os.makedirs("out", exist_ok=True)
-        fig.savefig("out/crdt_scene.png", dpi=110)
-        plt.close(fig)
-
-        fig, axes = plt.subplots(1, 2, figsize=(9, 4.4))
-        for ax, lab in zip(axes, ["tree", "rock"]):
-            img = attr_b.eval_where(lab, P).reshape(grid, grid)
-            ax.imshow(img, origin="lower", cmap="magma", vmin=0, vmax=1.1)
-            ax.set_title(f'peer B renders where_is("{lab}")', fontsize=10)
-            ax.set_xticks([]), ax.set_yticks([])
-        fig.suptitle("Attributed splats over CRDT sync — B renders "
-                     "'tree', a label only A ever used", fontsize=11)
-        fig.tight_layout()
-        fig.savefig("out/crdt_attributes.png", dpi=110)
-        plt.close(fig)
-        print("  saved out/crdt_scene.png, out/crdt_attributes.png")
+        _demo_plot(view_a, view_b, merged_a, attr_b, P, grid)
     print()
