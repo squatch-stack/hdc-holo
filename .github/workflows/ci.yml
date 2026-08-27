@@ -51,7 +51,9 @@ jobs:
         run: python -c "from holo import backend; assert backend.backend_name() == 'numpy', backend.backend_name()"
       - run: python -m pytest tests/ -q
       - name: Claims must not be stale
-        run: holo-facts check --strict
+        run: |
+          holo-facts index
+          holo-facts check --strict --fuzzy
       - name: Demo smoke test
         run: hdc-demos hashmap --dim 2048
 

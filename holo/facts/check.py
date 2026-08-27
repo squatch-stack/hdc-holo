@@ -280,7 +280,10 @@ def run(root, strict=False, config=None, claims=None):
 
     def get_paras(rel):
         if rel not in paras:
-            paras[rel] = normalize_file(os.path.join(root, rel))
+            ps = normalize_file(os.path.join(root, rel))
+            for p in ps:
+                p.file = rel   # zone/allowlist keys are repo-relative
+            paras[rel] = ps
             with open(os.path.join(root, rel), encoding="utf-8",
                       errors="replace") as f:
                 raw[rel] = f.read()

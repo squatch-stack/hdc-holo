@@ -43,6 +43,12 @@ Key semantics:
 - `check.fn`: optional derivation pinning the claim to ground truth
   (`count_tests`, `bands_len`, `license_id`, …) — a mismatch means the
   *registry* is stale.
+- Derived values ride their commit: a registry value with a `check.fn`
+  derivation must equal what the TREE IT IS COMMITTED IN derives —
+  bump `tests.count` in the same commit that adds the tests, never in
+  advance in a shared working copy (a cross-lane race taught this: an
+  early bump landed inside another lane's snapshot window and failed
+  their pre-commit derivation check).
 - Pattern style: plain capture regexes, one per phrasing. Lookaheads
   over normalized prose are fragile — table rows, mermaid labels, and
   rejoined wrapped lines reorder context, so `(?=...)` anchors that
