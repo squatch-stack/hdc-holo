@@ -13,13 +13,19 @@ Formats (both byte-verified against the reference implementations):
   .splat (antimatter15) — 32 B/splat: float32[3] pos, float32[3] linear
     scale, u8[4] RGBA (alpha = opacity), u8[4] quaternion ((v-128)/128,
     w first).
-  .spz v2 (Niantic, gzip legacy layout from nianticlabs/spz
-    load-spz.cc) — 16 B header {magic, version, numPoints, shDegree,
-    fracBits, flags}, then per-attribute sections: positions 24-bit
-    signed fixed point, alpha u8 (sigmoid), color u8[3] (SH DC:
-    (v/255-0.5)/0.15), scale u8[3] (log: v/16-10), rotation u8[3]
-    (xyz*127.5+127.5, w recovered), SH last (skipped). The byte count
-    16 + N*(19 + shDim*3) must match exactly.
+  .spz v2/v3 (Niantic, gzip legacy layout from nianticlabs/spz) —
+    16 B header {magic, version, numPoints, shDegree, fracBits,
+    flags}, then per-attribute sections: positions 24-bit signed
+    fixed point, alpha u8 (sigmoid), color u8[3] (SH DC:
+    (v/255-0.5)/0.15), scale u8[3] (log: v/16-10), rotation, then SH
+    ((v-128)/128, coefficient-major with color varying fastest —
+    `parse_spz_sh`). v3 changed rotations only: smallest-three, 4 B
+    (2-bit index of the omitted largest component in the top bits,
+    then three sign+9-bit magnitudes) instead of v2's 3 B xyz. The
+    byte count 16 + N*(16 + rot + shDim*3) must match exactly.
+    v4 replaced the container with per-attribute ZSTD streams behind
+    a 32 B plaintext header: `spz_header` reads it, `parse_spz`
+    refuses it with instructions.
 
 Hard-won codebook rules (violations render as structured artifacts, not
 subtle noise — see docs/spectral.md): every band's mixture must span
@@ -111,45 +117,164 @@ def load_splat(path):
     return pos, scale, rgba, quat
 
 
+SPZ_MAGIC = 0x5053474E
+SPZ_SH_DIM = {0: 0, 1: 3, 2: 8, 3: 15}       # coefficients per degree
+
+
 def load_spz(path):
     with gzip.open(path, "rb") as f:
         buf = f.read()
     return parse_spz(buf)
 
 
-def parse_spz(buf):
-    """Parse decompressed SPZ v2 bytes (split out for testability)."""
-    magic, ver, n, sh_deg, frac_bits, flags, _ = struct.unpack_from(
+def spz_header(buf):
+    """Identify any SPZ file from its first bytes.
+
+    Returns a dict with at least `version`. Versions 1-3 share the
+    16-byte legacy header inside a gzip stream; version 4 replaced it
+    with a 32-byte plaintext NGSP header ahead of per-attribute ZSTD
+    streams — deliberately readable without decompressing anything,
+    which is why this works on a raw v4 file while `parse_spz` cannot
+    yet decode one (see `_SPZ_V4_HELP`).
+    """
+    if buf[:2] == b"\x1f\x8b":                      # gzip: legacy
+        # decompress only what the header needs, so a short read of a
+        # big file still identifies it
+        import zlib
+        buf = zlib.decompressobj(16 + zlib.MAX_WBITS).decompress(buf, 64)
+    magic, ver = struct.unpack_from("<II", buf, 0)
+    if magic != SPZ_MAGIC:
+        raise ValueError("not an SPZ file")
+    if ver >= 4:
+        (_, _, n, sh_deg, frac_bits, flags, n_streams,
+         toc) = struct.unpack_from("<IIIBBBBI", buf, 0)
+        return {"version": ver, "count": n, "sh_degree": sh_deg,
+                "fractional_bits": frac_bits, "flags": flags,
+                "streams": n_streams, "toc_offset": toc,
+                "container": "zstd"}
+    _, _, n, sh_deg, frac_bits, flg, _ = struct.unpack_from(
         "<IIIBBBB", buf, 0)
-    assert magic == 0x5053474E, "not an SPZ file"
-    assert ver == 2, f"only legacy v2 supported, got v{ver}"
-    sh_dim = {0: 0, 1: 3, 2: 8, 3: 15}[sh_deg]
-    expect = 16 + n * (19 + sh_dim * 3)
-    assert len(buf) == expect, f"size mismatch: {len(buf)} vs {expect}"
-    o = 16
-    p24 = np.frombuffer(buf, np.uint8, n * 9, o).reshape(n, 3, 3) \
+    return {"version": ver, "count": n, "sh_degree": sh_deg,
+            "fractional_bits": frac_bits, "flags": flg,
+            "container": "gzip"}
+
+
+_SPZ_V4_HELP = (
+    "SPZ v{ver} stores per-attribute ZSTD streams, not one gzip blob. "
+    "Python has no stdlib zstd before 3.14 and this SDK takes no new "
+    "runtime dependency without review, so v4 decoding is not built in. "
+    "Options: convert with the reference tool (`splat-transform in.spz "
+    "out.ply`), or open an issue to add an optional zstd extra. "
+    "`spz_header()` reads v4 metadata without decompressing."
+)
+
+
+def _spz_quat_v3(buf, o, n):
+    """Smallest-three rotations (v3+): a 2-bit index of the OMITTED
+    (largest) component in the top bits, then three 9-bit magnitudes
+    each with a sign bit, most-significant component first. Mirrors
+    nianticlabs/spz `unpackQuaternionSmallestThree`.
+    """
+    r = np.frombuffer(buf, np.uint8, n * 4, o).reshape(n, 4) \
+        .astype(np.uint32)
+    comp = r[:, 0] | (r[:, 1] << 8) | (r[:, 2] << 16) | (r[:, 3] << 24)
+    i_largest = (comp >> 30).astype(np.int64)
+    mask = (1 << 9) - 1
+    quat = np.zeros((n, 4), np.float64)          # xyzw, per the reference
+    rows = np.arange(n)
+    for i in range(3, -1, -1):                   # low bits are index 3
+        active = i != i_largest
+        mag = (comp & mask).astype(np.float64)
+        neg = ((comp >> 9) & 1).astype(bool)
+        val = np.sqrt(0.5) * mag / mask
+        val = np.where(neg, -val, val)
+        quat[rows[active], i] = val[active]
+        comp = np.where(active, comp >> 10, comp)
+    ss = (quat ** 2).sum(axis=1)
+    quat[rows, i_largest] = np.sqrt(np.clip(1.0 - ss, 0.0, None))
+    return np.concatenate([quat[:, 3:4], quat[:, :3]], axis=1)  # -> wxyz
+
+
+def _spz_sections(buf):
+    """Header, per-point byte offsets, and sizes for a legacy SPZ."""
+    magic, ver, n, sh_deg, frac_bits, _flags, _ = struct.unpack_from(
+        "<IIIBBBB", buf, 0)
+    if magic != SPZ_MAGIC:
+        raise ValueError("not an SPZ file")
+    if ver >= 4:
+        raise NotImplementedError(_SPZ_V4_HELP.format(ver=ver))
+    if ver not in (2, 3):
+        raise ValueError(f"unsupported legacy SPZ version {ver}")
+    sh_dim = SPZ_SH_DIM[sh_deg]
+    rot = 3 if ver == 2 else 4                   # v3 packs 4 bytes
+    expect = 16 + n * (9 + 1 + 3 + 3 + rot + sh_dim * 3)
+    if len(buf) != expect:
+        raise ValueError(f"size mismatch: {len(buf)} vs {expect}")
+    o = {"pos": 16}
+    o["alpha"] = o["pos"] + n * 9
+    o["color"] = o["alpha"] + n
+    o["scale"] = o["color"] + n * 3
+    o["rot"] = o["scale"] + n * 3
+    o["sh"] = o["rot"] + n * rot
+    return ver, n, sh_deg, sh_dim, frac_bits, o
+
+
+def parse_spz(buf):
+    """Parse decompressed legacy SPZ bytes (v2 or v3).
+
+    v3 differs from v2 in exactly one place — rotations became
+    smallest-three (2-bit index + three 10-bit signed components,
+    4 bytes) instead of 8-bit xyz (3 bytes) — which also removes v2's
+    ill-conditioning near 180-degree rotations, since the component
+    reconstructed from the others is always the largest.
+    """
+    ver, n, _sh_deg, _sh_dim, frac_bits, o = _spz_sections(buf)
+    p24 = np.frombuffer(buf, np.uint8, n * 9, o["pos"]).reshape(n, 3, 3) \
         .astype(np.int32)
-    o += n * 9
     fixed = p24[..., 0] | (p24[..., 1] << 8) | (p24[..., 2] << 16)
     fixed -= (fixed & 0x800000) << 1              # sign extension
     pos = fixed.astype(np.float64) / (1 << frac_bits)
-    alpha = np.frombuffer(buf, np.uint8, n, o).astype(np.float32) / 255.0
-    o += n
-    col = np.frombuffer(buf, np.uint8, n * 3, o).reshape(n, 3) \
+    alpha = np.frombuffer(buf, np.uint8, n, o["alpha"]) \
+        .astype(np.float32) / 255.0
+    col = np.frombuffer(buf, np.uint8, n * 3, o["color"]).reshape(n, 3) \
         .astype(np.float32)
-    o += n * 3
     color = np.clip(0.5 + SH_C0 * (col / 255.0 - 0.5) / 0.15, 0, 1)
-    slog = np.frombuffer(buf, np.uint8, n * 3, o).reshape(n, 3) \
+    slog = np.frombuffer(buf, np.uint8, n * 3, o["scale"]).reshape(n, 3) \
         .astype(np.float64)
-    o += n * 3
     scale = np.exp(slog / 16.0 - 10.0)
-    r3 = np.frombuffer(buf, np.uint8, n * 3, o).reshape(n, 3) \
-        .astype(np.float64)
-    xyz = (r3 - 127.5) / 127.5
-    w = np.sqrt(np.clip(1.0 - (xyz**2).sum(axis=1), 0.0, None))
-    quat = np.concatenate([w[:, None], xyz], axis=1)   # -> (w, x, y, z)
+    if ver == 2:
+        r3 = np.frombuffer(buf, np.uint8, n * 3, o["rot"]).reshape(n, 3) \
+            .astype(np.float64)
+        xyz = (r3 - 127.5) / 127.5
+        w = np.sqrt(np.clip(1.0 - (xyz**2).sum(axis=1), 0.0, None))
+        quat = np.concatenate([w[:, None], xyz], axis=1)   # -> (w,x,y,z)
+    else:
+        quat = _spz_quat_v3(buf, o["rot"], n)
     rgba = np.concatenate([color, alpha[:, None]], axis=1)
     return pos, scale, rgba, quat
+
+
+def parse_spz_sh(buf):
+    """Higher-order SH from legacy SPZ bytes as (N, 3, K), or None.
+
+    Every SPZ version carries SH when the header's `shDegree` says so
+    — the DC-only files this pipeline writes are a choice of OUR
+    writer, not a limit of the format. Bytes are coefficient-major
+    with the color channel varying fastest; `unquantizeSH` is
+    (x - 128) / 128.
+    """
+    _ver, n, _sh_deg, sh_dim, _frac, o = _spz_sections(buf)
+    if sh_dim == 0:
+        return None
+    raw = np.frombuffer(buf, np.uint8, n * sh_dim * 3, o["sh"]) \
+        .reshape(n, sh_dim, 3).astype(np.float32)
+    return np.transpose((raw - 128.0) / 128.0, (0, 2, 1))   # -> (N,3,K)
+
+
+def load_spz_sh(path):
+    """`parse_spz_sh` for a file on disk."""
+    with gzip.open(path, "rb") as f:
+        return parse_spz_sh(f.read())
 
 
 def load_ply(path, sigma_scale=0.75):
@@ -328,19 +453,26 @@ def load_ply_sh(path):
                      for c in range(3)], 1).astype(np.float32)
 
 
-def save_spz(path, pos, scale, rgba, quat, frac_bits=12):
-    """Write splats as SPZ v2 — the compressed delivery format
-    (~19 B/splat vs ~68 B in an SH-0 PLY; the exact inverse of
-    `parse_spz`, so round trips are quantization-only).
+def save_spz(path, pos, scale, rgba, quat, frac_bits=12, version=3):
+    """Write splats as legacy SPZ (v3 by default, v2 on request) — the
+    compressed delivery format (~20 B/splat vs ~68 B in an SH-0 PLY;
+    the exact inverse of `parse_spz`, so round trips are
+    quantization-only).
 
     Quantization grid (measured on Red Rock in SDK.md's log):
     positions to 24-bit fixed point (2^-frac_bits units), scales to a
-    log-u8 grid (~6% relative), alpha and color to u8, rotations to
-    u8 xyz with w RECOVERED — angular error < 1.7 deg where
-    |w| > 0.3 but growing as ~grid/w toward w = 0 (rotations near
-    180 deg), an intrinsic SPZ v2 property. SPZ is already y-up —
-    positions pass through unflipped. SPZ v2 carries DC color only
-    (no higher-order SH), same as `save_ply`.
+    log-u8 grid (~6% relative), alpha and color to u8.
+
+    Rotations are where the versions differ, and why v3 is the
+    default: v2 stores 8-bit x/y/z and recovers w, so its angular
+    error grows as ~grid/w and blows up near 180-degree rotations;
+    v3 stores the SMALLEST three components at 9-bit magnitude plus a
+    sign and recovers the largest, which is never ill-conditioned.
+    Pass version=2 only for readers that predate v3.
+
+    SPZ is already y-up — positions pass through unflipped. This
+    writer emits DC color only (shDegree 0); the FORMAT carries
+    higher-order SH at every version, and `parse_spz_sh` reads it.
     """
     pos = np.asarray(pos, np.float64)
     n = len(pos)
@@ -357,15 +489,50 @@ def save_spz(path, pos, scale, rgba, quat, frac_bits=12):
     s_u8 = np.round(np.clip(
         (np.log(np.maximum(np.asarray(scale, np.float64), 1e-12)) + 10.0)
         * 16.0, 0, 255)).astype(np.uint8)
+    if version not in (2, 3):
+        raise ValueError(f"unsupported SPZ write version {version}")
     q = np.asarray(quat, np.float64)
     q = q / np.maximum(np.linalg.norm(q, axis=1, keepdims=True), 1e-9)
-    q *= np.where(q[:, :1] < 0, -1.0, 1.0)     # w >= 0 (w is recovered)
-    r_u8 = np.round(np.clip(q[:, 1:] * 127.5 + 127.5, 0, 255)) \
-        .astype(np.uint8)
-    head = struct.pack("<IIIBBBB", 0x5053474E, 2, n, 0, frac_bits, 0, 0)
+    if version == 2:
+        q = q * np.where(q[:, :1] < 0, -1.0, 1.0)  # w >= 0 (recovered)
+        r_u8 = np.round(np.clip(q[:, 1:] * 127.5 + 127.5, 0, 255)) \
+            .astype(np.uint8)
+    else:
+        r_u8 = _pack_quat_v3(q)
+    head = struct.pack("<IIIBBBB", SPZ_MAGIC, version, n, 0, frac_bits,
+                       0, 0)
     with gzip.open(path, "wb") as f:
         f.write(head + p24.tobytes() + a_u8.tobytes() + col.tobytes()
                 + s_u8.tobytes() + r_u8.tobytes())
+
+
+def _pack_quat_v3(q):
+    """Inverse of `_spz_quat_v3`: drop the largest component, store the
+    other three as 9-bit magnitude + sign, index in the top 2 bits."""
+    q = np.asarray(q, np.float64)
+    q = np.concatenate([q[:, 1:], q[:, :1]], axis=1)      # wxyz -> xyzw
+    n = len(q)
+    i_largest = np.argmax(np.abs(q), axis=1)
+    rows = np.arange(n)
+    q = q * np.where(q[rows, i_largest] < 0, -1.0, 1.0)[:, None]
+    mask = (1 << 9) - 1
+    comp = (i_largest.astype(np.uint32) << np.uint32(30))
+    for i in range(4):
+        sel = i != i_largest
+        val = np.clip(q[:, i] / np.sqrt(0.5), -1.0, 1.0)
+        mag = np.round(np.abs(val) * mask).astype(np.uint32)
+        piece = mag | ((val < 0).astype(np.uint32) << np.uint32(9))
+        # component i sits in the slot counted from the low end,
+        # skipping the omitted one — the order `_spz_quat_v3` reads
+        below = (np.arange(4)[None, :] > i) & (
+            np.arange(4)[None, :] != i_largest[:, None])
+        shift = (below.sum(axis=1) * 10).astype(np.uint32)
+        comp = np.where(sel, comp | (piece << shift), comp)
+    out = np.zeros((n, 4), np.uint8)
+    for b in range(4):
+        out[:, b] = ((comp >> np.uint32(8 * b)) & np.uint32(0xFF)) \
+            .astype(np.uint8)
+    return out
 
 
 def quat_to_rot(q):
