@@ -36,7 +36,7 @@ or theory, (b) a deterministic test, and (c) a documented failure mode.**
 | Phase-only / quantized storage (2x/8x/16x) | `holo/phase.py` | round-trip similarity tests |
 | GPU backend (MLX/Metal, real cos/sin formulation, batched cell decode) | `holo/accel.py` | 37x encode / 106x decode kernels on M1 Max; real-scene holographic stages 13 min -> 24 s end-to-end; matches NumPy to 1e-7 |
 | Observed-remove deletion (OR-Set tombstones, epoch/stroke undo, owner compaction) | `holo/orset.py` | phantom-vs-clean demo (`out/orset_undo.png`); idempotence/add-wins/compaction tests |
-| Capture export + real-time viewing (`save_ply` / `save_spz`, Spark viewer) | `holo/capture.py`, `examples/viewer`, `run_viewer.py` | lossless PLY round trip and SPZ-grid round trip (tests); 16.4x compression at 0.04-0.07% field error vs the exact mixture (`docs/real-scenes.md`) |
+| Capture export + real-time viewing (`save_ply` / `save_spz` / `save_sog`, Spark viewer) | `holo/capture.py`, `holo/sog.py`, `examples/viewer` | lossless PLY round trip and SPZ-grid round trip (tests); 16.4x (SPZ) and 19x (SOG, keeps higher-order SH) compression, 0.04-0.07% field error vs the exact mixture (`docs/real-scenes.md`); SOG decoded back by the spec's own arithmetic (`tests/test_sog.py`) |
 | Near-enough dispatch (similarity rule engine: matrix / one-vector bundle / banded+clustered routing, abstention as policy) | `holo/dispatch.py` | brittleness + banding-rescue + abstention tables (`hdc-demos dispatch`); capacity cliff and rescue pinned by test at N=d (`tests/test_dispatch.py`); `docs/dispatch.md` |
 
 Documented failure modes that the SDK must carry in its docs, not bury:
@@ -475,6 +475,32 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   units around a ~1-unit subject, so a box-framed camera stares at
   empty sky (same medicine as the mass-centered crop: median center,
   low quantile of distance).
+- **SOG export** (capture lane; `holo/sog.py`, `tests/test_sog.py`,
+  driver `examples/export_formats.py`): the delivery format that keeps
+  what SPZ throws away. SOG v2 is a zip of lossless WebP images —
+  16-bit log-space positions split across two, codebook-indexed scales
+  and DC color, smallest-three quaternions, and a PALETTE of
+  higher-order SH. Red Rock: **8.3 MB, 19x** smaller than the source
+  PLY and smaller than SPZ's 10.3 MB, while carrying the
+  view-dependent term SPZ drops entirely. Both compression mechanisms
+  are ones this SDK already believes in: Morton ordering so
+  neighbouring pixels hold nearby splats (locality — unsorted, the
+  images are noise and WebP buys little), and codebooks (the
+  rate-distortion trade holo/phase.py makes for bundles, applied one
+  layer down to per-splat attributes). Honest fidelity: a 1024-entry
+  SH palette lands at 0.62 relative error on the SH term — it keeps
+  ~40% of what SPZ discards (SH-attributable color error 9.9% ->
+  ~6.1%), and that is near the FORMAT's ceiling here, not a tuning
+  miss: 8x the palette only reaches 0.53, so this capture's SH
+  residual is intrinsically hard to vector-quantize (a negative result
+  worth remembering before anyone reaches for a bigger palette).
+  Reader gotcha for the shelf, found by bisection: the spec allows
+  palettes to 65536 and our writer is spec-correct at any size (the
+  test decodes it with the spec's own arithmetic), but **Spark 2.1.0
+  renders 256 and 1024 and shows NOTHING at 2048** — a reader ceiling,
+  so 1024 is the tested default. Verification chain worth copying:
+  independent spec decoder in tests + visual confirmation in a
+  third-party renderer, which is what isolated the reader limit.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,

@@ -288,6 +288,46 @@ def save_ply(path, pos, scale, rgba, quat):
                 + b"end_header\n" + rec.tobytes())
 
 
+def load_ply_sh(path):
+    """Higher-order SH from a 3DGS PLY as (N, 3, K), or None.
+
+    The view-dependent term `load_ply` drops: 73% of a raw capture's
+    bytes for ~10% of its color energy (`docs/real-scenes.md`), which
+    only SOG export currently carries. INRIA writes `f_rest_i` in
+    channel-major order (i = channel * K + coefficient). Returned in
+    the FILE's frame — no y-up flip, since rotating a scene rotates
+    the SH basis too, and the export writes y-down anyway.
+    """
+    with open(path, "rb") as f:
+        assert f.readline().strip() == b"ply", "not a PLY file"
+        props, n, fmt = [], 0, None
+        while True:
+            line = f.readline().strip()
+            if line == b"end_header":
+                break
+            parts = line.split()
+            if parts[0] == b"format":
+                fmt = parts[1].decode()
+            elif parts[0] == b"element":
+                in_vertex = parts[1] == b"vertex"
+                if in_vertex:
+                    n = int(parts[2])
+            elif parts[0] == b"property" and in_vertex \
+                    and parts[1] != b"list":
+                props.append(parts[2].decode())
+        rest = [p for p in props if p.startswith("f_rest_")]
+        if not rest or fmt != "binary_little_endian":
+            return None
+        dt = np.dtype([(nm, "<f4") for nm in props])
+        rec = np.frombuffer(f.read(n * dt.itemsize), dtype=dt, count=n)
+    k = len(rest) // 3
+    if k not in (3, 8, 15):
+        return None
+    return np.stack([np.stack([rec[f"f_rest_{c * k + i}"]
+                               for i in range(k)], 1)
+                     for c in range(3)], 1).astype(np.float32)
+
+
 def save_spz(path, pos, scale, rgba, quat, frac_bits=12):
     """Write splats as SPZ v2 — the compressed delivery format
     (~19 B/splat vs ~68 B in an SH-0 PLY; the exact inverse of
