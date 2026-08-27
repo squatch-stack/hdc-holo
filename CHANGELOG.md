@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-08-27
 
 <!-- claims: allow project.license@0.2.1 -->
 - **Relicensed to Apache-2.0** (LICENSE.md). FSL-1.1-Apache-2.0's
@@ -14,7 +14,51 @@
   Apache's patent grant is the real protection against someone gating
   the ideas. Releases 0.2.0 and 0.2.1 remain under FSL as published.
 
-
+- **First PyPI release: `pip install hdc-holo`.** The distribution is
+  `hdc-holo`; the import stays `holo`. That split is forced — `holo`
+  on PyPI belongs to an unrelated 2020 project — and it is ordinary
+  (`scikit-learn`/`sklearn`, `pillow`/`PIL`). One sharp edge, stated
+  rather than discovered: that other project also installs a top-level
+  `holo/`, so installing both puts two projects at one import path.
+  Published by GitHub Actions through PyPI Trusted Publishing, so no
+  API token exists to leak, and the workflow refuses to publish a tag
+  whose name disagrees with `holo.__version__`.
+- **Claims registry and stale-claim gate** (`holo/facts/`,
+  `holo-facts`, [docs/facts.md](docs/facts.md)). Measured numbers in
+  this repo live in many surfaces at once — SDK.md births them, then
+  README, ROADMAP, docs, CHANGELOG and docstrings repeat them — and
+  they had already drifted apart in seven places. Every number is now
+  a typed claim in `claims/registry.jsonl`, checked against its
+  citation sites and, where possible, re-derived from code or the tree
+  itself, so a mismatch reads "the registry is stale" rather than
+  leaving both numbers plausible. Superseded values are never deleted:
+  they stay as the historical allowlist, which is what lets a
+  changelog keep saying what was true at its date. CI blocks on
+  `holo-facts check --strict`. A trigram-profile retrieval layer over
+  the same corpus catches paraphrased restatements as WARN-only —
+  built on this SDK's own machinery, as a matrix and deliberately not
+  a bundle, because at that chunk count our own capacity law forbids
+  the bundle. `holo-facts mcp` serves the registry to agent sessions.
+- **Quality system** (`holo/quality/`, `holo-quality`,
+  [docs/quality.md](docs/quality.md)). Structure rules (root clutter,
+  module/test pairing, driver leaves, unreachable shims), a lint
+  ratchet keyed by (file, rule) rather than line number so it survives
+  refactors, a Kuzu/Cypher index of the codebase for structural
+  queries, and a checked-in LSP configuration. Lint debt fell 293 -> 50
+  across the campaign, with the survivors documented as deliberate
+  rather than silenced.
+- `holo/demokit.py`: `banner` and `Table`. Eighteen modules had each
+  re-derived the same output formatting; none of them format their own
+  output any more.
+- Fixed [#10](https://github.com/squatch-stack/hdc-holo/issues/10):
+  `holo/backend.py` and every `hdc/*` shim resolve through a module
+  `__getattr__` per access instead of binding `accel`'s functions at
+  import. An out-of-tree backend patched over `holo.accel.readout` had
+  been silently ignored by every facade-routed call — results still
+  correct, the GPU never engaged. Pinned by test.
+- [PAPER.md](PAPER.md) and [paper/draft.md](paper/draft.md): the
+  publication pass — three claims, one law, one boundary — drafted in
+  a claims-gated surface so every number in it is drift-tested.
 - Export bridge: `save_ply` (raw Gaussian PLY, INRIA layout, SH
   degree 0, ecosystem y-down convention on disk — lossless to float32
   rounding) and `save_spz` (SPZ v2, 16.4x smaller at 0.04-0.07% field
