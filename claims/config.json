@@ -9,6 +9,8 @@
     "bench/RECIPE.md",
     "tests/TESTING.md",
     "docs/*.md",
+    "examples/*.md",
+    "examples/*.py",
     "holo/*.py",
     "run_gpu_bench.py",
     "pyproject.toml",

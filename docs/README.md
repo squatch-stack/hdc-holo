@@ -25,6 +25,7 @@ flowchart LR
         QUERY["point / slice queries<br/>what_is_at · where_is"]
         RENDER["X-ray views<br/>(projection-slice)"]
         FIT["ridge fitting<br/>(bundle = weights)"]
+        ROUTE["near-enough dispatch<br/>(rules as similarity)"]
     end
     subgraph infra["infrastructure"]
         SYNC["CRDT sync (Loro)<br/>+ OR-Set deletion"]
@@ -35,7 +36,7 @@ flowchart LR
     FPE --> BUNDLE
     SPEC --> BANDS --> BUNDLE
     STRUCT["data structures<br/>map · record · graph …"] --> BUNDLE
-    BUNDLE --> QUERY & RENDER
+    BUNDLE --> QUERY & RENDER & ROUTE
     FIT --> BUNDLE
     BUNDLE <--> SYNC
     BUNDLE <--> STORE
@@ -86,6 +87,12 @@ the shared frequencies, inflating sigma by ~1.5-3x over the i.i.d. law.
 | [fit.md](fit.md) | ridge-fitting holograms from data | `holo/fit.py` |
 | [render.md](render.md) | closed-form X-ray rendering | `holo/render.py` |
 
+**Applications**
+
+| Page | Technique | Implementation |
+|---|---|---|
+| [dispatch.md](dispatch.md) | near-enough dispatch: rules as similarity, abstention as policy | `holo/dispatch.py` |
+
 **Collaboration and persistence**
 
 | Page | Technique | Implementation |
@@ -105,6 +112,9 @@ the shared frequencies, inflating sigma by ~1.5-3x over the i.i.d. law.
 - **"Multiplayer / offline-first."** — [core](core.md) →
   [sync](sync.md) → [orset](orset.md) → [storage](storage.md).
 - **"Learning and fitting."** — [fields](fields.md) → [fit](fit.md).
+- **"Rules and routing without Boolean logic."** —
+  [core](core.md) → [structures](structures.md) →
+  [dispatch](dispatch.md).
 
 [related-work.md](related-work.md) positions the repo against the
 literature (arXiv sweep with dates): theory anchors, nearest neighbors,

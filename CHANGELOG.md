@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Near-enough dispatch (`holo/dispatch.py`, demo `hdc-demos dispatch`,
+  page `docs/dispatch.md`): a rule engine with no Boolean gates —
+  conditions as trigram-profile hypervectors, dispatch as similarity,
+  abstention as policy. Matrix / one-vector-bundle / banded engines;
+  k-means-clustered top-r routing holds 0.98 accuracy on a 4096-rule
+  book at 43x less compute than the matrix engine. The capacity law
+  and the banding medicine transfer unchanged from scenes to rules.
+- `examples/`: three worked introductions (the algebra in five
+  minutes; near-enough rules incl. the reproducible 4096-rule banding
+  experiment; capture -> bundles -> verified slice -> X-ray).
 - Raw Gaussian `.ply` (INRIA 3DGS layout) promoted to the recommended
   capture interchange — full per-splat covariance, nothing quantized
   away; Red Rock is the flagship capture. README front page now shows
