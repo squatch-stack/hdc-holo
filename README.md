@@ -114,9 +114,28 @@ to the evidence. CI (`.github/workflows/ci.yml`) runs the suite on
 Linux with no MLX (the NumPy-fallback proof) and on Apple silicon with
 MLX plus a forced-NumPy pass.
 
+## Install
+
+```bash
+pip install hdc-holo
+```
+
+The distribution is **`hdc-holo`**; the import is **`holo`**. The split
+is forced — `holo` on PyPI belongs to an unrelated 2020 project — and
+it is ordinary enough (`scikit-learn`/`sklearn`, `pillow`/`PIL`). One
+sharp edge worth stating rather than leaving to be discovered: that
+other project also installs a top-level `holo/`, so an environment with
+both has two projects at one import path. Nothing warns you; don't
+install both.
+
+Extras: `.[crdt]` (Loro replication), `.[viz]` (figures), `.[gpu]`
+(MLX/Metal backend, macOS), `.[facts]` (claims MCP server),
+`.[quality]` (lint ratchet + code graph).
+
 ## Run it
 
 ```bash
+git clone https://github.com/squatch-stack/hdc-holo && cd hdc-holo
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 # numpy is pinned <2.0 (OpenBLAS wheels): the Accelerate-backed numpy 2.0
 # wheels on macOS corrupt float32 GEMV with heap-dependent NaNs (holo/fit.py)
@@ -127,8 +146,7 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/python -m pytest tests/        # correctness suite
 ```
 
-Extras: `.[crdt]` (Loro replication), `.[viz]` (figures), `.[gpu]`
-(MLX/Metal backend, macOS). `examples/run_demos.py` remains as a shim.
+`examples/run_demos.py` remains as a shim.
 
 The `holo` package is both the SDK surface and the implementation home
 (`import holo` — charter-named facade modules `core`, `encode`,

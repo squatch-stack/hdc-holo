@@ -1,5 +1,5 @@
 {
-  "title": "holo: holographic computing on FHRR hypervectors",
+  "title": "hdc-holo: holographic computing on FHRR hypervectors",
   "description": "<p>Holographic data structures, Gaussian-splat scene fields, ridge-fitted holograms, closed-form X-ray rendering, and CRDT replication with observed-remove deletion, all on one substrate: bundles of complex64 FHRR phasors, where a lookup is an inner product and capacity is a measured signal-to-noise budget. Includes tagged wire/storage formats, a real-capture pipeline (.splat / .spz / .ply), and an MLX/Metal GPU backend with an identical NumPy fallback. Documentation carries one page per technique: the math, the API, the measured capacity budget, the failure modes, and the evidence figures &mdash; negative results included.</p>",
   "creators": [
     {
@@ -16,5 +16,6 @@
     "random fourier features",
     "CRDT"
   ],
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "version": "0.3.0"
 }
