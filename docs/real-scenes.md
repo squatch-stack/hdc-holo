@@ -18,15 +18,25 @@ flowchart LR
 ```
 
 **What.** The whole stack pointed at real pretrained Gaussian-splatting
-scenes: antimatter15 `.splat` (Tanks & Temples "train"), Niantic
-`.spz` v2 (the Tucson saguaro capture, ~519k splats), and `.ply` in
-both flavors — plain point clouds (iPhone LiDAR) and the full INRIA
-Gaussian layout (SH DC color, sigmoid opacity, log scales, wxyz
-quaternions; the studio's raw Scaniverse exports load natively). All
-parsers are byte-verified against reference implementations or
-synthetic-bytes tests (`.splat`: 32 B/splat pos/scale/RGBA/quaternion;
-`.spz` v2: gzip, 24-bit fixed-point positions, log-encoded scales,
-sigmoid alpha — byte counts must match the header exactly).
+scenes. The *recommended* interchange is the raw Gaussian `.ply` (the
+INRIA 3DGS layout: SH DC color, sigmoid opacity, log scales, wxyz
+quaternions — what Scaniverse exports straight from a phone): it
+carries full per-splat covariance and color with nothing quantized
+away, and it produced the best Gaussian-capture numbers so far (Red
+Rock, below). The same loaders take `.ply` point clouds (iPhone
+LiDAR, encoded as density-matched isotropic splats), antimatter15
+`.splat` (Tanks & Temples "train"), and Niantic `.spz` v2 (the Tucson
+saguaro capture, ~519k splats — note `.spz` stores 24-bit fixed-point
+positions and log-encoded scales, i.e. a lossy export of the same
+scene the raw `.ply` keeps exact). All parsers are byte-verified
+against reference implementations or synthetic-bytes tests
+(`.splat`: 32 B/splat pos/scale/RGBA/quaternion; `.spz` v2: gzip,
+24-bit fixed-point positions, log-encoded scales, sigmoid alpha —
+byte counts must match the header exactly). Loaders normalize every
+format to one y-up world: 3DGS `.ply` and `.splat` arrive in the
+COLMAP-style y-down convention and are rotated 180° about x on load
+(positions AND per-splat rotations — a covariance-congruence test
+pins it); `.spz` and LiDAR clouds are already y-up.
 
 The encode composes three documented techniques: the spectral encoder
 ([spectral.md](spectral.md)) so every splat keeps its own anisotropic
@@ -54,8 +64,24 @@ floor or needle splats paint herringbone ([spectral.md](spectral.md));
 mass-centered cropping matters (captures put most splats in a shell of
 background); projections without a mip encode are noise-dominated.
 
-**Evidence.** The Tucson saguaro capture (519k splats), color slices
-against the exact mixture:
+**Evidence.** Red Rock — a raw Scaniverse 3DGS `.ply` export off a
+phone, 547k splats after crop, through the fixed pipeline. The best
+Gaussian-capture slice numbers so far (19%/22%), from the format that
+keeps every splat exact:
+
+![Red Rock: ground truth vs holographic slices](../results/real_redrock.png)
+
+![Red Rock X-ray views: full-detail analytic, mip analytic, rendered from bundles](../results/real_redrock_xray.png)
+
+Red Rock orbited entirely from 189 cell bundles — no geometry at
+render time (`run_turntable.py --crop 0.5 --elev 0.7`; phone scans of
+a single subject concentrate their mass in a small core, so the
+turntable wants a tighter crop than the slice evidence):
+
+![Red Rock turntable from cell bundles](../results/real_turntable-redrock.gif)
+
+The Tucson saguaro capture (`.spz`, 519k splats), color slices against
+the exact mixture:
 
 ![saguaro: ground truth vs holographic slices](../results/real_scan-tucson.png)
 
@@ -69,11 +95,9 @@ render time ([render.md](render.md)):
 
 ![saguaro turntable from cell bundles](../results/real_turntable-scan-tucson.gif)
 
-Red Rock (a raw Scaniverse 3DGS export, 547k splats after crop)
-through the same pipeline — the best Gaussian-capture slice numbers so
-far (23%/23%): `results/real_redrock.png`. An iPhone LiDAR room cloud
-(291k points as density-matched isotropic splats) decodes at 22%/30%
-with sub-second slices: `results/real_lidar-dense.png`.
+An iPhone LiDAR room cloud (291k points as density-matched isotropic
+splats) decodes at 22%/30% with sub-second slices:
+`results/real_lidar-dense.png`.
 
 Tanks & Temples "train" through the same fixed pipeline:
 `results/real_train.png`, `results/real_train_xray.png` (the
