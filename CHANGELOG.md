@@ -14,6 +14,11 @@
   smaller than SPZ) while carrying the view-dependent SH that SPZ
   drops; `load_ply_sh` reads that term out of a 3DGS PLY, and
   `examples/export_formats.py` writes all three formats side by side.
+- `examples/run_viewer.py --compare B`: two splat files rendered side
+  by side under one shared camera (`examples/viewer/compare.html`) —
+  the rate-distortion look, for judging codecs by eye instead of by
+  claim. Scene files are now served by explicit route, so the two may
+  live in different directories and no directory is exposed.
 - `examples/run_viewer.py` + `examples/viewer`: real-time splat rendering with
   occlusion (Spark/three.js from CDN, nothing installed locally) for
   any `.ply`/`.spz`/`.splat` — the display complement to the X-ray
