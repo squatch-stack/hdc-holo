@@ -49,3 +49,7 @@ rs.analogy(usa, mex, "dollar")           # ('peso', ~1.0)
 **Evidence.** `tests/test_hashmap.py` ... `tests/test_sdm.py`;
 capacity tables from `holo-demos hashmap sketch record sequence ngram
 graph fsm sdm` — each demo pushes past its cliff on purpose.
+
+Built on these: [dispatch.md](dispatch.md) turns trigram profiles +
+bind/bundle/cleanup into a rule engine — the SDK's first
+application-layer technique.

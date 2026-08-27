@@ -24,10 +24,13 @@ and in `docs/`, with figures. Nothing unproven enters the SDK surface.
   rules on real bundles (HG-8 faithful; HM-4 an accidental denoiser),
   cross-hardware verified kernel bench (RTX 5090 ~9x M1 Max, >200x
   CPU, float64 checksums to 2.5e-8; the TF32 platform gotcha found and
-  neutralized), and native capture ingestion for iPhone LiDAR point
+  neutralized), native capture ingestion for iPhone LiDAR point
   clouds and raw 3DGS Gaussian PLYs (Scaniverse Red Rock, 547k splats:
   best Gaussian-capture slice numbers yet, 19%/22% — raw `.ply` is now
-  the recommended interchange).
+  the recommended interchange), and the first application-layer
+  technique: near-enough dispatch (`holo/dispatch.py` — rules as
+  similarity, abstention as policy, banded rulebooks; the capacity
+  law and the banding medicine transfer from scenes to rule tables).
 
 ## 0.3 candidates (unclaimed unless noted)
 
@@ -57,6 +60,12 @@ Tracked as GitHub issues under the [0.3 milestone](https://github.com/squatch-st
   Remaining blocker: flipping the repo public (user step).
 - **Package name decision** ([#7](https://github.com/squatch-stack/hdc-holo/issues/7)) — `holo` is the charter's working name;
   rename happens once, before PyPI.
+- **Near-enough runtime** (no issue yet) — grow `holo/dispatch.py`
+  from router to runtime: order-sensitive conditions (permuted
+  position tags), record-valued conditions (role-filler payloads as
+  rule state), and CRDT-merged rulebooks over the sync layer — the
+  banded bundles already add; wire them through `holo/crdt.py` and
+  measure merge behavior under concurrent rule edits.
 
 ## Support this work
 

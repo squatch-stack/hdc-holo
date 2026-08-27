@@ -43,6 +43,12 @@ Key semantics:
 - `check.fn`: optional derivation pinning the claim to ground truth
   (`count_tests`, `bands_len`, `license_id`, …) — a mismatch means the
   *registry* is stale.
+- Pattern style: plain capture regexes, one per phrasing. Lookaheads
+  over normalized prose are fragile — table rows, mermaid labels, and
+  rejoined wrapped lines reorder context, so `(?=...)` anchors that
+  held in one surface silently miss in another (measured in the
+  dispatch lane's registration pass). When a claim is restated several
+  ways, add several plain patterns rather than one clever one.
 
 ## Historical contexts (where old numbers stay legal)
 

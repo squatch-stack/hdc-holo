@@ -5,7 +5,8 @@ The charter-named modules organize the surface:
 
     holo.core        FHRR algebra, spaces, codewords, cleanup memories
     holo.encode      FPE splat fields, covariance bands, spatial cells
-    holo.structures  map / sketch / record / sequence / graph / FSM / SDM
+    holo.structures  map / sketch / record / sequence / graph / FSM /
+                     SDM / near-enough dispatch
     holo.scene       attribute- and color-carrying splat scenes
     holo.query       role-filler records and query patterns
     holo.render      projection-slice views straight from bundles
@@ -41,6 +42,8 @@ from .fit import FrequencyBands, HoloRegressor
 from .render import render_orthographic, view_bundle, exact_projection
 from .color import ColorSplatField, ReplicatedColorScene
 from .orset import ORStore, ORHoloMap, ORStrokeScene
+from .dispatch import (NearEnoughDispatcher, BandedDispatcher,
+                       FastNGramProfiler)
 from .spectral import (SplatScene, sample_frequencies, decode_weights,
                        spectral_bundle, phasor_bundle, decode_field,
                        decode_field_phasor, translate_bundle)
@@ -63,6 +66,7 @@ __all__ = [
     "render_orthographic", "view_bundle", "exact_projection",
     "ColorSplatField", "ReplicatedColorScene",
     "ORStore", "ORHoloMap", "ORStrokeScene",
+    "NearEnoughDispatcher", "BandedDispatcher", "FastNGramProfiler",
     "SplatScene", "sample_frequencies", "decode_weights", "spectral_bundle",
     "phasor_bundle", "decode_field", "decode_field_phasor",
     "translate_bundle",

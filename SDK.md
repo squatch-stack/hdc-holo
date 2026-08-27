@@ -36,6 +36,7 @@ or theory, (b) a deterministic test, and (c) a documented failure mode.**
 | Phase-only / quantized storage (2x/8x/16x) | `holo/phase.py` | round-trip similarity tests |
 | GPU backend (MLX/Metal, real cos/sin formulation, batched cell decode) | `holo/accel.py` | 37x encode / 106x decode kernels on M1 Max; real-scene holographic stages 13 min -> 24 s end-to-end; matches NumPy to 1e-7 |
 | Observed-remove deletion (OR-Set tombstones, epoch/stroke undo, owner compaction) | `holo/orset.py` | phantom-vs-clean demo (`out/orset_undo.png`); idempotence/add-wins/compaction tests |
+| Near-enough dispatch (similarity rule engine: matrix / one-vector bundle / banded+clustered routing, abstention as policy) | `holo/dispatch.py` | brittleness + banding-rescue + abstention tables (`hdc-demos dispatch`); capacity cliff and rescue pinned by test at N=d (`tests/test_dispatch.py`); `docs/dispatch.md` |
 
 Documented failure modes that the SDK must carry in its docs, not bury:
 crosstalk grows as `sqrt(N/2d)` and coherently worse in dense scenes;
@@ -74,7 +75,9 @@ holo/                       (working name; package rename happens once)
   backend.py    numpy | mlx dispatch (today's now holo/accel.py)
 docs/           narrative docs: one page per technique = math, API,
                 capacity budget, failure modes, the evidence figure
-examples/       today's run_* scripts, curated
+examples/       worked introductions (the algebra, dispatch, captures);
+                run_*.py stay at the root as the evidence drivers
+                that regenerate the docs figures
 ```
 
 Principles:

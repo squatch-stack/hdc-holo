@@ -23,8 +23,9 @@ signal-to-noise budget instead of a table size.
 
 **Start here: [docs/](docs/README.md)** — an architecture map, the one
 law to internalize, and one page per proven technique with the math,
-measured budgets, failure modes, and evidence figures inline. New
-contributors: [CONTRIBUTING.md](CONTRIBUTING.md).
+measured budgets, failure modes, and evidence figures inline. Worked
+introductions: [examples/](examples/README.md). New contributors:
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 <p align="center">
   <img src="results/real_turntable-scan-tucson.gif" width="380" alt="Tucson saguaro capture orbited from holographic cell bundles"><br>
@@ -64,6 +65,7 @@ puts crosstalk of std `~sqrt(N/(2d))` under every readout.
 | `holo/render.py` | ray marcher | closed-form ray integrals: X-ray views straight out of a bundle |
 | `holo/color.py` | color buffers | RGB as three channel bundles on one frequency basis; color fits & renders |
 | `holo/orset.py` | delete/undo semantics | observed-remove: deletion as tombstone sets — idempotent, add-wins, stroke undo |
+| `holo/dispatch.py` | rules engine / intent router | conditions as trigram profiles, dispatch as similarity, abstention as *policy*; a whole rulebook as one vector, banded + clustered routing at scale |
 | `live_sync.py` | multiplayer netcode | two OS processes co-paint one scene over TCP via Loro deltas |
 | `holo/accel.py` | the GPU | MLX/Metal backend, cos/sin real formulation: encode 37x, decode 106x on an M1 Max, NumPy-identical to 1e-7 |
 
@@ -118,6 +120,7 @@ MLX plus a forced-NumPy pass.
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 # numpy is pinned <2.0 (OpenBLAS wheels): the Accelerate-backed numpy 2.0
 # wheels on macOS corrupt float32 GEMV with heap-dependent NaNs (holo/fit.py)
+.venv/bin/python examples/hello_hologram.py  # the algebra in 5 minutes
 .venv/bin/hdc-demos                      # all demos, capacity tables
 .venv/bin/hdc-demos fsm graph            # a subset
 .venv/bin/hdc-demos --dim 16384          # more capacity
