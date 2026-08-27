@@ -14,7 +14,7 @@ See docs/real-scenes.md for the measured fidelity of each.
 import argparse
 import os
 
-from holo.capture import load_ply_sh, load_scene_file, save_ply, save_spz
+from holo.capture import load_ply_sh, load_scene_file, load_spz_sh, save_ply, save_spz
 from holo.sog import save_sog
 
 
@@ -30,7 +30,14 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     stem = os.path.splitext(os.path.basename(args.scene))[0]
     pos, scale, rgba, quat = load_scene_file(args.scene)
-    sh = load_ply_sh(args.scene) if args.scene.endswith(".ply") else None
+    # every format that can carry higher-order SH, does: raw 3DGS
+    # PLY in f_rest, SPZ in its trailing SH section
+    if args.scene.endswith(".ply"):
+        sh = load_ply_sh(args.scene)
+    elif args.scene.endswith(".spz"):
+        sh = load_spz_sh(args.scene)
+    else:
+        sh = None
     src_mb = os.path.getsize(args.scene) / 2**20
     print(f"{len(pos):,} splats from {os.path.basename(args.scene)} "
           f"({src_mb:.0f} MB)"
@@ -48,12 +55,14 @@ def main():
         outs.append((name, os.path.getsize(path) / 2**20))
 
     print(f"\n  {'file':<22}{'size':>9}{'vs source':>12}   carries")
-    notes = {".ply": "everything except higher-order SH (lossless)",
-             ".spz": "DC color only — SH dropped",
-             ".sog": "DC + higher-order SH (palette)"}
+    notes = {".ply": "geometry + DC color, lossless (no SH written)",
+             ".spz": "geometry + DC color (our writer emits no SH)",
+             ".sog": "geometry + DC color + higher-order SH (palette)"}
     for name, mb in outs:
         ext = os.path.splitext(name)[1]
-        print(f"  {name:<22}{mb:>7.1f} MB{src_mb / mb:>10.0f}x   {notes[ext]}")
+        ratio = src_mb / mb
+        print(f"  {name:<22}{mb:>7.1f} MB"
+              f"{ratio:>9.1f}x   {notes[ext]}")
 
 
 if __name__ == "__main__":

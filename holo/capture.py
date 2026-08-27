@@ -104,6 +104,26 @@ def _to_y_up(pos, quat):
     return pos, quat
 
 
+# Real-SH sign changes under the loaders' 180-degree x rotation, one
+# per coefficient of degrees 1..3. A rotation moves the SH BASIS, so
+# flipping a scene without flipping its harmonics silently mirrors the
+# view-dependent color; for an axis-aligned 180-degree turn every basis
+# function maps to +-itself, so the whole rotation is this sign vector.
+# Derived numerically from the basis (tests/test_capture.py pins it).
+_SH_FLIP_X180 = np.array([
+    -1, -1, 1,                            # degree 1
+    -1, 1, 1, -1, 1,                      # degree 2
+    -1, 1, -1, -1, 1, -1, 1,              # degree 3
+], dtype=np.float32)
+
+
+def sh_flip_x180(sh):
+    """Rotate (N, 3, K) higher-order SH by the same 180 degrees about x
+    that `_to_y_up` applies to geometry. Self-inverse."""
+    sh = np.asarray(sh, np.float32)
+    return sh * _SH_FLIP_X180[:sh.shape[2]]
+
+
 def load_splat(path):
     raw = np.fromfile(path, dtype=np.uint8).reshape(-1, 32)
     floats = raw[:, :24].copy().view(np.float32).reshape(-1, 6)
@@ -260,7 +280,8 @@ def parse_spz_sh(buf):
     — the DC-only files this pipeline writes are a choice of OUR
     writer, not a limit of the format. Bytes are coefficient-major
     with the color channel varying fastest; `unquantizeSH` is
-    (x - 128) / 128.
+    (x - 128) / 128. SPZ is y-up already, so unlike `load_ply_sh`
+    these coefficients need no basis rotation.
     """
     _ver, n, _sh_deg, sh_dim, _frac, o = _spz_sections(buf)
     if sh_dim == 0:
@@ -447,9 +468,10 @@ def load_ply_sh(path):
     k = len(rest) // 3
     if k not in (3, 8, 15):
         return None
-    return np.stack([np.stack([rec[f"f_rest_{c * k + i}"]
-                               for i in range(k)], 1)
-                     for c in range(3)], 1).astype(np.float32)
+    sh = np.stack([np.stack([rec[f"f_rest_{c * k + i}"]
+                             for i in range(k)], 1)
+                   for c in range(3)], 1).astype(np.float32)
+    return sh_flip_x180(sh)          # file is y-down; we speak y-up
 
 
 def save_spz(path, pos, scale, rgba, quat, frac_bits=12, version=3):

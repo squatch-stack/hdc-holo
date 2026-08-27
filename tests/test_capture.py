@@ -527,3 +527,74 @@ def test_spz_v4_is_identified_with_an_actionable_error():
     assert info["container"] == "zstd"
     with pytest.raises(NotImplementedError, match="zstd"):
         parse_spz(buf)
+
+
+def _sh_basis(d):
+    """Real SH basis, degrees 1-3, in the 3DGS coefficient order."""
+    x, y, z = d[:, 0], d[:, 1], d[:, 2]
+    xx, yy, zz = x * x, y * y, z * z
+    return np.stack([
+        -0.4886025119029199 * y, 0.4886025119029199 * z,
+        -0.4886025119029199 * x,
+        1.0925484305920792 * x * y, -1.0925484305920792 * y * z,
+        0.31539156525252005 * (2 * zz - xx - yy),
+        -1.0925484305920792 * x * z, 0.5462742152960396 * (xx - yy),
+        -0.5900435899266435 * y * (3 * xx - yy),
+        2.890611442640554 * x * y * z,
+        -0.4570457994644658 * y * (4 * zz - xx - yy),
+        0.3731763325901154 * z * (2 * zz - 3 * xx - 3 * yy),
+        -0.4570457994644658 * x * (4 * zz - xx - yy),
+        1.445305721320277 * z * (xx - yy),
+        -0.5900435899266435 * x * (xx - 3 * yy)], 1)
+
+
+def test_sh_flip_matches_a_real_rotation_of_the_basis():
+    """The loaders rotate scenes 180 degrees about x; the SH basis has
+    to turn with them, or view-dependent color comes out mirrored.
+    Pins the sign table against the basis functions themselves: the
+    color seen looking along d before the flip must equal the color
+    seen along the flipped d after it."""
+    from holo.capture import sh_flip_x180
+    rng = np.random.default_rng(41)
+    d = rng.normal(size=(500, 3))
+    d /= np.linalg.norm(d, axis=1, keepdims=True)
+    coef = rng.normal(size=(1, 3, 15))                 # one splat, RGB
+    before = np.einsum("ck,nk->nc", coef[0], _sh_basis(d))
+    after = np.einsum("ck,nk->nc", sh_flip_x180(coef)[0],
+                      _sh_basis(d * [1, -1, -1]))
+    assert np.allclose(before, after, atol=1e-5)
+    assert np.allclose(sh_flip_x180(sh_flip_x180(coef)), coef)
+
+
+def test_ply_and_spz_sh_agree_on_the_y_up_convention(tmp_path):
+    """load_ply_sh flips (files are y-down); load_spz_sh does not
+    (SPZ is y-up). Both must hand back the SAME world."""
+    from holo.capture import load_ply_sh, parse_spz_sh, sh_flip_x180
+    rng = np.random.default_rng(42)
+    n, k = 30, 15
+    sh_world = rng.uniform(-0.8, 0.8, (n, 3, k))       # y-up truth
+    # author a PLY holding the y-DOWN version of that world
+    on_disk = sh_flip_x180(sh_world)
+    fields = (["x", "y", "z", "f_dc_0", "f_dc_1", "f_dc_2"]
+              + [f"f_rest_{i}" for i in range(45)]
+              + ["opacity", "scale_0", "scale_1", "scale_2",
+                 "rot_0", "rot_1", "rot_2", "rot_3"])
+    rec = np.zeros(n, dtype=np.dtype([(f, "<f4") for f in fields]))
+    for c in range(3):
+        for i in range(k):
+            rec[f"f_rest_{c * k + i}"] = on_disk[:, c, i]
+    rec["rot_0"] = 1.0
+    p = tmp_path / "sh.ply"
+    with open(p, "wb") as f:
+        f.write(b"ply\nformat binary_little_endian 1.0\n"
+                + f"element vertex {n}\n".encode()
+                + b"".join(f"property float {f_}\n".encode()
+                           for f_ in fields)
+                + b"end_header\n" + rec.tobytes())
+    assert np.allclose(load_ply_sh(str(p)), sh_world, atol=1e-5)
+    # the SPZ path stores the same world directly (already y-up)
+    buf = _spz_v3_bytes(np.zeros((n, 3)), np.full((n, 3), 0.05),
+                        np.ones(n), np.full((n, 3), 128, np.uint8),
+                        np.tile([0.0, 0, 0, 1.0], (n, 1)),
+                        sh=sh_world)
+    assert np.allclose(parse_spz_sh(buf), sh_world, atol=1.5 / 128)
