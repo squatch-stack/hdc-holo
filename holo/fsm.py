@@ -18,6 +18,7 @@ capacity demo caught it at ~67% accuracy where theory predicted ~100%.)
 
 import numpy as np
 
+from .demokit import banner
 from .fhrr import FHRR, ItemMemory, Permutation
 
 
@@ -48,7 +49,7 @@ class HoloFSM:
 
 
 def demo(dim=4096, seed=0):
-    print(f"== HoloFSM: transition table in one vector (d={dim}) ==")
+    banner("HoloFSM: transition table in one vector", dim)
     # divisibility-by-3 automaton over binary strings: state = value mod 3
     space = FHRR(dim, seed=seed)
     mod3 = HoloFSM(space)

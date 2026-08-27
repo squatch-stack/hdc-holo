@@ -20,6 +20,8 @@ per-splat frequencies, which reintroduces per-primitive storage.
 
 import numpy as np
 
+from .demokit import Table
+
 
 class GaussianSplatField:
     def __init__(self, dim, sigma, seed=0):
@@ -83,7 +85,9 @@ def demo(dim=4096, seed=0, save_png=True):
 
     truth = None
     images = {}
-    print(f"{'dim d':>7} {'scene bytes':>12} {'RMSE':>7} {'rel to peak':>12}")
+    table = Table(("dim d", 7), ("scene bytes", 12), ("RMSE", 7, ".3f"),
+                  ("rel to peak", 12, ".1%"))
+    table.header()
     for d in [1024, 4096, 16384]:
         field = _make_scene(d, seed, n_splats)
         if truth is None:
@@ -91,7 +95,7 @@ def demo(dim=4096, seed=0, save_png=True):
         approx = field.eval(P)
         rmse = float(np.sqrt(np.mean((approx - truth) ** 2)))
         images[d] = approx.reshape(grid, grid)
-        print(f"{d:>7} {8 * d:>12} {rmse:>7.3f} {rmse/truth.max():>12.1%}")
+        table.row(d, 8 * d, rmse, rmse / truth.max())
     explicit = n_splats * 3 * 4  # mu (2 floats) + alpha, float32
     print(f"(explicit splat list would be {explicit} bytes for "
           f"{n_splats} splats; the hologram is fixed-size at any N)")

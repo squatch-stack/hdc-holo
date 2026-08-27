@@ -29,7 +29,7 @@ import hashlib
 
 import numpy as np
 
-from .demokit import Table
+from .demokit import Table, banner
 from .fhrr import FHRR, ItemMemory
 
 
@@ -186,7 +186,7 @@ def _demo_plot(pairs, grid):
 
 
 def demo(dim=4096, seed=0, save_png=True):
-    print(f"== Attribute field: role-filler payloads on splats (d={dim}) ==")
+    banner("Attribute field: role-filler payloads on splats", dim)
     labels = ["tree", "rock", "water", "house", "path"]
 
     # -- capacity: distant splats still cost full-power crosstalk ---------

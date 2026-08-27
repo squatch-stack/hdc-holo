@@ -40,6 +40,7 @@ import struct
 
 import numpy as np
 
+from .demokit import banner
 from .fhrr import FHRR, ItemMemory
 from .field import GaussianSplatField
 from .record import RecordSpace
@@ -504,7 +505,7 @@ def demo(dim=4096, seed=0, save_png=True):
     if not HAVE_LORO:
         print("== CRDT demo skipped: pip install loro ==\n")
         return
-    print(f"== Loro-replicated holographic structures (d={dim}) ==")
+    banner("Loro-replicated holographic structures", dim)
 
     # -- two peers, offline divergence, delta sync ----------------------
     A = HoloReplica(FHRR(dim, seed=seed))

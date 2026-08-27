@@ -13,6 +13,7 @@ bundle, records also support *analogical* queries with pure algebra
 No schema lookup, no join — the query vector is *constructed*, not learned.
 """
 
+from .demokit import banner
 from .fhrr import FHRR, ItemMemory
 
 
@@ -40,7 +41,7 @@ class RecordSpace:
 
 
 def demo(dim=4096, seed=0):
-    print(f"== Records: role-filler bindings (d={dim}) ==")
+    banner("Records: role-filler bindings", dim)
     space = FHRR(dim, seed=seed)
     rs = RecordSpace(space)
     usa = rs.encode({"name": "USA", "capital": "Washington",
