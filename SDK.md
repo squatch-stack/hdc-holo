@@ -283,5 +283,121 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   numpy ~42 / ~42 on an idle machine — the 5090 lands ~9x the M1 Max
   and >200x CPU on the capture-shaped workload. The CUDA seam the
   roadmap left open is now measured, remote, and sandboxed.
+- **5090 productionization** (box session, published over the gpugate
+  reports channel — ids 20260826-ed92e7 / 20260826-b978b2): the
+  real-scene pipeline is now **6.92 s** end to end on the RTX 5090,
+  from ~22 min upstream NumPy validate (CUDA validate 118 s ->
+  production mode 13.1 s — skipping ground truth, the single biggest
+  lever and not an optimisation at all -> binned decode_slice 8.25 s
+  -> fused cell_decode 6.92 s). The instructive part is what lost:
+  TF32 was strictly dominated (no wall win — the GEMM is only ~30% of
+  the kernel — and slightly worse slice error), and a fused readout
+  kernel won 5.54x on its kernel but ~0 on the pipeline, because the
+  actual bottleneck was decode_slice's cell_mask scan: O(cells x
+  points) on the CPU, 131.5M distance tests per Tucson slice, 82% of
+  the call. Binning per the cuFINUFFT / 3DGS-rasterizer pattern
+  (reach <= cell size, so 27 candidate cells instead of 2,621) is 19x
+  on that step, with the binned pair set verified identical to
+  cell_mask across all four bands. cell_decode fusion pays only 1.9x
+  vs the readout's 5.5x for a structural reason worth remembering:
+  each point sits in ~10 cells, the unfused path reuses its trig
+  planes across all of them, and the fused kernel recomputes per pair
+  — it wins on memory bandwidth alone while doing ~10x the trig; the
+  proposed point-tile inversion that would recover both is estimated,
+  not measured. Accuracy retraction recorded: "fused is 8x more
+  accurate" was an all-positive-weights artifact — on zero-mean real
+  payloads both paths land at 1.48e-05. Nothing upstream was edited
+  (box-side import-time patches, holo_cuda.py / holo_bin.py); suite
+  56 passed / 4 skipped, cross-backend checksums 4.5e-8 / 5.1e-8.
+- **Facade binding gotcha** (surfaced by the box's patching route,
+  caught by tests/test_structure of the shims): holo/backend.py and
+  the hdc/* shims bind accel's function OBJECTS at import
+  (`from .accel import readout, ...`), so replacing
+  `holo.accel.readout` at runtime leaves every facade on the original
+  — the GPU patch silently missed all facade-routed calls until the
+  shim-resolution test failed. Filed as a 0.3 issue: either facades
+  delegate at call time or the patch-before-import contract gets
+  documented.
+- **Near-enough dispatch — the first application-layer technique**
+  (`holo/dispatch.py`, `tests/test_dispatch.py`, `docs/dispatch.md`):
+  a rule engine where conditions are trigram-profile hypervectors,
+  dispatch is similarity, and the threshold is POLICY (below it the
+  engine abstains — inexpressible in a Boolean if-table). Three
+  engines on the existing algebra: matrix (cosine argmax, O(N)),
+  bundle (whole rulebook = ONE vector, O(K) readouts, pays the law),
+  banded (random or k-means-clustered bands + top-r centroid routing).
+  Measured (demo, d=4096): matrix holds 0.97 accuracy at 30% character
+  typos where exact keyword-AND scores 0.00; at 2048 rules clustered
+  top-1 routing answers from one band bundle at 0.99. The finding that
+  earns the entry: **the one law and its one medicine transfer
+  unchanged from geometric scenes to rule tables** — flat bundles pay
+  sqrt(N/2d) (cliff pinned by test at N=d=1024), and the same
+  partition-plus-locality-routing that fixed dense scenes (cells)
+  fixes rulebooks (topic bands); clustered routing needs topic
+  structure exactly as cells need spatial locality. Because bundles
+  add, banded rulebooks MERGE by the writer-sharded CRDT recipe with
+  no coordination. Known gap carried in the docs: trigram profiles are
+  order-blind past the trigram horizon — order-sensitive conditions
+  need the sequence recipe's permuted position tags (0.3 candidate).
+- **examples/ landed; raw PLY promoted to recommended interchange**:
+  the charter's examples/ slot is now real — three worked
+  introductions (hello_hologram: the algebra + the law failing soft;
+  near_enough_rules: messy dispatch, abstention, and the 4096-rule
+  banding experiment that reproduces the module docstring's 43x
+  claim; splats_from_ply: capture -> bundles -> verified slice ->
+  X-ray in ~60 lines) with run_*.py staying at the root as evidence
+  drivers. Capture docs and drivers now lead with the raw Gaussian
+  `.ply` (full per-splat covariance, nothing quantized — `.spz` is a
+  lossy export of the same scene) and Red Rock is the flagship
+  capture; README gained an art showcase (turntable GIF) since the
+  repo went public with zero renders visible on its front page.
+- **Capture orientation normalized — 3DGS PLY and .splat were loading
+  upside down** (user-caught: "the red rock PLY is upside down").
+  Empirical audit via alpha-weighted side silhouettes of all five
+  in-house captures: raw Gaussian `.ply` (COLMAP-convention world,
+  right-down-front) and antimatter15 `.splat` arrive y-DOWN; `.spz`
+  (specified right-up-back — the official PLY->SPZ conversion applies
+  the flip, which is why the saguaro was always upright) and ARKit
+  LiDAR clouds (gravity-aligned) arrive y-up. Fix: `capture._to_y_up`
+  rotates 180 deg about x on load — positions (x,-y,-z), quaternions
+  premultiplied by (0,1,0,0) — so every loader now emits the same
+  y-up world; a covariance-congruence test pins sigma' = F sigma F
+  (proper rotation, not a mirror). Fallout: every published train
+  figure had been upside down and the slices were too abstract for
+  anyone to notice — the upright silhouette is unmistakably a
+  locomotive; train and Red Rock evidence figures regenerated
+  (upright Red Rock slices land at 19%/22% vs the inverted run's
+  23%/23% — the flip moves the mass-mode slice planes; live quotes
+  updated, dated log entries left as records of their day).
+  Lesson for the shelf: orientation is format METADATA the pipeline
+  silently assumed away; a cheap ground-truth silhouette per new
+  format would have caught this on day one.
+- **Claims registry + stale-claim gate** (facts lane; `holo/facts/`,
+  `claims/registry.jsonl`, `docs/facts.md`, `tests/test_claims.py`):
+  every measured number in the prose is now a registered claim — typed
+  value, supersession chain, citation sites, and (where possible) a
+  derivation pinning it to code/tree ground truth. `holo-facts check`
+  warns at pre-commit (`.githooks/`, opt-in) and blocks in CI
+  (`--strict` step in linux-numpy). First run against HEAD caught
+  real drift: test-count claims at 56/72+/actual, the CONTRIBUTING
+  "LICENSE: none chosen yet" bullet outliving the license decision,
+  the ~1.5-2x vs ~1.5-3x coherent-inflation split between the docs
+  hub and fields.md, and — mid-build — its own derivation flagging
+  the suite count moving 84 -> 85 -> 94 as tests landed. The
+  13-min-vs-22-min ambiguity resolved as two DIFFERENT measurements
+  (holographic stages vs full NumPy validate), now two claims with
+  disambiguating notes. Old numbers are first-class: SDK.md's running
+  log is a dated-record zone, CHANGELOG sections are version-scoped,
+  and supersession (never deletion) is how values change. Phase 2
+  (claimed, facts lane) dogfoods retrieval: per-chunk trigram-profile
+  MATRIX via `holo.dispatch.FastNGramProfiler`, HG-8 persistence —
+  never a bundle: at ~900 chunks the flat-bundle crosstalk floor
+  sqrt(N/2d) ~ 0.45 at d=2048, forbidden by our own law; fuzzy recall
+  is WARN-only since trigram cosine cannot tell a corrected
+  restatement from a stale one. Phases 3-4 (claimed): minimal MCP
+  server (`holo-facts mcp`; extra `[facts]`), and the `knowledge-base`
+  sibling repo indexed by the same checker.
 - Still queued: component-thresholding denoiser (new, unclaimed);
-  dense-scene coherent error (see ROADMAP).
+  dense-scene coherent error (see ROADMAP); box lane: render_xray
+  binning (still scans, 0.73 s), point-tile cell_decode fusion,
+  cuFINUFFT type-3 prototype.
