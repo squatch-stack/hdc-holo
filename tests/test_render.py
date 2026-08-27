@@ -3,8 +3,7 @@
 import numpy as np
 import pytest
 
-from holo import (GaussianSplatField, exact_projection, render_orthographic,
-                 view_bundle)
+from holo import GaussianSplatField, exact_projection, render_orthographic, view_bundle
 
 
 def test_render_matches_analytic_projection():

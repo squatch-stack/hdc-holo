@@ -19,7 +19,7 @@ from .check import DERIVATIONS, _match_values, load_config
 from .normalize import canon, front_matter, normalize_file
 from .registry import base_id, load_registry
 
-__all__ = ["search_claims", "get_claim", "search_kb"]
+__all__ = ["get_claim", "search_claims", "search_kb"]
 
 
 def _registry(root):

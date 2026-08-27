@@ -76,6 +76,16 @@ max-complexity = 10
 max-args = 8          # numeric kernels legitimately take (points, W, S, chunk, …)
 
 [tool.ruff.lint.per-file-ignores]
+# Loro's LoroMap supports .keys() but is NOT iterable, so SIM118's
+# "k in d.keys() -> k in d" rewrite raises TypeError here. Measured:
+# it broke 14 tests. The rule stays on for plain dicts elsewhere.
+"holo/crdt.py" = ["SIM118"]
+"holo/orset.py" = ["SIM118"]
+"holo/sync.py" = ["SIM118"]
+"examples/live_sync.py" = ["SIM118"]
+"tests/test_crdt.py" = ["SIM118"]
+"tests/test_orset.py" = ["SIM118"]
+"tests/test_live_sync.py" = ["SIM118"]
 # The compat shims already carry `# noqa: F401,F403` at each re-export
 # site — that annotation IS the documentation, so no blanket ignore.
 "hdc/*.py" = ["F405"]

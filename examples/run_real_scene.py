@@ -17,11 +17,24 @@ import time
 
 import numpy as np
 
-from holo.capture import (BANDS, DIM, DIM_R, RENDER_BANDS, SIGMA_MIP,
-                          band_codebooks, build_scene, decode_slice,
-                          encode_bands, exact_slice, exact_xray,
-                          load_scene_file, mass_mode, render_mip,
-                          render_xray, slice_grid)
+from holo.capture import (
+    BANDS,
+    DIM,
+    DIM_R,
+    RENDER_BANDS,
+    SIGMA_MIP,
+    band_codebooks,
+    build_scene,
+    decode_slice,
+    encode_bands,
+    exact_slice,
+    exact_xray,
+    load_scene_file,
+    mass_mode,
+    render_mip,
+    render_xray,
+    slice_grid,
+)
 
 # repo root: this driver lives in examples/, its assets do not
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -30,7 +43,7 @@ DEFAULT_SCENE = os.path.join(ROOT, "data", "iphone", "redrock.ply")
 
 
 def stats(path):
-    pos, scale, rgba, quat = load_scene_file(path)
+    pos, scale, rgba, _quat = load_scene_file(path)
     n = len(pos)
     print(f"{n:,} splats  ({os.path.basename(path)})")
     alpha = rgba[:, 3]
@@ -165,7 +178,7 @@ def main(path):
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:]]
+    args = list(sys.argv[1:])
     do_stats = "stats" in args
     paths = [a for a in args if a != "stats"] or [DEFAULT_SCENE]
     if do_stats:

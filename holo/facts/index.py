@@ -30,10 +30,16 @@ import time
 
 import numpy as np
 
-from .chunk import chunk_surfaces, chunk_file
+from .chunk import chunk_file, chunk_surfaces
 
-__all__ = ["build_index", "load_index", "search", "profiler",
-           "fuzzy_findings", "INDEX_DIR"]
+__all__ = [
+    "INDEX_DIR",
+    "build_index",
+    "fuzzy_findings",
+    "load_index",
+    "profiler",
+    "search",
+]
 
 INDEX_DIR = os.path.join("claims", "index")
 DIM, SEED = 2048, 0
@@ -65,7 +71,7 @@ def _git_head(root):
 def build_index(root, config):
     from holo.storage import pack_polar
     prof = profiler()
-    chunks = chunk_surfaces(root, [s for s in _surface_list(root, config)])
+    chunks = chunk_surfaces(root, list(_surface_list(root, config)))
     rows, meta_chunks, blob = [], [], bytearray()
     for c in chunks:
         v = prof.unit_profile(c.text)
@@ -148,7 +154,6 @@ def fuzzy_findings(root, claims, config, cap=15):
     """WARN-tier probes: superseded/retracted claim statements against
     the chunk matrix. A high-scoring chunk with no exact pattern match
     is a candidate PARAPHRASED stale restatement — verify by hand."""
-    import re
     from .check import Finding, _match_values
     threshold = config.get("fuzzy_threshold", 0.18)
     prof = profiler()

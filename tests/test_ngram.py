@@ -1,7 +1,7 @@
 """Trigram profiles: language identification with one vector per language."""
 
 from holo import NGramEncoder
-from holo.ngram import TRAIN, TEST
+from holo.ngram import TEST, TRAIN
 
 
 def test_ngram_language_id(space):

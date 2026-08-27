@@ -20,8 +20,16 @@ import time
 
 import numpy as np
 
-from holo.capture import (DIM_R, RENDER_BANDS, SIGMA_MIP, band_codebooks,
-                          build_scene, encode_bands, render_mip, render_xray)
+from holo.capture import (
+    DIM_R,
+    RENDER_BANDS,
+    SIGMA_MIP,
+    band_codebooks,
+    build_scene,
+    encode_bands,
+    render_mip,
+    render_xray,
+)
 
 
 def main():

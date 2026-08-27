@@ -1,3 +1,3 @@
 """Compatibility shim: the implementation lives in holo/sdm.py."""
 
-from holo.sdm import *  # noqa: F401,F403
+from holo.sdm import *  # noqa: F403

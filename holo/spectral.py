@@ -32,8 +32,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import accel as _accel           # Metal GPU backend when available
-
+from . import accel as _accel  # Metal GPU backend when available
 
 # ---------------------------------------------------------------------------
 # Scene container

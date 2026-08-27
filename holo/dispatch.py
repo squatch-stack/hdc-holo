@@ -223,7 +223,7 @@ def demo(dim=2048, seed=0, save_png=True):
     print(f"  {'typo':>6} {'exact-AND':>10} {'matrix':>7} {'bundle':>7}"
           "   (256 rules, 1 keyword dropped)")
     for typo in [0.0, 0.1, 0.3]:
-        hits = dict(exact=0, matrix=0, bundle=0)
+        hits = {"exact": 0, "matrix": 0, "bundle": 0}
         for _ in range(150):
             ci = rng.integers(len(rules))
             text = _corrupt(rng, rules[ci][0].split(), vocab, typo, 1)
@@ -244,7 +244,7 @@ def demo(dim=2048, seed=0, save_png=True):
         dn = NearEnoughDispatcher(rules_n, dim=dim, seed=seed)
         b32 = BandedDispatcher(dn, 32)
         cl = BandedDispatcher(dn, 32, clustered=True)
-        hits = dict(flat=0, b32=0, cl=0)
+        hits = {"flat": 0, "b32": 0, "cl": 0}
         for _ in range(150):
             ci = rng.integers(n)
             text = _corrupt(rng, rules_n[ci][0].split(), vocab, 0.1, 1)
@@ -274,4 +274,4 @@ def demo(dim=2048, seed=0, save_png=True):
     print()
 
 
-__all__ = ["FastNGramProfiler", "NearEnoughDispatcher", "BandedDispatcher"]
+__all__ = ["BandedDispatcher", "FastNGramProfiler", "NearEnoughDispatcher"]

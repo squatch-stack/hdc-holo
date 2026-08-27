@@ -7,8 +7,14 @@ registry (and the registry against code/tree ground truth), warning at
 pre-commit and blocking in CI. See docs/facts.md.
 """
 
-from .check import CheckResult, Finding, run  # noqa: F401
-from .registry import Claim, load_registry, validate  # noqa: F401
+from .check import CheckResult, Finding, run
+from .registry import Claim, load_registry, validate
 
-__all__ = ["Claim", "CheckResult", "Finding", "load_registry", "run",
-           "validate"]
+__all__ = [
+           "CheckResult",
+           "Claim",
+           "Finding",
+           "load_registry",
+           "run",
+           "validate",
+]

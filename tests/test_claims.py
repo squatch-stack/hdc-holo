@@ -133,6 +133,7 @@ def test_chunker_splits_bullet_runs():
     # this was a rule (masking the SDK dated-record zone besides)
     import os
     import tempfile
+
     from holo.facts.chunk import chunk_file
     md = ("# log\n\n" +
           "- first entry about the encode kernel " + "alpha " * 40 + "\n" +
@@ -155,6 +156,7 @@ def test_hg8_roundtrip_preserves_profile_ranking():
     # HG-8 is the codec measured faithful on wide-dynamic-range
     # bundles; a profile row must come back ranking-equivalent
     import numpy as np
+
     from holo import FHRR
     from holo.dispatch import FastNGramProfiler
     from holo.storage import pack_polar, unpack
@@ -203,6 +205,7 @@ def test_get_claim_returns_chain_derivation_and_cite_sites():
 def test_front_matter_parses_flat_subset_only():
     import os
     import tempfile
+
     from holo.facts.normalize import front_matter
     md = ("---\ntopic: bochner-rff\nswept: 2026-08-26\narxiv:\n"
           "  - 2004.11154\n  - 1206.4111\ntags:\n  - kernels\n---\n# body\n")
@@ -240,6 +243,7 @@ def test_front_matter_findings_flag_bad_ids_and_dates(tmp_path):
 
 def test_search_kb_reports_unconfigured_honestly():
     import os
+
     from holo.facts.query import search_kb
     old = os.environ.pop("HOLO_KB_PATH", None)
     try:
@@ -258,6 +262,7 @@ def test_fuzzy_retrieves_paraphrase_and_scrambled_noise_abstains():
     # noise (character-scrambled text — word order barely moves a
     # trigram profile, so word shuffles are NOT noise) stays below
     import numpy as np
+
     from holo import FHRR
     from holo.dispatch import FastNGramProfiler
     space = FHRR(dim=2048, seed=0)

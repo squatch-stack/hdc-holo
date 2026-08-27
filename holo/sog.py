@@ -243,4 +243,4 @@ def save_sog(path, pos, scale, rgba, quat, sh=None, sh_clusters=1024,
     return meta
 
 
-__all__ = ["save_sog", "morton_order", "SOG_VERSION"]
+__all__ = ["SOG_VERSION", "morton_order", "save_sog"]

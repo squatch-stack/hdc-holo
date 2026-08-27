@@ -31,10 +31,10 @@ import os
 import re
 from dataclasses import dataclass, field
 
-from .normalize import normalize_file, figure_refs, canon
-from .registry import load_registry, validate, base_id
+from .normalize import canon, figure_refs, normalize_file
+from .registry import base_id, load_registry, validate
 
-__all__ = ["Finding", "CheckResult", "run", "load_config", "DERIVATIONS"]
+__all__ = ["DERIVATIONS", "CheckResult", "Finding", "load_config", "run"]
 
 
 @dataclass

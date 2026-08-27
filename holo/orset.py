@@ -362,7 +362,7 @@ def demo(dim=4096, seed=0, save_png=True):
     rng = np.random.default_rng(seed + 30)
     import colorsys
     strokes_a = []
-    for s in range(3):
+    for _s in range(3):
         p = rng.uniform([0.1, 0.1], [0.5, 0.9])
         ang = rng.uniform(0, 2 * np.pi)
         rgb = colorsys.hsv_to_rgb(rng.uniform(0, 0.15), 0.9, 1.0)
@@ -371,7 +371,7 @@ def demo(dim=4096, seed=0, save_png=True):
             p = p + 0.035 * np.array([np.cos(ang), np.sin(ang)])
             ang += 0.15
         strokes_a.append(sa.end_stroke())
-    for s in range(2):
+    for _s in range(2):
         p = rng.uniform([0.5, 0.1], [0.9, 0.9])
         ang = rng.uniform(0, 2 * np.pi)
         rgb = colorsys.hsv_to_rgb(rng.uniform(0.5, 0.7), 0.9, 1.0)
