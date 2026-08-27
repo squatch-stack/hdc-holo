@@ -400,6 +400,26 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   restatement from a stale one. Phases 3-4 (claimed): minimal MCP
   server (`holo-facts mcp`; extra `[facts]`), and the `math-kb`
   sibling repo indexed by the same checker.
+- **Fuzzy claims layer shipped** (facts lane, phase 2 complete): the
+  stale-claim system now dogfoods retrieval — 274 doc chunks as
+  L2-normalized trigram-profile rows (`holo.dispatch.FastNGramProfiler`
+  at d=2048; matrix, never a bundle, per the capacity math in
+  docs/facts.md), persisted through HG-8 with a plaintext-free
+  sha256 sidecar; `holo-facts index / search / calibrate`, and
+  `check --fuzzy` probes superseded claims for PARAPHRASED
+  restatements as WARN-only findings. Calibrated on the real corpus:
+  signal min/median 0.295/0.392 vs character-scrambled noise p95
+  0.101 — threshold 0.18 sits in the gap. Two negative results worth
+  the shelf: word-SHUFFLED probes are not noise (trigram profiles
+  ignore word order — shuffles scored 0.54 p95, above real signal;
+  noise must scramble characters), and consecutive markdown bullets
+  were merging into one mega-paragraph, which had silently masked a
+  real bug — the SDK dated-record zone never matched (absolute vs
+  relative path keys) and was only passing via accidental marker
+  proximity. Both fixed, test-pinned; the measured limitation stays
+  by design: trigram cosine scores the CORRECTED license line 0.21
+  against the retracted claim — it cannot tell corrected from stale,
+  so exact matching owns the gate and fuzzy only warns.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,
