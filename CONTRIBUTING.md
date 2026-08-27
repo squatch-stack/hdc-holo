@@ -63,6 +63,44 @@ commits and push once per work session, not per commit.
 
 ## Concurrency between sessions
 
+### Every lane gets a worktree
+
+Several sessions share one checkout, so the checkout itself is common
+ground: its files, index, and HEAD belong to no one session. **Do all
+work in your own `git worktree`, and address it by path rather than
+`cd`-ing into it** — the shell is shared too, and a session that
+changes directory drags the others' relative paths with it.
+
+```bash
+git fetch github
+git worktree add /tmp/wt-<lane> -b <lane>/<topic> github/main
+
+git -C /tmp/wt-<lane> status                     # git takes -C
+PYTHONPATH=/tmp/wt-<lane> .venv/bin/python -m pytest /tmp/wt-<lane>/tests -q
+.venv/bin/holo-facts   check --root /tmp/wt-<lane> --strict
+.venv/bin/holo-quality check --root /tmp/wt-<lane>   # gates take --root
+
+git -C /tmp/wt-<lane> commit -m "..."            # commit freely, here
+git -C /tmp/wt-<lane> push github HEAD:refs/heads/<lane>/<topic>
+gh pr create -R squatch-stack/hdc-holo --base main --head <lane>/<topic>
+
+# after the merge, close the lane
+git worktree remove /tmp/wt-<lane> && git worktree prune
+git push github --delete <lane>/<topic>
+```
+
+Rebase inside the worktree as well (`git -C <wt> rebase github/main`),
+where a conflict cannot disturb anyone else's files.
+
+In the shared checkout: **no destructive git commands** — no
+`reset --hard`, no `checkout --` over edits you did not write, no
+stashing someone else's work. Check `git status` before syncing and
+notice *whose* changes are present; sync with
+`git merge --ff-only github/main`, and when it refuses, fix the real
+cause (uncommitted edits, or untracked files that main now tracks)
+rather than forcing past it. A `reset --hard` here has already
+destroyed another session's uncommitted work once.
+
 - Announce file claims before starting multi-file work; hold clear of
   claimed paths until the owner's completion note lands in SDK.md.
 - Check `ps` for running >4GB pipeline jobs before launching heavy
