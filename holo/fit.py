@@ -46,12 +46,12 @@ class FrequencyBands:
         assert len(dims) == len(sigmas)
         rng = np.random.default_rng(seed)
         blocks = []
-        for d_b, sigma in zip(dims, sigmas):
-            sigma = np.atleast_2d(np.asarray(sigma, dtype=np.float64))
-            if sigma.shape == (1, 1):
-                sigma = np.eye(ndim) * sigma.item() ** 2   # scalar = iso std
-            B = np.linalg.cholesky(np.linalg.inv(sigma))
-            blocks.append((rng.standard_normal((d_b, sigma.shape[0]))
+        for d_b, scale in zip(dims, sigmas):
+            cov = np.atleast_2d(np.asarray(scale, dtype=np.float64))
+            if cov.shape == (1, 1):
+                cov = np.eye(ndim) * cov.item() ** 2       # scalar = iso std
+            B = np.linalg.cholesky(np.linalg.inv(cov))
+            blocks.append((rng.standard_normal((d_b, cov.shape[0]))
                            @ B.T).astype(np.float32))
         self.W = np.concatenate(blocks, axis=0)
         self.D = self.W.shape[0]
