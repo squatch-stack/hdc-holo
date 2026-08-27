@@ -53,3 +53,13 @@ failures. Don't recreate it.
   sets are fine).
 - Short comments explain WHY a bound holds (the sigma math), not what
   the code does.
+
+## The claims gate
+
+`tests/test_claims.py` is the cross-surface consistency file for the
+claims registry (`claims/registry.jsonl` ↔ prose ↔ code ground truth,
+in the mold of `test_holo_facade.py`). Its last test fails whenever a
+registered claim is stale anywhere in the tree — so adding tests, or
+changing a measured number in docs, can legitimately fail it: update
+the registry (supersede, never delete) per
+[claims/README.md](../claims/README.md).

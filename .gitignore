@@ -8,3 +8,5 @@ __pycache__/
 hdc_holo.egg-info/
 gpubench/
 gpu*-*/
+claims/index/
+.claude/settings.local.json

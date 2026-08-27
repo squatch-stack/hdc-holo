@@ -41,7 +41,13 @@ copies.
 
 **Failure modes / contract.** Public APIs take and return NumPy;
 backends must match to float32 rounding (pinned by test, both paths vs
-the complex-arithmetic definition).
+the complex-arithmetic definition). One extension gotcha, learned when
+an out-of-tree CUDA backend was patched in at import time:
+`holo/backend.py` and the `hdc/*` shims bind accel's function
+*objects* at import (`from .accel import readout, ...`), so replacing
+`holo.accel.readout` at runtime leaves every facade on the original —
+patch before the first `holo` import, or patch every binding site (the
+shim-resolution test catches the mismatch).
 
 **Platform precision gotchas** — defaults that silently trade accuracy,
 each discovered by tests/bring-up rather than documentation:

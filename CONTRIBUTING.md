@@ -11,7 +11,7 @@ already bit us once.
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'        # + '.[gpu]' on Apple silicon,
                                          # + '.[crdt]' for Loro sync
-.venv/bin/python -m pytest tests/ -q     # 72+ tests, a few seconds
+.venv/bin/python -m pytest tests/ -q     # 80+ tests, a few seconds
 ```
 
 NumPy is pinned `<2.0`: the Accelerate-backed 2.0 wheels on macOS
@@ -74,7 +74,22 @@ Present-tense summary line stating the capability or finding, body
 explaining the why and the measured numbers. Evidence figures are
 committed under `results/` (real-scene strand) or `out/` (demos).
 
-## Open questions for the owner
+## Claims
 
-- LICENSE: none chosen yet — required before the repo goes public or
-  accepts outside contributions.
+Every measured number stated in prose (README, docs/, docstrings —
+mermaid labels included) must be a registered claim in
+[claims/registry.jsonl](claims/registry.jsonl) or carry a
+`<!-- claims: ignore -->` pragma. `holo-facts check` verifies the
+prose against the registry and blocks CI when a claim goes stale; opt
+into the local warn hook once per clone with
+`git config core.hooksPath .githooks`. To change a value, supersede it
+(old line re-id'd `base.id@<version>`, `status: "superseded"`) — never
+delete it. Authoring guide: [claims/README.md](claims/README.md);
+design: [docs/facts.md](docs/facts.md). Commit checklist addition:
+`holo-facts check` clean (or its warns understood).
+
+## License
+
+FSL-1.1-Apache-2.0 ([LICENSE.md](LICENSE.md)): free for everything
+except competing use, converting to Apache-2.0 two years after each
+release. Contributions are accepted under the same terms.

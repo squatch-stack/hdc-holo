@@ -1,0 +1,10 @@
+#!/bin/sh
+# Stale-claim warning gate (never blocks). CI runs the same check with
+# --strict and DOES block. Activate with:
+#   git config core.hooksPath .githooks
+if python3 -c "import holo.facts" 2>/dev/null; then
+    python3 -m holo.facts.cli check || true
+else
+    echo "claims-check skipped (holo not importable in this environment)"
+fi
+exit 0
