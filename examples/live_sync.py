@@ -112,13 +112,9 @@ def state_digest(replica):
     return h.hexdigest()[:16]
 
 
-def worker(args):
-    from holo import FHRR, HoloReplica, ORStrokeScene
-    role = args.role
-    space = FHRR(args.dim, seed=args.seed)     # both painters: same space
-    replica = HoloReplica(space)
-    scene = ORStrokeScene(replica, np.eye(2) * 0.03 ** 2)
-    if role == "A":
+def _connect(args):
+    """A listens and announces its port; B dials it. Returns the socket."""
+    if args.role == "A":
         srv = socket.socket()
         srv.bind(("127.0.0.1", 0))
         srv.listen(1)
@@ -126,37 +122,65 @@ def worker(args):
         srv.settimeout(60)
         conn, _ = srv.accept()
     else:
-        conn = socket.create_connection(("127.0.0.1", args.port), timeout=60)
+        conn = socket.create_connection(("127.0.0.1", args.port),
+                                        timeout=60)
     conn.settimeout(60)
+    return conn
+
+
+def _pick_undo(scene, r, args):
+    """At the undo round, both peers tombstone the SAME stroke.
+
+    They pick the earliest live one: their pre-exchange views differ
+    only in each side's NEWEST stroke, which can never be the minimum,
+    so the choice agrees without coordination — that is the point being
+    demonstrated. NOTE that WHICH stroke that is varies run to run:
+    stroke ids are ordered by Loro peer id, which is random per
+    process, so the demo converges to one of two possible images. Both
+    painters always agree (the invariant the test checks); the image is
+    a coin flip.
+    """
+    if r != args.undo_round:
+        return None
+    live = scene.strokes()
+    if not live:
+        return None
+    scene.undo_stroke(live[0])
+    return live[0]
+
+
+def _exchange(conn, replica, last, role):
+    """One lockstep frame each way; returns the new version marker."""
+    delta = replica.updates_since(last)
+    if role == "A":                         # lockstep: A sends first
+        send_frame(conn, delta)
+        peer = recv_frame(conn)
+    else:
+        peer = recv_frame(conn)
+        send_frame(conn, delta)
+    replica.apply(peer)
+    return delta, replica.version()
+
+
+def worker(args):
+    from holo import FHRR, HoloReplica, ORStrokeScene
+    role = args.role
+    space = FHRR(args.dim, seed=args.seed)     # both painters: same space
+    replica = HoloReplica(space)
+    scene = ORStrokeScene(replica, np.eye(2) * 0.03 ** 2)
+    conn = _connect(args)
 
     rng = np.random.default_rng(0xA1CE if role == "A" else 0xB0B)
     x_range = (0.05, 0.55) if role == "A" else (0.45, 0.95)
-    hue_range = (-0.06, 0.14) if role == "A" else (0.50, 0.72)  # warm / cool
+    hue_range = (-0.06, 0.14) if role == "A" else (0.50, 0.72)  # warm/cool
     os.makedirs("out/live", exist_ok=True)
     snaps = snap_rounds(args)
 
     last = replica.version()
     for r in range(args.rounds):
         stroke(rng, x_range, hue_range, scene)
-        undone = None
-        if r == args.undo_round:
-            live = scene.strokes()
-            # both peers pick the earliest live stroke: their pre-exchange
-            # views differ only in each side's NEWEST stroke, which can
-            # never be the minimum, so the choice agrees — and both
-            # tombstone the SAME id concurrently.
-            if live:
-                undone = live[0]
-                scene.undo_stroke(undone)
-        delta = replica.updates_since(last)
-        if role == "A":                         # lockstep: A sends first
-            send_frame(conn, delta)
-            peer = recv_frame(conn)
-        else:
-            peer = recv_frame(conn)
-            send_frame(conn, delta)
-        replica.apply(peer)
-        last = replica.version()                # covers both sides' ops now
+        undone = _pick_undo(scene, r, args)
+        delta, last = _exchange(conn, replica, last, role)
         note = f" undo {undone}" if undone else ""
         print(f"ROUND {r} sent {len(delta)} bytes{note}", flush=True)
         if r in snaps and not args.no_montage:
@@ -173,7 +197,9 @@ def worker(args):
     conn.close()
 
 
-def driver(args):
+def _spawn_pair(args):
+    """Start painter A, read the port it announces, then start B on it.
+    Returns (proc_a, proc_b); exits if A never announces a port."""
     base = [sys.executable, os.path.abspath(__file__),
             "--rounds", str(args.rounds), "--dim", str(args.dim),
             "--res", str(args.res), "--seed", str(args.seed),
@@ -193,10 +219,12 @@ def driver(args):
     b = subprocess.Popen([*base, "--role", "B", "--port", str(port)],
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                          text=True)
-    out_a = a.stdout.read()
-    out_b, _ = b.communicate(timeout=600)
-    a.wait(timeout=60)
+    return a, b
 
+
+def _parse_painter_output(out_a, out_b):
+    """(digests, bytes per round from A, undo notices) — the painters
+    report over stdout because they are separate OS processes."""
     digests, bytes_per_round, undos = {}, [], []
     for role, out in (("A", out_a), ("B", out_b)):
         for line in out.splitlines():
@@ -207,6 +235,11 @@ def driver(args):
                     bytes_per_round.append(int(line.split()[3]))
                 if " undo " in line:
                     undos.append((role, line.split(" undo ")[1]))
+    return digests, bytes_per_round, undos
+
+
+def _report(args, digests, bytes_per_round, undos, returncodes):
+    """Print the convergence verdict; returns True when it converged."""
     print(f"two processes, {args.rounds} rounds, "
           f"delta frames from A: {bytes_per_round} bytes")
     if undos:
@@ -217,38 +250,53 @@ def driver(args):
     print(f"painter A: {digests.get('A', 'MISSING')}")
     print(f"painter B: {digests.get('B', 'MISSING')}")
     ok = ("A" in digests and digests.get("A") == digests.get("B")
-          and a.returncode == 0 and b.returncode == 0)
+          and all(code == 0 for code in returncodes))
     print("CONVERGED: independent processes, identical holograms"
           if ok else "DIVERGED")
-    if not ok:
+    return ok
+
+
+def _montage(args):
+    """Both painters' rounds side by side, ending in identical frames."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    snaps = snap_rounds(args)
+    cols = [*(f"r{r}" for r in snaps), "final"]
+    labels = {f"r{args.undo_round}": "after concurrent undo",
+              "final": "final (identical)"}
+    if 0 <= args.undo_round < args.rounds and args.undo_round > 0:
+        labels[f"r{args.undo_round - 1}"] = "before undo"
+    fig, axes = plt.subplots(2, len(cols), figsize=(3.4 * len(cols), 7.2))
+    for row, role in enumerate("AB"):
+        for col, tag in enumerate(cols):
+            ax = axes[row, col]
+            ax.imshow(plt.imread(f"out/live/{role}_{tag}.png"))
+            ax.set_xticks([])
+            ax.set_yticks([])
+            label = labels.get(tag, "round " + tag[1:])
+            ax.set_title(f"painter {role} — {label}", fontsize=10)
+    fig.suptitle("Live Loro sync with observed-remove undo: both "
+                 "painters undo the same stroke, it vanishes once",
+                 fontsize=12)
+    fig.tight_layout()
+    fig.savefig("out/live_sync.png", dpi=110)
+    print("saved out/live_sync.png")
+
+
+def driver(args):
+    a, b = _spawn_pair(args)
+    out_a = a.stdout.read()
+    out_b, _ = b.communicate(timeout=600)
+    a.wait(timeout=60)
+
+    digests, bytes_per_round, undos = _parse_painter_output(out_a, out_b)
+    if not _report(args, digests, bytes_per_round, undos,
+                   (a.returncode, b.returncode)):
         print(out_a, out_b)
         sys.exit(1)
-
     if not args.no_montage:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        snaps = snap_rounds(args)
-        cols = [*(f"r{r}" for r in snaps), "final"]
-        labels = {f"r{args.undo_round}": "after concurrent undo",
-                  "final": "final (identical)"}
-        if 0 <= args.undo_round < args.rounds and args.undo_round > 0:
-            labels[f"r{args.undo_round - 1}"] = "before undo"
-        fig, axes = plt.subplots(2, len(cols),
-                                 figsize=(3.4 * len(cols), 7.2))
-        for row, role in enumerate("AB"):
-            for col, tag in enumerate(cols):
-                ax = axes[row, col]
-                ax.imshow(plt.imread(f"out/live/{role}_{tag}.png"))
-                ax.set_xticks([]), ax.set_yticks([])
-                label = labels.get(tag, "round " + tag[1:])
-                ax.set_title(f"painter {role} — {label}", fontsize=10)
-        fig.suptitle("Live Loro sync with observed-remove undo: both "
-                     "painters undo the same stroke, it vanishes once",
-                     fontsize=12)
-        fig.tight_layout()
-        fig.savefig("out/live_sync.png", dpi=110)
-        print("saved out/live_sync.png")
+        _montage(args)
 
 
 def main():
