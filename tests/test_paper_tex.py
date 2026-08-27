@@ -110,3 +110,24 @@ def test_bib_entry_years_agree_with_their_keys():
             assert in_key.group(1) == in_field.group(1), (
                 "%s: key says %s, year field says %s"
                 % (key, in_key.group(1), in_field.group(1)))
+
+
+def test_plain_text_abstract_matches_its_source():
+    m = _md2tex()
+    with open(os.path.join(PAPER, "abstract.txt")) as f:
+        committed = f.read()
+    assert m.abstract_text(os.path.join(PAPER, "draft.md")) == committed, (
+        "paper/abstract.txt is stale — run `python paper/md2tex.py`")
+
+
+def test_plain_text_abstract_meets_arxivs_constraints():
+    """arXiv's abstract field is plain text with a hard length cap: it
+    renders no markup and no non-ASCII, and pasting the paper's own
+    abstract there produces mojibake in the first thing a reader sees."""
+    with open(os.path.join(PAPER, "abstract.txt")) as f:
+        text = f.read()
+    assert text.isascii(), "non-ASCII: %s" % sorted(
+        {c for c in text if ord(c) > 127})
+    assert len(text.strip()) <= 1920, "abstract exceeds arXiv's 1920 chars"
+    for markup in ("`", "**", "](", "\\"):
+        assert markup not in text, "markup survived: %r" % markup
