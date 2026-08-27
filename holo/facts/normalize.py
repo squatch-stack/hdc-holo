@@ -22,7 +22,8 @@ import re
 from dataclasses import dataclass, field
 
 __all__ = ["Paragraph", "normalize_file", "normalize_markdown",
-           "normalize_python", "normalize_plain", "figure_refs", "canon"]
+           "normalize_python", "normalize_plain", "figure_refs",
+           "front_matter", "canon"]
 
 _PRAGMA = re.compile(r"<!--\s*claims:\s*([^>]*?)\s*-->")
 _MERMAID_QUOTED = re.compile(r'"([^"]+)"')
@@ -200,3 +201,29 @@ def normalize_file(path):
 def figure_refs(text):
     """Figure paths referenced anywhere in raw text."""
     return sorted(set(_FIG_REF.findall(text)))
+
+
+def front_matter(path):
+    """Restricted flat front-matter: `key: value` and `- item` lists
+    between leading --- fences. Deliberately not YAML."""
+    out, key = {}, None
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().split("\n")
+    except OSError:
+        return out
+    if not lines or lines[0].strip() != "---":
+        return out
+    for line in lines[1:]:
+        s = line.strip()
+        if s == "---":
+            break
+        if s.startswith("- ") and key:
+            out.setdefault(key, [])
+            if isinstance(out[key], list):
+                out[key].append(s[2:].strip())
+        elif ":" in s:
+            key, _, val = s.partition(":")
+            key, val = key.strip(), val.strip()
+            out[key] = val if val else []
+    return out
