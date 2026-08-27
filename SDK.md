@@ -188,6 +188,68 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **Deliberate shrinkage beats the accidental one, and the accident had
+  largely evaporated** (research lane; `holo/denoise.py`,
+  `tests/test_denoise.py`, `docs/storage.md`; issue #1). Reproducing the
+  codec baseline before building on it found that page's numbers stale:
+  they were measured pre-reach-split and the bands moved underneath
+  them. Current saguaro figures are uncompressed 0.350/0.213 and HM-4
+  0.347/0.223 at a 28x dynamic range, against the logged 0.522/0.379,
+  0.502/0.342 and 987x. HM-4 no longer beats the uncompressed decode on
+  BOTH axes — it wins top-down and loses side — so the "accidental
+  denoiser" framing was describing a configuration that no longer
+  exists. The claims gate could not have caught this: those numbers were
+  never registered, which is precisely the WARN-only
+  `unregistered-number` category. Both are registered now.
+  *The positive:* what the accident pointed at is real and taking it
+  deliberately recovers much more. Soft shrinkage at the 25th magnitude
+  percentile reaches **0.298/0.203**, better on both axes than any codec
+  row, and composes cleanly — shrink then HG-8 preserves it exactly at
+  0.25x bytes, where shrinking into HM-4 gives most of it back
+  (0.339/0.230) because 4-bit quantization re-adds error of the order
+  just removed.
+  *The correction:* an early docstring claimed soft simply beats hard.
+  It does not. The advantage is regime-dependent — hard wins where
+  signal is sparse and strong against weak noise (a real gap to cut at),
+  soft wins where magnitudes OVERLAP, which is the capture case because
+  a mixture codebook leaves no gap. Caught by a synthetic test that
+  failed for the right reason; both directions are now pinned by test.
+
+- **Issue #2 (analytic L2 projection) reassigned** from the
+  capture/spectral lane to the research lane, with that lane's explicit
+  agreement — it had never been started there. Two results from the
+  scoping, both verified independently by a second session:
+  the per-cell Gram factorises as `G_c = D·G_0·D^H` with `D =
+  diag(e^{i w_j·c})` unitary diagonal, so **one factorisation amortises
+  over every cell in a band** (1,624 on the saguaro fine band) and cell
+  position enters only as a diagonal phase; and conditioning is governed
+  by the dimensionless `sigma_w·h`, on which all our real bands sit
+  BENIGN (xfine/fine 7.8, mid 31, coarse 62). The plunge arrives with
+  **d**, not with cell size: at the xfine band's real geometry cond(G_0)
+  runs 7e1 (d=40) -> 5e4 (160) -> 8e13 (640) -> 4e19 (2560), with
+  numerical rank falling well below d. A first attempt used a toy at
+  `sigma_w·h = 0.5` and read 4.3e10, which is the ill-conditioned
+  regime and would have misled the whole spike — **the diagnosis is
+  cheap and needs no capture data, but it must be run at realistic d.**
+  Open question worth checking before building the solver: if effective
+  rank is below the splat count per cell, it bounds what ANY per-cell
+  fit can recover, and the analytic route inherits the sampling-limited
+  ceiling rather than escaping it.
+
+- **Two findings logged for lanes not being worked** (research lane), so
+  they outlive the session that found them. (1) Issue #4: on a
+  capture-shaped replica (60 containers x 40 edit rounds, d=2048) a full
+  `ExportMode.Snapshot()` is 40.3 MB where `ShallowSnapshot` and
+  `StateOnly` are 1.0 MB — 2%, far past the 70-90% Loro advertises,
+  because the payloads are dense bundles and history dominates.
+  `holo/crdt.py`'s `snapshot()` uses the full mode; the installed
+  loro-py already exposes both alternatives. (2) Issue #5: the right
+  literature family for the occlusion hybrid is order-independent
+  transparency — arXiv:2605.13855 (OIT for 3DGS via an active set,
+  2026), arXiv:2605.25345 (depth peeling for Gaussian surfels, 2026),
+  arXiv:2305.10197 (learned OIT). Those also belong in the paper's
+  limitations section as evidence the boundary is being probed.
+
 - **The SH flip table now has two derivations, not one**
   (`_SH_FLIP_X180` in `holo/capture.py`). It was derived numerically
   from the basis functions and pinned by a test that used *the same
