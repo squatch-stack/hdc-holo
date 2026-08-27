@@ -218,8 +218,98 @@ structure in the data (spatial locality for scenes) to pay off.
    families scale differently (per-splat with content, bundles with
    occupied volume; the gap narrows 4x per decade of density but does
    not close).
-2. **Adopt the citations** (§7) into the draft's framing up front.
-3. Re-run the sweep at draft-freeze; log the delta with its date.
-4. Decide venue framing: graphics (representation + rendering) or
-   neuro-symbolic (algebra + capacity). The three claims support
-   either; the emphasis differs.
+2. ~~**Adopt the citations**~~ — DONE: §9 below carries the reference
+   list, and each claim names the work that bounds it, so the draft is
+   written from the corrected position rather than defending it in
+   rebuttal.
+3. ~~**Venue**~~ — DECIDED: §10.
+4. Re-run the sweep at draft-freeze; log the delta with its date. That
+   is the only item left, and it is a half-hour before submission.
+
+---
+
+## 9. References, and what each one bounds
+
+Grouped by the job it does in the draft. The second column is the
+sentence it forces us to write — adopting a citation means conceding
+its ground up front.
+
+**Foundations we build on**
+
+| work | what it gives us |
+|---|---|
+| Plate, *Holographic Reduced Representations* | FHRR: bind/unbind/bundle, the algebra everything else is written in |
+| Kanerva, *Sparse Distributed Memory*; *Hyperdimensional Computing* (2009) | the capacity-as-SNR framing, and the ancestor of the whole family |
+| Frady, Kleyko, Kymn, Olshausen, Sommer, *Computing on Functions Using Randomized Vector Representations* (arXiv:2109.03429) | Vector Function Architectures — the FPE/Bochner bridge our field encoder instantiates |
+| Rahimi & Recht, *Random Features for Large-Scale Kernel Machines* | random Fourier features; the reason an inner product equals a Gaussian kernel |
+| Komer & Eliasmith, Spatial Semantic Pointers | continuous space in this algebra, and the shift property |
+| Kleyko et al., HDC/VSA surveys I & II (arXiv:2111.06077, arXiv:2112.15424) | the field's own account of what is settled |
+
+**Work that bounds our claims** — each of these removes something we
+might otherwise have claimed
+
+| work | the sentence it forces |
+|---|---|
+| **qFHRR** (arXiv:2604.25939) | quantized-phase FHRR at 3-4 bits is *published*; our phase codec is that representation reached from storage rather than hardware. We claim the measured boundary — their bundling projects back to the unit circle and drops the magnitude amplitude fields need — not the representation. |
+| **Mip-Splatting** (arXiv:2311.16493, CVPR 2024) | our scale floor is an ad-hoc version of their 3D smoothing filter, which derives the same constraint from the input views' sampling rate. Adopt; do not re-derive. |
+| **Analytic-Splatting** (arXiv:2403.11056, ECCV 2024) | pixel-area integration is theirs; our `footprint_blur` is the pre-projection form of it. Cite when the footprint referee appears. |
+| **Voelker et al.**, *Simulating and Predicting Dynamical Systems With SSPs* (Neural Computation 33(8), 2021) | multi-object trajectories via the shift property already exist. `translate_bundle` is the shift theorem — we do not claim motion-as-phase-ramp. |
+| **CRDTs for NN Model Merging** (arXiv:2605.19373) | nearest neighbour to our OR-Set layer; also our best contrast — all 26 of their merge strategies fail commutativity/associativity/idempotency, where superposition fails only the third. |
+| **Adcock**, *On the numerical stability of Fourier extensions* (arXiv:1206.4111) + Adcock-Huybrechs frames theory | names the per-cell fit's failure as the Fourier-extension/plunge-region problem and says regularized least squares is the route. Our negative result lands in known theory rather than in the dark. |
+
+**Nearest neighbours to position against**
+
+| work | why it is not us |
+|---|---|
+| **VSA-OGM** (arXiv:2408.09066) | closest relative — SSP occupancy fields with sparse updates — but scalar occupancy only: no per-splat covariance, color, rendering, learning, or replication |
+| **GVKF** (arXiv:2411.01853) | validates "splatting is a kernel mixture" from the graphics side, but keeps per-Gaussian parametric storage |
+| **CryoSplat** (arXiv:2508.04929), **R2-Gaussian** (arXiv:2405.20693) | closed-form Gaussian projection under the Fourier slice theorem — per primitive, not a whole view folded into one vector |
+| **HyperSpace** (arXiv:2604.15113) | the nearest "VSA SDK" effort; no scene, splat, or replication content |
+| **3DGS compression survey** (arXiv:2502.19457) | the family our baseline table loses to, and should be seen to lose to |
+
+## 10. Venue: the neuro-symbolic / HDC-VSA community
+
+**Decision: submit to the HDC/VSA community, not to graphics.** arXiv
+first (cs.NE, cross-listed cs.CV), then a venue in that community —
+*npj Unconventional Computing* published VSA-OGM, *Neural Computation*
+published Voelker, and the field has an active workshop track. Journal
+if we want the negative results to have room; workshop if we want the
+conversation sooner.
+
+**Why not graphics, given that half the evidence is captures.** Three
+reasons, and the third is decisive:
+
+1. Graphics venues judge novel-view synthesis on photometric metrics
+   against held-out images (PSNR/SSIM/LPIPS on Mip-NeRF 360, Tanks &
+   Temples). **We do not do novel-view synthesis** — we do emission /
+   X-ray projection, evaluated against an analytic referee. Our
+   evidence answers a question that community does not ask.
+2. Our baseline table is a loss on precisely the axis graphics
+   reviewers weigh most (quality per byte). In an HDC venue that table
+   is honest positioning; in a graphics venue it is the headline
+   result, and the wrong one.
+3. **All three claims are algebraic claims.** "A scene is a bundle,"
+   "a view is a bundle," "merging is addition" — the contribution is
+   what the algebra *buys*, and the capacity law is an HDC contract.
+   The splats are the demanding test case that proves it survives real
+   data, not the subject.
+
+**What the decision changes in the draft.** Lead with the algebra and
+introduce splats as the stress test, not the other way round: the
+title and abstract should name the representation, not the capture.
+Assume FHRR, FPE and cleanup as known and spend the space on what is
+new — the scene encoder, the folded view, the CRDT recipes, and the
+capacity budget that ties them. Keep every graphics figure: this
+audience rarely sees a claim carried by 682k-splat captures and an
+exact analytic referee, and that is a large part of why the paper is
+worth reading. Address the graphics community in one paragraph of
+related work rather than in the framing — say plainly that
+rasterization is better at rasterizing, and point at
+[docs/baselines.md](docs/baselines.md).
+
+**Fallback.** If a reviewer's core objection is "why not just use
+3DGS + SOG?", the answer is already in the paper and does not require
+a rewrite — it is the capabilities list in §Baseline, and the
+strongest single sentence for it is the CRDT contrast: superposition
+gets two of three merge axioms for free, where 26 tuned strategies get
+none.

@@ -612,6 +612,22 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   holographic bundles with algebraic queries, projection-slice
   rendering folded into a bundle, mixture spectral codebooks for
   per-splat covariance, and a rule engine with a capacity contract.
+- **Publication framing settled** (PAPER.md §9-10): citations adopted
+  and venue chosen. Adoption here means conceding ground up front —
+  each bounding work is listed with the sentence it forces us to write
+  (qFHRR takes quantized-phase FHRR as a representation, Mip-Splatting
+  takes the sampling filter our scale floor approximates,
+  Analytic-Splatting takes pixel-area integration, Voelker et al. take
+  motion-as-shift), so the draft is written from the corrected
+  position instead of defending it in rebuttal. Venue: the **HDC/VSA
+  community**, arXiv cs.NE first, not graphics — because we do not do
+  novel-view synthesis (our referee is an analytic mixture, not
+  held-out images), because the baseline table is a loss on exactly
+  the axis graphics weighs most, and because all three claims are
+  algebraic claims that happen to be tested on captures. Consequence
+  for the draft: lead with the algebra, introduce splats as the stress
+  test, keep every graphics figure, and answer "why not 3DGS+SOG?"
+  with the capability list rather than a metric.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,
