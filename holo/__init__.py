@@ -47,8 +47,8 @@ from .dispatch import (NearEnoughDispatcher, BandedDispatcher,
 from .spectral import (SplatScene, sample_frequencies, decode_weights,
                        spectral_bundle, phasor_bundle, decode_field,
                        decode_field_phasor, translate_bundle)
-from .capture import (load_splat, load_spz, load_scene_file, build_scene,
-                      render_mip, band_codebooks, encode_bands,
+from .capture import (load_splat, load_spz, load_scene_file, save_ply,
+                      build_scene, render_mip, band_codebooks, encode_bands,
                       decode_slice, exact_slice, render_xray, exact_xray)
 
 from . import (backend, core, encode, fit, query, render, scene,  # noqa: E402
@@ -70,9 +70,9 @@ __all__ = [
     "SplatScene", "sample_frequencies", "decode_weights", "spectral_bundle",
     "phasor_bundle", "decode_field", "decode_field_phasor",
     "translate_bundle",
-    "load_splat", "load_spz", "load_scene_file", "build_scene", "render_mip",
-    "band_codebooks", "encode_bands", "decode_slice", "exact_slice",
-    "render_xray", "exact_xray",
+    "load_splat", "load_spz", "load_scene_file", "save_ply", "build_scene",
+    "render_mip", "band_codebooks", "encode_bands", "decode_slice",
+    "exact_slice", "render_xray", "exact_xray",
     "core", "encode", "structures", "scene", "query", "render",
     "fit", "sync", "storage", "backend",
 ]
