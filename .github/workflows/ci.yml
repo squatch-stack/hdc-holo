@@ -46,7 +46,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
-      - run: pip install -e '.[dev]'
+      - run: pip install -e '.[dev,quality]'
       - name: Backend must be the NumPy fallback
         run: python -c "from holo import backend; assert backend.backend_name() == 'numpy', backend.backend_name()"
       - run: python -m pytest tests/ -q
@@ -54,6 +54,8 @@ jobs:
         run: |
           holo-facts index
           holo-facts check --strict --fuzzy
+      - name: Structure rules + lint ratchet
+        run: holo-quality check
       - name: Facts MCP server end-to-end (3.12 only; mcp needs >=3.10)
         if: matrix.python == '3.12'
         run: |

@@ -101,6 +101,7 @@ the shared frequencies, inflating sigma by ~1.5-3x over the i.i.d. law.
 | [orset.md](orset.md) | observed-remove deletion & undo | `holo/orset.py` |
 | [storage.md](storage.md) | phase-only + magnitude codecs | `holo/phase.py` |
 | [facts.md](facts.md) | claims registry + stale-claim gate | `holo/facts/` |
+| [quality.md](quality.md) | structure rules, lint ratchet, LSP | `holo/quality/` |
 
 ## Reading paths
 
