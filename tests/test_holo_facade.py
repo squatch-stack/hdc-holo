@@ -26,8 +26,9 @@ def test_hdc_module_shims_resolve_to_holo_objects():
     assert render.render_orthographic is holo.render_orthographic
     assert orset.ORStore is holo.ORStore
     assert accel.spectral_bundle is holo.backend.spectral_bundle
-    from hdc.ngram import TRAIN, TEST
-    from holo.ngram import TRAIN as HTRAIN, TEST as HTEST
+    from hdc.ngram import TEST, TRAIN
+    from holo.ngram import TEST as HTEST
+    from holo.ngram import TRAIN as HTRAIN
     assert TRAIN is HTRAIN and TEST is HTEST
 
 

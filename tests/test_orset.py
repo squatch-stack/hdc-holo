@@ -5,8 +5,13 @@ import pytest
 
 pytest.importorskip("loro", reason="Loro CRDT bindings not installed")
 
-from holo import (FHRR, HoloReplica, ORHoloMap, ORStrokeScene,  # noqa: E402
-                 ReplicatedHoloMap)
+from holo import (
+    FHRR,
+    HoloReplica,
+    ORHoloMap,
+    ORStrokeScene,
+    ReplicatedHoloMap,
+)
 
 
 def _pair():

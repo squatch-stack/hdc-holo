@@ -9,6 +9,6 @@ that composes with everything else as a payload — and serves as the
 index to the rest.
 """
 
-from .record import RecordSpace  # noqa: F401
+from .record import RecordSpace
 
 __all__ = ["RecordSpace"]

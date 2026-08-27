@@ -56,7 +56,6 @@ def demo(dim=4096, seed=0):
 
     # capacity: fields per record before access degrades
     print(f"  {'fields':>7} {'access accuracy':>16}")
-    import numpy as np
     for n_fields in [5, 20, 80, 320, 1280]:
         space = FHRR(dim, seed=seed)
         rs = RecordSpace(space)

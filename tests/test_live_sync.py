@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("loro", reason="Loro CRDT bindings not installed")
 
-from holo import FHRR, HoloReplica, ReplicatedHoloMap  # noqa: E402
+from holo import FHRR, HoloReplica, ReplicatedHoloMap
 
 
 def test_updates_since_carries_only_new_local_ops():

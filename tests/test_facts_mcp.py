@@ -27,17 +27,16 @@ def test_stdio_server_lists_tools_and_answers():
         params = StdioServerParameters(
             command=sys.executable,
             args=["-m", "holo.facts.cli", "mcp"], cwd=ROOT)
-        async with stdio_client(params) as (r, w):
-            async with ClientSession(r, w) as s:
-                await s.initialize()
-                tools = sorted(t.name for t in (await s.list_tools()).tools)
-                assert tools == ["get_claim", "search_claims", "search_kb"]
-                res = await s.call_tool(
-                    "search_claims", {"query": "encode kernel speedup"})
-                payload = getattr(res, "structuredContent", None) \
+        async with stdio_client(params) as (r, w), ClientSession(r, w) as s:
+            await s.initialize()
+            tools = sorted(t.name for t in (await s.list_tools()).tools)
+            assert tools == ["get_claim", "search_claims", "search_kb"]
+            res = await s.call_tool(
+                "search_claims", {"query": "encode kernel speedup"})
+            payload = getattr(res, "structuredContent", None) \
                     or json.loads(res.content[0].text)
-                if "results" not in payload:   # some SDKs wrap: {"result": ...}
-                    payload = payload.get("result", payload)
-                assert payload["results"][0]["id"] == "accel.encode_speedup"
+            if "results" not in payload:   # some SDKs wrap: {"result": ...}
+                payload = payload.get("result", payload)
+            assert payload["results"][0]["id"] == "accel.encode_speedup"
 
     asyncio.run(run())

@@ -89,8 +89,7 @@ def _load_photo_rgb(res=128):
 
 
 def demo(dim=4096, seed=0, save_png=True):
-    from .render import (exact_projection, render_orthographic,
-                         trefoil_points)
+    from .render import exact_projection, render_orthographic, trefoil_points
     d = max(dim, 16384)
     sigma = 0.025
     print(f"== Color payloads: RGB amplitude channels (d={d}) ==")
@@ -234,8 +233,9 @@ def demo_turntable(dim=4096, seed=0, save_png=True):
     """Turntable: a whole multi-object colored scene orbited from one
     hologram. Each frame folds a fresh slice factor into conj(S) and
     reads out — the scene never exists as geometry at render time."""
-    from .render import exact_projection, render_orthographic
     import time
+
+    from .render import exact_projection, render_orthographic
     d = max(dim, 32768)
     print(f"== Turntable: orbiting a scene stored as 3 x {d} complex64 "
           f"({3 * 8 * d // 1024}KB) ==")
@@ -276,8 +276,9 @@ def demo_turntable(dim=4096, seed=0, save_png=True):
     if not save_png:
         print()
         return
-    from PIL import Image
     import os
+
+    from PIL import Image
     os.makedirs("out", exist_ok=True)
     imgs = [Image.fromarray((f * 255).astype(np.uint8)[::-1])
             for f in frames]
