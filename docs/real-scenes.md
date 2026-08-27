@@ -113,8 +113,17 @@ renders 256 and 1024 and shows nothing at 2048** — the file decodes
 correctly either way under the spec's own arithmetic, so 1024 is the
 tested default.
 
-`python examples/export_formats.py` writes all three and prints the
-table; `examples/run_viewer.py A --compare B` puts any two of them
+`python examples/export_formats.py <scene>` writes all three and
+prints the table — including the SH it finds in the input,
+whether that is a PLY's `f_rest` or an SPZ's SH section (the
+saguaro `.spz` re-exports to a 8.2 MB SOG that carries its
+degree-3 term at 0.54 relative error, where our `.ply` and
+`.spz` writers drop it entirely). One correctness note that
+cost a subtle bug: a scene rotation moves the SH BASIS too, so
+the loaders' 180-degree y-up turn is applied to the harmonics
+as well (`sh_flip_x180`, pinned against the basis functions in
+`tests/test_capture.py`) — without it a y-up source like SPZ
+exports with mirrored view-dependent color. `examples/run_viewer.py A --compare B` puts any two of them
 side by side under one camera, which is how the SH difference is
 actually judged (it reads as slightly warmer, more angle-dependent
 highlights on lit faces, not as a dramatic gap). Beyond these, [splat-transform](https://github.com/playcanvas/splat-transform)

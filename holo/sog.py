@@ -31,7 +31,7 @@ import zipfile
 
 import numpy as np
 
-from .capture import SH_C0, _to_y_up
+from .capture import SH_C0, _to_y_up, sh_flip_x180
 
 SOG_VERSION = 2
 _SH_COEFFS = {1: 3, 2: 8, 3: 15}      # AC coefficients per band count
@@ -121,9 +121,10 @@ def save_sog(path, pos, scale, rgba, quat, sh=None, sh_clusters=1024,
     y-up world, linear color and alpha in [0, 1], wxyz quaternions —
     and writes the ecosystem's y-down convention, as `save_ply` does.
 
-    sh: optional (N, 3, K) higher-order SH in the FILE's frame (what
-    `load_ply_sh` returns), K in {3, 8, 15} for 1..3 bands. Omit it
-    and the export is DC-only, like SPZ v2.
+    sh: optional (N, 3, K) higher-order SH in the same y-up world as
+    `pos`/`quat` — what `load_ply_sh` and `load_spz_sh` return — with
+    K in {3, 8, 15} for 1..3 bands. The basis is rotated along with
+    the geometry on write. Omit it for a DC-only export.
 
     `sh_clusters` is the SH palette size. The format allows up to
     65536, but READERS vary: Spark 2.1.0 renders 256 and 1024 palettes
@@ -193,7 +194,9 @@ def save_sog(path, pos, scale, rgba, quat, sh=None, sh_clusters=1024,
 
     # -- higher-order SH: a palette of per-splat AC vectors ----------
     if sh is not None:
-        sh = np.asarray(sh, np.float64)[order]        # (N, 3, K)
+        # geometry flipped to y-down above; the SH basis turns with
+        # it, or the view-dependent color comes out mirrored
+        sh = sh_flip_x180(np.asarray(sh, np.float32))[order]
         k_coef = sh.shape[2]
         bands = {v: b for b, v in _SH_COEFFS.items()}[k_coef]
         k = int(min(sh_clusters, n))
