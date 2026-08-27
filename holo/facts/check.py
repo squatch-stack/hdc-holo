@@ -245,6 +245,49 @@ def _value_ok(claim, got):
     return got in {canon(v) for v in claim.accepted_values()}
 
 
+_ARXIV_ID = re.compile(r"^\d{4}\.\d{4,5}(v\d+)?$")
+
+
+def _front_matter_findings(root, config, claims):
+    """Knowledge-base front-matter validation, config-gated: files
+    matching `front_matter_surfaces` globs must carry parseable flat
+    front-matter whose `claims:` ids exist in the registry, whose
+    `arxiv:` ids are well-formed, and whose `swept:` date parses —
+    the dated-arXiv-sweep convention made structural."""
+    from .normalize import front_matter
+    globs_ = config.get("front_matter_surfaces", [])
+    if not globs_:
+        return []
+    ids = {c.id for c in claims}
+    findings = []
+    for pat in globs_:
+        for path in sorted(glob.glob(os.path.join(root, pat))):
+            rel = os.path.relpath(path, root)
+            fm = front_matter(path)
+            if not fm:
+                findings.append(Finding(
+                    "WARN", "front-matter-missing", "", rel, 1,
+                    "surface expects flat front-matter (--- block)"))
+                continue
+            for cid in fm.get("claims", []) or []:
+                if cid not in ids:
+                    findings.append(Finding(
+                        "FAIL", "front-matter-claim", cid, rel, 1,
+                        "front-matter names unregistered claim id"))
+            for aid in fm.get("arxiv", []) or []:
+                if not _ARXIV_ID.match(aid):
+                    findings.append(Finding(
+                        "FAIL", "front-matter-arxiv", "", rel, 1,
+                        "malformed arXiv id %r" % aid))
+            swept = fm.get("swept")
+            if swept and not re.match(r"^\d{4}-\d{2}-\d{2}$",
+                                      str(swept)):
+                findings.append(Finding(
+                    "FAIL", "front-matter-swept", "", rel, 1,
+                    "swept: %r is not YYYY-MM-DD" % swept))
+    return findings
+
+
 # ---------------------------------------------------------------------- run
 
 def run(root, strict=False, config=None, claims=None):
@@ -452,6 +495,8 @@ def run(root, strict=False, config=None, claims=None):
             if rel not in referenced:
                 result.findings.append(Finding(
                     "WARN", "orphan-figure", "", rel, 0, "cited nowhere"))
+
+    result.findings.extend(_front_matter_findings(root, config, claims))
 
     prefixes = tuple(config.get("evidence_unverifiable_prefixes", []))
     for claim in current:

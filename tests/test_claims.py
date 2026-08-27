@@ -179,6 +179,44 @@ def test_get_claim_returns_chain_derivation_and_cite_sites():
     assert "error" in missing
 
 
+def test_front_matter_parses_flat_subset_only():
+    import os
+    import tempfile
+    from holo.facts.normalize import front_matter
+    md = ("---\ntopic: bochner-rff\nswept: 2026-08-26\narxiv:\n"
+          "  - 2004.11154\n  - 1206.4111\ntags:\n  - kernels\n---\n# body\n")
+    with tempfile.NamedTemporaryFile("w", suffix=".md",
+                                     delete=False) as f:
+        f.write(md)
+        path = f.name
+    try:
+        fm = front_matter(path)
+    finally:
+        os.unlink(path)
+    assert fm["topic"] == "bochner-rff"
+    assert fm["arxiv"] == ["2004.11154", "1206.4111"]
+    assert fm["swept"] == "2026-08-26"
+
+
+def test_front_matter_findings_flag_bad_ids_and_dates(tmp_path):
+    from holo.facts.check import _front_matter_findings
+    from holo.facts.registry import Claim
+    good = tmp_path / "topics"
+    good.mkdir()
+    (good / "ok.md").write_text(
+        "---\ntopic: ok\nclaims:\n  - kb.known\narxiv:\n  - 2308.04079\n"
+        "swept: 2026-08-26\n---\nbody\n")
+    (good / "bad.md").write_text(
+        "---\ntopic: bad\nclaims:\n  - kb.unknown\narxiv:\n  - not-an-id\n"
+        "swept: yesterday\n---\nbody\n")
+    config = {"front_matter_surfaces": ["topics/*.md"]}
+    claims = [Claim(id="kb.known")]
+    codes = sorted(f.code for f in
+                   _front_matter_findings(str(tmp_path), config, claims))
+    assert codes == ["front-matter-arxiv", "front-matter-claim",
+                     "front-matter-swept"]
+
+
 def test_search_kb_reports_unconfigured_honestly():
     import os
     from holo.facts.query import search_kb

@@ -35,7 +35,11 @@ the docs"); version skew between `holo.__version__`, CHANGELOG, and
 CITATION.cff. WARN (never blocks): floor-form citations lagging >10%,
 high-signal numbers registered to no claim, orphan figures, gitignored
 evidence. `tests/test_claims.py` runs the same gate under pytest, so
-the suite alone catches drift.
+the suite alone catches drift. Knowledge-base surfaces add a
+config-gated tier (`front_matter_surfaces`): flat front-matter must
+parse, its `claims:` ids must exist in the registry (cite-sites made
+cross-repo), `arxiv:` ids must be well-formed, and `swept:` dates must
+parse — the dated-sweep convention made structural.
 
 **Historical contexts.** Old numbers are data, not errors. Four
 mechanisms keep them legal, mirroring conventions the repo already
