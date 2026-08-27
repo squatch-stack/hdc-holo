@@ -19,7 +19,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-from hdc_splat import (
+from holo.spectral import (
     SplatScene,
     decode_field,
     decode_field_phasor,
@@ -37,7 +37,10 @@ SURFACE, PAGE = "#fcfcfb", "#f9f9f7"
 INK, INK2, MUTED = "#0b0b0b", "#52514e", "#898781"
 GRID, BASELINE = "#e1e0d9", "#c3c2b7"
 
-RESULTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+# repo root: this driver lives in examples/, its evidence figures
+# do not — results/ is committed at the root and cited by the docs
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RESULTS = os.path.join(ROOT, "results")
 os.makedirs(RESULTS, exist_ok=True)
 
 MIN_SCALE, MAX_SCALE = 0.02, 0.045
@@ -66,7 +69,9 @@ def render_grid(res):
 
 
 def fmt_bytes(nbytes):
-    return f"{nbytes / 1024:.0f} KB" if nbytes < 1 << 20 else f"{nbytes / (1 << 20):.1f} MB"
+    if nbytes < 1 << 20:
+        return f"{nbytes / 1024:.0f} KB"
+    return f"{nbytes / (1 << 20):.1f} MB"
 
 
 # ---------------------------------------------------------------------------
@@ -269,8 +274,9 @@ def experiment_translation(scene, freqs, bundle, recon, res):
         for side in ax.spines.values():
             side.set_color("#d8d7d2"); side.set_linewidth(0.75)
         ax.set_title(title, fontsize=10, color=INK, pad=6)
-    axes[1].set_xlabel(f"one complex multiply on the bundle — rel. error {100 * e:.1f}%",
-                       fontsize=9, color=INK2)
+    axes[1].set_xlabel(
+        f"one complex multiply on the bundle — rel. error {100 * e:.1f}%",
+        fontsize=9, color=INK2)
     fig.suptitle("Translating every splat at once = binding the bundle with one phasor",
                  fontsize=11.5, color=INK, y=1.02)
     fig.tight_layout()

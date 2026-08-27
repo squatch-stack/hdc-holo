@@ -1,4 +1,6 @@
-"""Gaussian splats as complex64 hypervector bundles (FHRR / Vector Function Architecture).
+"""Gaussian splats as complex64 hypervector bundles.
+
+FHRR / Vector Function Architecture.
 
 The bridge is Bochner's theorem / random Fourier features:
 
@@ -179,7 +181,8 @@ def phasor_bundle(scene, freqs, chunk=4096):
         mu = scene.mu[lo:lo + chunk]
         amp = scene.amp[lo:lo + chunk]
         phase = mu @ freqs.T
-        bundle += (amp.T.astype(np.complex64)) @ np.exp(-1j * phase).astype(np.complex64)
+        bundle += ((amp.T.astype(np.complex64))
+                   @ np.exp(-1j * phase).astype(np.complex64))
     return bundle
 
 
@@ -245,7 +248,8 @@ def eval_scene_exact(scene, points, iso_sigma=None, chunk=256):
         amp = scene.amp[lo:lo + chunk]
         diff = points[None, :, :] - mu[:, None, :]    # (n, P, D)
         if iso_sigma is None:
-            inv_cov = np.linalg.inv(scene.cov[lo:lo + chunk].astype(np.float64)).astype(np.float32)
+            cov64 = scene.cov[lo:lo + chunk].astype(np.float64)
+            inv_cov = np.linalg.inv(cov64).astype(np.float32)
             quad = np.einsum("npi,nij,npj->np", diff, inv_cov, diff)
         else:
             quad = (diff**2).sum(axis=2) / iso_sigma**2

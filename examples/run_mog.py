@@ -45,7 +45,7 @@ import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from hdc_splat import (
+from holo.spectral import (
     SplatScene,
     decode_field,
     eval_scene_exact,
@@ -59,7 +59,10 @@ SURFACE, PAGE = "#fcfcfb", "#f9f9f7"
 INK, INK2, MUTED = "#0b0b0b", "#52514e", "#898781"
 GRID, BASELINE = "#e1e0d9", "#c3c2b7"
 
-RESULTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+# repo root: this driver lives in examples/, its evidence figures
+# do not — results/ is committed at the root and cited by the docs
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RESULTS = os.path.join(ROOT, "results")
 os.makedirs(RESULTS, exist_ok=True)
 
 S_MIN, S_MAX = 0.02, 0.10

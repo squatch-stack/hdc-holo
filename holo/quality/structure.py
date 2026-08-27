@@ -13,6 +13,10 @@ three rules is more moving parts than the rules themselves.
   driver-leaf       examples/ drivers wrap the public API; nothing in
                     holo/ may import one, or an example becomes a
                     dependency of the library it demonstrates.
+  shim-unreachable  the root compat shims sit at the repo root, which
+                    is NOT on sys.path when a driver runs as
+                    `python examples/foo.py` — importing one there
+                    raises ModuleNotFoundError. Import `holo.*`.
 """
 
 import ast
@@ -84,6 +88,30 @@ def _driver_leaf(root):
     return out
 
 
+def _shim_unreachable(root):
+    """Every example that imports a ROOT-level module, which is exactly
+    what `python examples/foo.py` cannot resolve.
+
+    This rule exists because the root-layout move introduced it: two
+    drivers moved into examples/ kept `from hdc_splat import ...` and
+    crashed on every invocation the docs recommend, silently, because
+    nobody ran them for weeks.
+    """
+    shims = {name[:-3] for name in os.listdir(root)
+             if name.endswith(".py")}
+    out = []
+    for path in sorted(glob.glob(os.path.join(root, "examples", "*.py"))):
+        rel = os.path.relpath(path, root)
+        for mod in _imported_modules(path):
+            if mod.split(".")[0] in shims:
+                out.append(("FAIL", "shim-unreachable", rel,
+                            "imports %r, a repo-root module that is not "
+                            "importable from examples/ — import holo.* "
+                            "instead" % mod))
+    return out
+
+
 def check_structure(root):
     """[(level, code, path, message)] — empty when the tree is clean."""
-    return _root_clutter(root) + _module_test_pairs(root) + _driver_leaf(root)
+    return (_root_clutter(root) + _module_test_pairs(root)
+            + _driver_leaf(root) + _shim_unreachable(root))

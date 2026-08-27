@@ -71,6 +71,22 @@ def test_driver_leaf_rule_catches_a_library_importing_an_example(tmp_path):
                for lvl, code, _, _ in findings)
 
 
+def test_shim_unreachable_rule_catches_a_root_import(tmp_path):
+    # the bug this rule exists for: a driver moved into examples/ kept
+    # importing a repo-root shim and crashed on every documented
+    # invocation, silently, for weeks
+    (tmp_path / "hdc_splat.py").write_text("x = 1\n")
+    (tmp_path / "examples").mkdir()
+    (tmp_path / "examples" / "run_thing.py").write_text(
+        "from hdc_splat import x\n")
+    (tmp_path / "examples" / "fine.py").write_text(
+        "from holo.spectral import spectral_bundle\n")
+    findings = check_structure(str(tmp_path))
+    offenders = [path for lvl, code, path, _ in findings
+                 if code == "shim-unreachable" and lvl == "FAIL"]
+    assert offenders == ["examples/run_thing.py"]
+
+
 def test_this_repo_satisfies_its_own_structure_rules():
     # the gate applied to the tree it ships in
     fails = [f for f in check_structure(ROOT) if f[0] == "FAIL"]
