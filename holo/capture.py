@@ -362,8 +362,15 @@ def load_ply(path, sigma_scale=0.75):
             data = np.loadtxt(f, dtype=np.float64, max_rows=n,
                               usecols=range(len(props)))
             pos = data[:, :3]
-            rgb = (data[:, 3:6] / 255.0).astype(np.float32) \
-                if has_rgb else None
+            # `property uchar` is a DECLARATION, not a guarantee: ascii
+            # writers can and do emit outside it, and unlike the binary
+            # branch above (whose u1 dtype makes it impossible) nothing
+            # here would catch it. One iPhone LiDAR export in data/
+            # carries channels from -44 to 298 across 1.8% of its
+            # points, which reach build_scene as negative premultiplied
+            # amplitudes — light with negative energy.
+            rgb = (np.clip(data[:, 3:6], 0.0, 255.0) / 255.0
+                   ).astype(np.float32) if has_rgb else None
         else:
             raise AssertionError(f"unsupported PLY format {fmt}")
 
@@ -440,8 +447,10 @@ def load_ply_sh(path):
     bytes for ~10% of its color energy (`docs/real-scenes.md`), which
     only SOG export currently carries. INRIA writes `f_rest_i` in
     channel-major order (i = channel * K + coefficient). Returned in
-    the FILE's frame — no y-up flip, since rotating a scene rotates
-    the SH basis too, and the export writes y-down anyway.
+    the y-up world frame, like every other loader here: the file is
+    y-down, and rotating a scene has to rotate the SH basis with it,
+    so the 180-degree x flip is applied to the coefficients on the way
+    out (`sh_flip_x180`).
     """
     with open(path, "rb") as f:
         assert f.readline().strip() == b"ply", "not a PLY file"
