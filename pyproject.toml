@@ -19,7 +19,7 @@ crdt = ["loro>=1.0"]
 viz = ["matplotlib>=3.5", "pillow>=8"]
 gpu = ["mlx>=0.5"]  # Apple Metal backend (hdc/accel.py); macOS only
 dev = ["pytest>=7", "loro>=1.0", "matplotlib>=3.5", "pillow>=8"]
-facts = ["mcp>=1.0; python_version >= '3.10'"]
+facts = ["mcp>=1.0; python_version >= '3.10'"]  # holo-facts MCP server; the checker itself is stdlib+numpy on 3.9
 quality = ["ruff>=0.6", "kuzu>=0.6"]  # lint ratchet + Cypher code graph  # holo-facts MCP server (stdio); the checker itself is stdlib+numpy and runs on 3.9
 
 [project.scripts]
