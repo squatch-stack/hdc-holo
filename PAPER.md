@@ -207,9 +207,17 @@ structure in the data (spatial locality for scenes) to pay off.
 
 ## Before submission
 
-1. **Baseline table** — fidelity-per-byte against 3DGS compression
-   methods (the survey we cite makes this the expected comparison). We
-   have the export path and the referee; we lack the table.
+1. ~~**Baseline table**~~ — DONE: [docs/baselines.md](docs/baselines.md).
+   The result is a loss on that axis and the paper should say so
+   plainly: a bundle is ~400x larger and ~50x less accurate at
+   reproducing the field than SOG. Fold it into the introduction as
+   the cost side of the trade — the three claims are about
+   capabilities the codecs do not sell — and keep the two things it
+   does say for us: HM-8 is free compression (4x smaller at slightly
+   BETTER error, the shrinkage denoiser at capture scale), and the
+   families scale differently (per-splat with content, bundles with
+   occupied volume; the gap narrows 4x per decade of density but does
+   not close).
 2. **Adopt the citations** (§7) into the draft's framing up front.
 3. Re-run the sweep at draft-freeze; log the delta with its date.
 4. Decide venue framing: graphics (representation + rendering) or
