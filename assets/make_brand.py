@@ -224,14 +224,14 @@ def _saguaro_strokes(tx, ty, s):
 
 
 # duet layout (256 badge, SVG coordinates, y down)
-D_SASQ = dict(s=0.60, tx=17.0, ty=42.4)     # base lands on the floor
-D_SAG = dict(s=0.80, tx=79.6, ty=45.2)
+D_SASQ = {"s": 0.60, "tx": 17.0, "ty": 42.4}     # base lands on the floor
+D_SAG = {"s": 0.80, "tx": 79.6, "ty": 45.2}
 D_FLOOR = [(34, 210), (222, 210)]
 D_SOURCES = [(80, 122), (182, 128)]          # sasquatch heart, saguaro crown
 
 # banner layout (1280x400)
-B_SASQ = dict(s=0.93, tx=236.0, ty=70.2)
-B_SAG = dict(s=1.30, tx=783.6, ty=62.2)
+B_SASQ = {"s": 0.93, "tx": 236.0, "ty": 70.2}
+B_SAG = {"s": 1.30, "tx": 783.6, "ty": 62.2}
 B_FLOOR = [(150, 330), (1130, 330)]
 B_SOURCES = [(330, 200), (950, 205)]
 
@@ -271,10 +271,7 @@ def _svg_floor(pts, width):
 
 
 def svg_duet():
-    body = "\n".join(_svg_rings(D_SOURCES, 15, 200)
-                     + [_svg_floor(D_FLOOR, 4),
-                        _svg_sasquatch(D_SASQ)]
-                     + _svg_saguaro(D_SAG))
+    body = "\n".join([*_svg_rings(D_SOURCES, 15, 200), _svg_floor(D_FLOOR, 4), _svg_sasquatch(D_SASQ), *_svg_saguaro(D_SAG)])
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Squatch Stack duet mark">
 <title>Squatch Stack — sasquatch and saguaro as the two sources of one interference field. Two signals find the shift that lets them resonate.</title>
 <defs><clipPath id="duet"><circle cx="128" cy="128" r="118"/></clipPath></defs>
@@ -288,10 +285,7 @@ def svg_duet():
 
 
 def svg_banner():
-    body = "\n".join(_svg_rings(B_SOURCES, 34, 1100, width=1.4, op=0.22)
-                     + [_svg_floor(B_FLOOR, 6),
-                        _svg_sasquatch(B_SASQ)]
-                     + _svg_saguaro(B_SAG))
+    body = "\n".join([*_svg_rings(B_SOURCES, 34, 1100, width=1.4, op=0.22), _svg_floor(B_FLOOR, 6), _svg_sasquatch(B_SASQ), *_svg_saguaro(B_SAG)])
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-label="Squatch Stack banner">
 <title>Squatch Stack — the studio and the project resonate in one field.</title>
 <defs><clipPath id="ban"><rect x="0" y="0" width="1280" height="400" rx="20"/></clipPath></defs>
@@ -337,7 +331,7 @@ def render_duet_png(path, px):
     s, tx, ty = D_SASQ["s"], D_SASQ["tx"], D_SASQ["ty"]
     for poly in _sasquatch_polys():
         pts = [(tx + x * s, ty + y * s) for x, y in poly]
-        verts += pts + [pts[0]]
+        verts += [*pts, pts[0]]
         codes += ([MplPath.MOVETO] + [MplPath.LINETO] * (len(pts) - 1)
                   + [MplPath.CLOSEPOLY])
     sasq = PathPatch(MplPath(verts, codes), facecolor=CREAM,
@@ -391,8 +385,8 @@ def render_profile_social(path):
     ax.set_aspect("equal")
     ax.axis("off")
     ax.add_patch(Rectangle((0, 0), 1280, 640, facecolor=FOREST_DEEP))
-    sasq = dict(s=1.15, cx=210)
-    sag = dict(s=1.70, cx=1070)
+    sasq = {"s": 1.15, "cx": 210}
+    sag = {"s": 1.70, "cx": 1070}
     floor_y = 520
     sources = [(sasq["cx"], 380), (sag["cx"], 350)]
     for i, (sx, sy) in enumerate(sources):
@@ -408,7 +402,7 @@ def render_profile_social(path):
     verts, codes = [], []
     for poly in _sasquatch_polys():
         pts = [(tx + x * s, ty + y * s) for x, y in poly]
-        verts += pts + [pts[0]]
+        verts += [*pts, pts[0]]
         codes += ([MplPath.MOVETO] + [MplPath.LINETO] * (len(pts) - 1)
                   + [MplPath.CLOSEPOLY])
     ax.add_patch(PathPatch(MplPath(verts, codes), facecolor=CREAM,
@@ -469,7 +463,7 @@ def render_avatar(path, px=1024):
     verts, codes = [], []
     for poly in _sasquatch_polys():
         pts = [(tx + x * s, ty + y * s) for x, y in poly]
-        verts += pts + [pts[0]]
+        verts += [*pts, pts[0]]
         codes += ([MplPath.MOVETO] + [MplPath.LINETO] * (len(pts) - 1)
                   + [MplPath.CLOSEPOLY])
     ax.add_patch(PathPatch(MplPath(verts, codes), facecolor=CREAM,

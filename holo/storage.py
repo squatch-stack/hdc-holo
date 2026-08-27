@@ -8,10 +8,26 @@ codes are a wire/storage format — always tagged (SDK.md, format
 versioning).
 """
 
-from .phase import (STORAGE_VERSION, dequantize, from_phases,  # noqa: F401
-                    pack, pack_complex, pack_polar, quantize, to_phases,
-                    unpack)
+from .phase import (
+                    STORAGE_VERSION,
+                    dequantize,
+                    from_phases,
+                    pack,
+                    pack_complex,
+                    pack_polar,
+                    quantize,
+                    to_phases,
+                    unpack,
+)
 
-__all__ = ["to_phases", "from_phases", "quantize", "dequantize",
-           "pack", "pack_complex", "pack_polar", "unpack",
-           "STORAGE_VERSION"]
+__all__ = [
+                    "STORAGE_VERSION",
+                    "dequantize",
+                    "from_phases",
+                    "pack",
+                    "pack_complex",
+                    "pack_polar",
+                    "quantize",
+                    "to_phases",
+                    "unpack",
+]

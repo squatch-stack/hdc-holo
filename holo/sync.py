@@ -11,15 +11,32 @@ Wire protocol for sockets: HoloReplica.version() / updates_since().
 See examples/live_sync.py for two OS processes co-painting with undo over TCP.
 """
 
-from .crdt import (HAVE_LORO, WIRE_VERSION, HoloReplica,  # noqa: F401
-                   ReplicatedAttributeScene, ReplicatedHoloMap,
-                   ReplicatedRecordSpace, ReplicatedSplatScene,
-                   pack_bundle, unpack_bundle)
-from .color import ReplicatedColorScene  # noqa: F401
-from .orset import ORHoloMap, ORStore, ORStrokeScene  # noqa: F401
+from .color import ReplicatedColorScene
+from .crdt import (
+                   HAVE_LORO,
+                   WIRE_VERSION,
+                   HoloReplica,
+                   ReplicatedAttributeScene,
+                   ReplicatedHoloMap,
+                   ReplicatedRecordSpace,
+                   ReplicatedSplatScene,
+                   pack_bundle,
+                   unpack_bundle,
+)
+from .orset import ORHoloMap, ORStore, ORStrokeScene
 
-__all__ = ["HAVE_LORO", "HoloReplica", "ReplicatedHoloMap",
-           "ReplicatedSplatScene", "ReplicatedAttributeScene",
-           "ReplicatedRecordSpace", "ReplicatedColorScene",
-           "ORStore", "ORHoloMap", "ORStrokeScene",
-           "WIRE_VERSION", "pack_bundle", "unpack_bundle"]
+__all__ = [
+                   "HAVE_LORO",
+                   "WIRE_VERSION",
+                   "HoloReplica",
+                   "ORHoloMap",
+                   "ORStore",
+                   "ORStrokeScene",
+                   "ReplicatedAttributeScene",
+                   "ReplicatedColorScene",
+                   "ReplicatedHoloMap",
+                   "ReplicatedRecordSpace",
+                   "ReplicatedSplatScene",
+                   "pack_bundle",
+                   "unpack_bundle",
+]

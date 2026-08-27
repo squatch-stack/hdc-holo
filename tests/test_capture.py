@@ -6,10 +6,23 @@ import struct
 import numpy as np
 import pytest
 
-from holo.capture import (BANDS, S_HI, S_LO, band_codebooks, band_of,
-                          build_scene, decode_slice, encode_bands,
-                          exact_slice, exact_xray, fit_cells, load_splat,
-                          parse_spz, render_mip, render_xray)
+from holo.capture import (
+    BANDS,
+    S_HI,
+    S_LO,
+    band_codebooks,
+    band_of,
+    build_scene,
+    decode_slice,
+    encode_bands,
+    exact_slice,
+    exact_xray,
+    fit_cells,
+    load_splat,
+    parse_spz,
+    render_mip,
+    render_xray,
+)
 from holo.spectral import SplatScene
 
 
@@ -120,7 +133,7 @@ def test_ply_loader_both_variants(tmp_path):
                 "property list uchar int vertex_indices\nend_header\n")
         for p, c in zip(pts, rgb):
             f.write(f"{p[0]} {p[1]} {p[2]} {c[0]} {c[1]} {c[2]}\n")
-    pos, scale, rgba, quat = load_ply(str(a))
+    pos, scale, rgba, _quat = load_ply(str(a))
     assert np.allclose(pos, pts, atol=1e-5)
     assert np.allclose(rgba[:, :3], rgb / 255.0, atol=1e-6)
 
@@ -209,7 +222,7 @@ def test_build_scene_crops_floaters_and_clamps_scales(tmp_path):
     quat = np.tile([1.0, 0, 0, 0], (n_core + n_far, 1))
     path = tmp_path / "scene.splat"
     _write_splat(path, pos, scale, rgba, quat)
-    scene, smax, box = build_scene(str(path), verbose=False)
+    scene, smax, _box = build_scene(str(path), verbose=False)
     # the mass-centered cube keeps the core and drops the 200-away shell
     assert n_core * 0.7 <= scene.n <= n_core + 1
     assert np.all(scene.mu >= -1e-6) and np.all(scene.mu <= 1 + 1e-6)
@@ -355,7 +368,7 @@ def test_save_ply_alpha_edges_and_build_scene(tmp_path):
              np.tile([1.0, 0, 0, 0], (n, 1)))
     assert np.isfinite(np.frombuffer(
         open(p, "rb").read().split(b"end_header\n", 1)[1], "<f4")).all()
-    scene, smax, box = build_scene(str(p), verbose=False)
+    scene, _smax, _box = build_scene(str(p), verbose=False)
     # the alpha-0 splat is filtered, alpha-1 splats survive the logit
     # round trip at ~1 (the crop may drop a few more — not under test)
     assert scene.n >= n * 0.75
@@ -365,7 +378,7 @@ def test_save_ply_alpha_edges_and_build_scene(tmp_path):
 def test_save_spz_roundtrip(tmp_path):
     """save_spz -> load_spz reproduces splats on the format's
     quantization grid: 2^-12 positions, ~6% log-u8 scales, u8 color."""
-    from holo.capture import load_spz, quat_to_rot, save_spz
+    from holo.capture import load_spz, save_spz
     rng = np.random.default_rng(13)
     n = 80
     pos = rng.uniform(-4, 4, (n, 3))

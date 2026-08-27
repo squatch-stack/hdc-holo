@@ -19,7 +19,7 @@ spellings), text (pattern presence is the claim).
 import json
 from dataclasses import dataclass, field
 
-__all__ = ["Claim", "load_registry", "validate", "base_id"]
+__all__ = ["Claim", "base_id", "load_registry", "validate"]
 
 _STATUSES = {"current", "superseded", "retracted"}
 _KINDS = {"count", "floor", "measurement", "identifier", "text"}

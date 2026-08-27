@@ -180,7 +180,7 @@ def driver(args):
             "--undo-round", str(args.undo_round)]
     if args.no_montage:
         base.append("--no-montage")
-    a = subprocess.Popen(base + ["--role", "A"], stdout=subprocess.PIPE,
+    a = subprocess.Popen([*base, "--role", "A"], stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, text=True)
     port = None
     for line in a.stdout:
@@ -190,7 +190,7 @@ def driver(args):
     if port is None:
         print(a.communicate()[0] or "painter A produced no port")
         sys.exit(1)
-    b = subprocess.Popen(base + ["--role", "B", "--port", str(port)],
+    b = subprocess.Popen([*base, "--role", "B", "--port", str(port)],
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                          text=True)
     out_a = a.stdout.read()

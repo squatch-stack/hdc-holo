@@ -399,7 +399,7 @@ def demo(dim=4096, seed=0):
         print(f"  codeword at {bits:>2}-bit phases: similarity to "
               f"original {r:.4f}  ({bits/64:.3%} of complex64 size)")
 
-    print(f"  bundle storage cost (HoloMap, value alphabet 256):")
+    print("  bundle storage cost (HoloMap, value alphabet 256):")
     print(f"  {'pairs N':>8} {'complex64':>10} {'phase f32':>10} "
           f"{'uint8':>7} {'uint4':>7}")
     for n_pairs in [250, 500, 1000, 2000]:

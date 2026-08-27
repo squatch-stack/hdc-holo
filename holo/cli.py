@@ -7,9 +7,26 @@
 
 import argparse
 
-from . import (attribute_field, color, crdt, dispatch, field, fit, fsm,
-               graph, hashmap, ngram, orset, phase, record, render, sdm,
-               sequence, sketch, spatial)
+from . import (
+    attribute_field,
+    color,
+    crdt,
+    dispatch,
+    field,
+    fit,
+    fsm,
+    graph,
+    hashmap,
+    ngram,
+    orset,
+    phase,
+    record,
+    render,
+    sdm,
+    sequence,
+    sketch,
+    spatial,
+)
 
 DEMOS = {
     "hashmap": hashmap.demo,

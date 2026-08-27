@@ -10,9 +10,13 @@ import pytest
 
 pytest.importorskip("loro", reason="Loro CRDT bindings not installed")
 
-from holo import (FHRR, HoloReplica, ReplicatedAttributeScene,  # noqa: E402
-                 ReplicatedHoloMap, ReplicatedRecordSpace,
-                 ReplicatedSplatScene)
+from holo import (
+    FHRR,
+    HoloReplica,
+    ReplicatedAttributeScene,
+    ReplicatedHoloMap,
+    ReplicatedSplatScene,
+)
 
 
 def test_crdt_offline_divergence_converges():

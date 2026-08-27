@@ -12,17 +12,23 @@ Outputs PNGs into results/ and prints a summary.
 import os
 import time
 
-import numpy as np
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
 from hdc_splat import (
-    SplatScene, random_scene, sample_frequencies, spectral_bundle,
-    phasor_bundle, decode_field, decode_field_phasor, translate_bundle,
+    SplatScene,
+    decode_field,
+    decode_field_phasor,
     eval_scene_exact,
+    phasor_bundle,
+    random_scene,
+    sample_frequencies,
+    spectral_bundle,
+    translate_bundle,
 )
 
 # ---- reference palette (validated: slots 1-3 pass all-pairs, light mode) ----
@@ -277,8 +283,8 @@ def experiment_translation(scene, freqs, bundle, recon, res):
 def main():
     t0 = time.time()
     rng = np.random.default_rng(42)
-    scene, freqs, bundle, exact, recon_best, res, recon_errs = experiment_recon(rng)
-    results, slopes = experiment_capacity(rng)
+    scene, freqs, bundle, _exact, recon_best, res, _recon_errs = experiment_recon(rng)
+    _results, _slopes = experiment_capacity(rng)
     trans_err = experiment_translation(scene, freqs, bundle, recon_best, res)
     print(f"\nAll experiments done in {time.time() - t0:.0f}s. "
           f"Figures in {RESULTS}/")

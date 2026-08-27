@@ -1,11 +1,9 @@
 """holo/dispatch.py — near-enough dispatch, banding, abstention."""
 
 import numpy as np
-import pytest
 
 from holo import FHRR
-from holo.dispatch import (BandedDispatcher, FastNGramProfiler,
-                           NearEnoughDispatcher)
+from holo.dispatch import BandedDispatcher, FastNGramProfiler, NearEnoughDispatcher
 
 
 def _mkword(rng):
@@ -46,7 +44,7 @@ def test_fast_profiler_matches_ngram_encoder():
 
 def test_matrix_dispatch_survives_typos():
     rng = np.random.default_rng(1)
-    rules, vocab = _rules(rng, 64)
+    rules, _vocab = _rules(rng, 64)
     d = NearEnoughDispatcher(rules, dim=2048, seed=0)
     # 15% character typos on every condition: trigram cosine margins
     # sit far above cross-rule similarity of disjoint random keywords
@@ -62,7 +60,7 @@ def test_exactness_is_brittle_where_matrix_is_not():
     d = NearEnoughDispatcher(rules, dim=2048, seed=0)
     cond, action = rules[0]
     words = cond.split()[1:]                        # drop one keyword
-    text = " ".join(words + [vocab[0]])
+    text = " ".join([*words, vocab[0]])
     # Boolean AND cannot fire with a keyword missing...
     toks = set(text.split())
     fired = [a for c, a in rules if all(k in toks for k in c.split())]
@@ -73,7 +71,7 @@ def test_exactness_is_brittle_where_matrix_is_not():
 
 def test_bundle_dispatch_within_capacity():
     rng = np.random.default_rng(3)
-    rules, vocab = _rules(rng, 48)
+    rules, _vocab = _rules(rng, 48)
     # crosstalk sqrt(N/2d) = sqrt(48/8192) ~ 0.077 vs signal ~1: >4 sigma
     d = NearEnoughDispatcher(rules, dim=4096, seed=0)
     for cond, action in rules[:24]:
@@ -104,7 +102,7 @@ def test_flat_bundle_pays_the_law_and_banding_rescues():
 
 def test_clustered_routing_finds_the_band():
     rng = np.random.default_rng(5)
-    rules, vocab = _rules(rng, 512, n_actions=8, per_topic=40)
+    rules, _vocab = _rules(rng, 512, n_actions=8, per_topic=40)
     d = NearEnoughDispatcher(rules, dim=2048, seed=0)
     cl = BandedDispatcher(d, 16, clustered=True)
     hits = 0
@@ -117,7 +115,7 @@ def test_clustered_routing_finds_the_band():
 
 def test_abstention_threshold_is_policy():
     rng = np.random.default_rng(6)
-    rules, vocab = _rules(rng, 32)
+    rules, _vocab = _rules(rng, 32)
     d = NearEnoughDispatcher(rules, dim=2048, seed=0)
     # gibberish scores near the noise floor -> abstain
     got, score = d.dispatch_matrix("zzzz qqqq xxxx vvvv", threshold=0.3)

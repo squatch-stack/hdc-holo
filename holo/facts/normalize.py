@@ -21,9 +21,16 @@ import ast
 import re
 from dataclasses import dataclass, field
 
-__all__ = ["Paragraph", "normalize_file", "normalize_markdown",
-           "normalize_python", "normalize_plain", "figure_refs",
-           "front_matter", "canon"]
+__all__ = [
+    "Paragraph",
+    "canon",
+    "figure_refs",
+    "front_matter",
+    "normalize_file",
+    "normalize_markdown",
+    "normalize_plain",
+    "normalize_python",
+]
 
 _PRAGMA = re.compile(r"<!--\s*claims:\s*([^>]*?)\s*-->")
 _MERMAID_QUOTED = re.compile(r'"([^"]+)"')

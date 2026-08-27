@@ -127,9 +127,10 @@ class HoloRegressor:
 
 def _load_photo(res=128):
     """Grace Hopper's portrait (ships with matplotlib), grayscale [0,1]."""
+    import os
+
     import matplotlib
     from PIL import Image
-    import os
     path = os.path.join(os.path.dirname(matplotlib.__file__),
                         "mpl-data", "sample_data", "grace_hopper.jpg")
     img = Image.open(path).convert("L").resize((res, res))

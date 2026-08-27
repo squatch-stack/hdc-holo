@@ -1,10 +1,9 @@
 """Phase-only and quantized storage."""
 
-import pytest
 import numpy as np
+import pytest
 
-from holo import FHRR, HoloMap
-from holo import phase
+from holo import FHRR, HoloMap, phase
 
 
 def test_phase_quantization_roundtrip(space):

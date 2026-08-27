@@ -6,8 +6,20 @@ cos/sin planes on the device so no backend needs complex64. Results
 match NumPy to float32 rounding.
 """
 
-from .accel import (active, backend_name, cell_decode,  # noqa: F401
-                    decode, readout, spectral_bundle)
+from .accel import (
+                    active,
+                    backend_name,
+                    cell_decode,
+                    decode,
+                    readout,
+                    spectral_bundle,
+)
 
-__all__ = ["active", "backend_name", "spectral_bundle", "cell_decode",
-           "decode", "readout"]
+__all__ = [
+                    "active",
+                    "backend_name",
+                    "cell_decode",
+                    "decode",
+                    "readout",
+                    "spectral_bundle",
+]

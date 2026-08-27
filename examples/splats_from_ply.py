@@ -17,10 +17,20 @@ import time
 
 import numpy as np
 
-from holo.capture import (DIM_R, RENDER_BANDS, SIGMA_MIP, band_codebooks,
-                          build_scene, decode_slice, encode_bands,
-                          exact_slice, mass_mode, render_mip, render_xray,
-                          slice_grid)
+from holo.capture import (
+    DIM_R,
+    RENDER_BANDS,
+    SIGMA_MIP,
+    band_codebooks,
+    build_scene,
+    decode_slice,
+    encode_bands,
+    exact_slice,
+    mass_mode,
+    render_mip,
+    render_xray,
+    slice_grid,
+)
 
 path = sys.argv[1] if len(sys.argv) > 1 else "data/iphone/redrock.ply"
 

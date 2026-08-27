@@ -11,7 +11,6 @@ language-identification setup (Joshi et al.): one ~10k-d vector per
 language replaces an explicit n-gram count table.
 """
 
-import numpy as np
 
 from .fhrr import FHRR, ItemMemory, Permutation
 

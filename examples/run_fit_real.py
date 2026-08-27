@@ -17,9 +17,16 @@ import time
 
 import numpy as np
 
-from holo.capture import (band_codebooks, build_scene, decode_slice,
-                          encode_bands, exact_slice, fit_cells, mass_mode,
-                          slice_grid)
+from holo.capture import (
+    band_codebooks,
+    build_scene,
+    decode_slice,
+    encode_bands,
+    exact_slice,
+    fit_cells,
+    mass_mode,
+    slice_grid,
+)
 
 # repo root: this driver lives in examples/, its assets do not
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

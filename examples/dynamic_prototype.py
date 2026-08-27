@@ -20,9 +20,14 @@ import time
 
 import numpy as np
 
-from holo.spectral import (SplatScene, decode_field, eval_scene_exact,
-                           sample_frequencies, spectral_bundle,
-                           translate_bundle)
+from holo.spectral import (
+    SplatScene,
+    decode_field,
+    eval_scene_exact,
+    sample_frequencies,
+    spectral_bundle,
+    translate_bundle,
+)
 
 RNG = np.random.default_rng(7)
 D = 1 << 14                    # hypervector dimensionality

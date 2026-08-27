@@ -39,14 +39,20 @@ Outputs results/mog_penalty.png and a summary table.
 import os
 import time
 
-import numpy as np
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from hdc_splat import (SplatScene, random_rotations_3d, sample_frequencies,
-                       spectral_bundle, decode_field, eval_scene_exact)
+from hdc_splat import (
+    SplatScene,
+    decode_field,
+    eval_scene_exact,
+    random_rotations_3d,
+    sample_frequencies,
+    spectral_bundle,
+)
 
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a"]
 SURFACE, PAGE = "#fcfcfb", "#f9f9f7"

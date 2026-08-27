@@ -13,7 +13,6 @@ Artifacts land in ./gpubench/ (gitignored).
 """
 
 import argparse
-import glob
 import json
 import os
 import subprocess

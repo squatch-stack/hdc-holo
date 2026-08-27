@@ -3,10 +3,17 @@
 import numpy as np
 import pytest
 
-from holo.spectral import (SplatScene, decode_field, decode_field_phasor,
-                           phasor_bundle, random_scene, sample_frequencies,
-                           spectral_bundle, translate_bundle)
-from holo.spectral import eval_scene_exact
+from holo.spectral import (
+    SplatScene,
+    decode_field,
+    decode_field_phasor,
+    eval_scene_exact,
+    phasor_bundle,
+    random_scene,
+    sample_frequencies,
+    spectral_bundle,
+    translate_bundle,
+)
 
 
 def _single_splat(sigma=0.03):
@@ -107,6 +114,6 @@ def test_gpu_and_numpy_paths_agree():
             * np.sqrt(np.linalg.det(scene.cov.astype(np.float64))))
     env = np.exp(-0.5 * (cq @ wq.T))
     ref = (scene.amp * norm[:, None]).T.astype(np.complex64) @ \
-        ((env * np.exp(-1j * (scene.mu @ freqs.T)))).astype(np.complex64)
+        (env * np.exp(-1j * (scene.mu @ freqs.T))).astype(np.complex64)
     # identical math, different silicon: float32 rounding only
     assert np.max(np.abs(fast - ref)) / np.max(np.abs(ref)) < 1e-5

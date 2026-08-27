@@ -23,59 +23,139 @@ package remains as a compatibility shim over this one.
 
 __version__ = "0.2.1"
 
-from .fhrr import FHRR, ItemMemory, Permutation
-from .hashmap import HoloMap
-from .sketch import MembershipFilter, FrequencySketch
-from .record import RecordSpace
-from .sequence import HoloStack, SequenceMemory
-from .ngram import NGramEncoder
-from .graph import HoloGraph
-from .fsm import HoloFSM
-from .sdm import SparseDistributedMemory
-from .field import GaussianSplatField
+from . import (
+                   backend,
+                   core,
+                   encode,
+                   fit,
+                   query,
+                   render,
+                   scene,
+                   storage,
+                   structures,
+                   sync,
+)
 from .attribute_field import AttributeSplatField
-from .spatial import MultiBandSplatField, ChunkedSplatField
-from .crdt import (HAVE_LORO, HoloReplica, ReplicatedHoloMap,
-                   ReplicatedSplatScene, ReplicatedAttributeScene,
-                   ReplicatedRecordSpace)
-from .fit import FrequencyBands, HoloRegressor
-from .render import render_orthographic, view_bundle, exact_projection
+from .capture import (
+                   band_codebooks,
+                   build_scene,
+                   decode_slice,
+                   encode_bands,
+                   exact_slice,
+                   exact_xray,
+                   load_ply_sh,
+                   load_scene_file,
+                   load_splat,
+                   load_spz,
+                   render_mip,
+                   render_xray,
+                   save_ply,
+                   save_spz,
+)
 from .color import ColorSplatField, ReplicatedColorScene
-from .orset import ORStore, ORHoloMap, ORStrokeScene
-from .dispatch import (NearEnoughDispatcher, BandedDispatcher,
-                       FastNGramProfiler)
-from .spectral import (SplatScene, sample_frequencies, decode_weights,
-                       spectral_bundle, phasor_bundle, decode_field,
-                       decode_field_phasor, translate_bundle)
+from .crdt import (
+                   HAVE_LORO,
+                   HoloReplica,
+                   ReplicatedAttributeScene,
+                   ReplicatedHoloMap,
+                   ReplicatedRecordSpace,
+                   ReplicatedSplatScene,
+)
+from .dispatch import BandedDispatcher, FastNGramProfiler, NearEnoughDispatcher
+from .fhrr import FHRR, ItemMemory, Permutation
+from .field import GaussianSplatField
+from .fit import FrequencyBands, HoloRegressor
+from .fsm import HoloFSM
+from .graph import HoloGraph
+from .hashmap import HoloMap
+from .ngram import NGramEncoder
+from .orset import ORHoloMap, ORStore, ORStrokeScene
+from .record import RecordSpace
+from .render import exact_projection, render_orthographic, view_bundle
+from .sdm import SparseDistributedMemory
+from .sequence import HoloStack, SequenceMemory
+from .sketch import FrequencySketch, MembershipFilter
 from .sog import save_sog
-from .capture import (load_splat, load_spz, load_scene_file, load_ply_sh,
-                      save_ply, save_spz,
-                      build_scene, render_mip, band_codebooks, encode_bands,
-                      decode_slice, exact_slice, render_xray, exact_xray)
-
-from . import (backend, core, encode, fit, query, render, scene,  # noqa: E402
-               storage, structures, sync)
+from .spatial import ChunkedSplatField, MultiBandSplatField
+from .spectral import (
+                   SplatScene,
+                   decode_field,
+                   decode_field_phasor,
+                   decode_weights,
+                   phasor_bundle,
+                   sample_frequencies,
+                   spectral_bundle,
+                   translate_bundle,
+)
 
 __all__ = [
-    "FHRR", "ItemMemory", "Permutation",
-    "HoloMap", "MembershipFilter", "FrequencySketch", "RecordSpace",
-    "HoloStack", "SequenceMemory", "NGramEncoder", "HoloGraph",
-    "HoloFSM", "SparseDistributedMemory", "GaussianSplatField",
-    "AttributeSplatField", "MultiBandSplatField", "ChunkedSplatField",
-    "HAVE_LORO", "HoloReplica", "ReplicatedHoloMap", "ReplicatedSplatScene",
-    "ReplicatedAttributeScene", "ReplicatedRecordSpace",
-    "FrequencyBands", "HoloRegressor",
-    "render_orthographic", "view_bundle", "exact_projection",
-    "ColorSplatField", "ReplicatedColorScene",
-    "ORStore", "ORHoloMap", "ORStrokeScene",
-    "NearEnoughDispatcher", "BandedDispatcher", "FastNGramProfiler",
-    "SplatScene", "sample_frequencies", "decode_weights", "spectral_bundle",
-    "phasor_bundle", "decode_field", "decode_field_phasor",
-    "translate_bundle",
-    "load_splat", "load_spz", "load_scene_file", "load_ply_sh",
-    "save_ply", "save_spz", "save_sog", "build_scene",
-    "render_mip", "band_codebooks", "encode_bands", "decode_slice",
-    "exact_slice", "render_xray", "exact_xray",
-    "core", "encode", "structures", "scene", "query", "render",
-    "fit", "sync", "storage", "backend",
+                   "FHRR",
+                   "HAVE_LORO",
+                   "AttributeSplatField",
+                   "BandedDispatcher",
+                   "ChunkedSplatField",
+                   "ColorSplatField",
+                   "FastNGramProfiler",
+                   "FrequencyBands",
+                   "FrequencySketch",
+                   "GaussianSplatField",
+                   "HoloFSM",
+                   "HoloGraph",
+                   "HoloMap",
+                   "HoloRegressor",
+                   "HoloReplica",
+                   "HoloStack",
+                   "ItemMemory",
+                   "MembershipFilter",
+                   "MultiBandSplatField",
+                   "NGramEncoder",
+                   "NearEnoughDispatcher",
+                   "ORHoloMap",
+                   "ORStore",
+                   "ORStrokeScene",
+                   "Permutation",
+                   "RecordSpace",
+                   "ReplicatedAttributeScene",
+                   "ReplicatedColorScene",
+                   "ReplicatedHoloMap",
+                   "ReplicatedRecordSpace",
+                   "ReplicatedSplatScene",
+                   "SequenceMemory",
+                   "SparseDistributedMemory",
+                   "SplatScene",
+                   "backend",
+                   "band_codebooks",
+                   "build_scene",
+                   "core",
+                   "decode_field",
+                   "decode_field_phasor",
+                   "decode_slice",
+                   "decode_weights",
+                   "encode",
+                   "encode_bands",
+                   "exact_projection",
+                   "exact_slice",
+                   "exact_xray",
+                   "fit",
+                   "load_ply_sh",
+                   "load_scene_file",
+                   "load_splat",
+                   "load_spz",
+                   "phasor_bundle",
+                   "query",
+                   "render",
+                   "render_mip",
+                   "render_orthographic",
+                   "render_xray",
+                   "sample_frequencies",
+                   "save_ply",
+                   "save_sog",
+                   "save_spz",
+                   "scene",
+                   "spectral_bundle",
+                   "storage",
+                   "structures",
+                   "sync",
+                   "translate_bundle",
+                   "view_bundle",
 ]

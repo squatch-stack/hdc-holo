@@ -13,8 +13,13 @@ from dataclasses import dataclass
 
 from .normalize import normalize_file
 
-__all__ = ["Chunk", "chunk_file", "chunk_surfaces", "MIN_CHARS",
-           "MAX_CHARS"]
+__all__ = [
+    "MAX_CHARS",
+    "MIN_CHARS",
+    "Chunk",
+    "chunk_file",
+    "chunk_surfaces",
+]
 
 MIN_CHARS = 200
 MAX_CHARS = 1200

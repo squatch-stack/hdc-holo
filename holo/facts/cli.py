@@ -130,9 +130,10 @@ def main(argv=None):
         print("internal error: %s" % e, file=sys.stderr)
         return 2
     if args.fuzzy:
+        import os as _os
+
         from . import index as indexmod
         from .registry import load_registry
-        import os as _os
         try:
             claims = load_registry(
                 _os.path.join(root, "claims", "registry.jsonl"))

@@ -201,5 +201,9 @@ def demo(dim=4096, seed=0, save_png=True):
     print()
 
 
-__all__ = ["render_orthographic", "view_bundle", "exact_projection",
-           "trefoil_points"]
+__all__ = [
+    "exact_projection",
+    "render_orthographic",
+    "trefoil_points",
+    "view_bundle",
+]
