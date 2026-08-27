@@ -36,7 +36,7 @@
     "gpubench/"
   ],
   "fuzzy_threshold": 0.18,
-  "kb_path": null,
+  "kb_path": "../knowledge-base",
   "unregistered_skip": [
     "CHANGELOG.md",
     "docs/related-work.md"

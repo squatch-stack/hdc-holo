@@ -16,10 +16,10 @@ reports honestly when none is configured.
 import os
 
 from .check import DERIVATIONS, _match_values, load_config
-from .normalize import canon, normalize_file
+from .normalize import canon, front_matter, normalize_file
 from .registry import base_id, load_registry
 
-__all__ = ["search_claims", "get_claim", "search_kb", "front_matter"]
+__all__ = ["search_claims", "get_claim", "search_kb"]
 
 
 def _registry(root):
@@ -125,32 +125,6 @@ def get_claim(root, claim_id):
                 sites.append({"file": cite, "line": par.line_start})
     record["cite_sites"] = sites
     return record
-
-
-def front_matter(path):
-    """Restricted flat front-matter: `key: value` and `- item` lists
-    between leading --- fences. Deliberately not YAML."""
-    out, key = {}, None
-    try:
-        with open(path, encoding="utf-8") as f:
-            lines = f.read().split("\n")
-    except OSError:
-        return out
-    if not lines or lines[0].strip() != "---":
-        return out
-    for line in lines[1:]:
-        s = line.strip()
-        if s == "---":
-            break
-        if s.startswith("- ") and key:
-            out.setdefault(key, [])
-            if isinstance(out[key], list):
-                out[key].append(s[2:].strip())
-        elif ":" in s:
-            key, _, val = s.partition(":")
-            key, val = key.strip(), val.strip()
-            out[key] = val if val else []
-    return out
 
 
 def search_kb(root, query, limit=8):

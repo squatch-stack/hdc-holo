@@ -434,6 +434,22 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   (tests/test_facts_mcp.py: spawn server, initialize, list tools,
   call search_claims). Registration one-liner and .mcp.json example
   in docs/facts.md.
+- **knowledge-base bootstrapped** (facts lane, phase 4 complete; the facts
+  plan is done): squatch-stack/knowledge-base is live — seven topic pages
+  (Bochner/RFF, FHRR/VSA capacity incl. the matrix-vs-bundle
+  corollary, Fourier extension/plunge, NUFFT type-3, 3DGS binning,
+  ridge primal/dual + minimum-norm trap, CRDT semantics), the PKCE
+  loopback engineering note, and the first dated learning promoted
+  from this log (orientation-is-metadata, capture lane credited).
+  Every page carries flat front-matter (claims ids / arXiv ids /
+  swept dates) enforced by a new config-gated checker tier — the
+  cross-repo version of cite-sites — and the KB's CI installs
+  hdc-holo[facts] at a pinned revision and runs the identical gate
+  (first run: 0 FAIL 0 WARN after the 19x binning claim was
+  registered, flagged by the unregistered tier as designed).
+  search_kb through the MCP server answers from it: "plunge region"
+  returns fourier-extension-plunge with arXiv:1206.4111 attached.
+  Same fork topology as hdc-holo (local bare origin, github curated).
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,
