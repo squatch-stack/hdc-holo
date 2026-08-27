@@ -1,3 +1,5 @@
 """Compatibility shim: the implementation lives in holo/attribute_field.py."""
 
-from holo.attribute_field import *  # noqa: F403
+from ._shim import delegate
+
+__getattr__, __dir__ = delegate("holo.attribute_field")

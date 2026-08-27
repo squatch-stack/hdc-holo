@@ -5,8 +5,20 @@ examples/run_real_scene.py) and any notebooks keep working unchanged. New code
 should import from `holo` / `holo.encode`.
 """
 
-from holo.spectral import *  # noqa: F403
-from holo.spectral import _decode, _self_test  # noqa: F401
+import importlib
+
+
+def __getattr__(name):
+    """Resolve against holo.spectral on every access, so this shim can
+    never hand back an object that was replaced at runtime."""
+    if name.startswith("__") and name.endswith("__"):
+        raise AttributeError(name)
+    return getattr(importlib.import_module("holo.spectral"), name)
+
+
+def __dir__():
+    return sorted(dir(importlib.import_module("holo.spectral")))
+
 
 if __name__ == "__main__":
-    _self_test()
+    __getattr__("_self_test")()

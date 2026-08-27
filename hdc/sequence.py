@@ -1,3 +1,5 @@
 """Compatibility shim: the implementation lives in holo/sequence.py."""
 
-from holo.sequence import *  # noqa: F403
+from ._shim import delegate
+
+__getattr__, __dir__ = delegate("holo.sequence")
