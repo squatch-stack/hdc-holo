@@ -4,6 +4,8 @@ Capacity is API: every structure's noise budget is ~sqrt(N/(2d)) —
 see each class docstring and the demo capacity tables (`hdc-demos`).
 """
 
+from .dispatch import (BandedDispatcher, FastNGramProfiler,  # noqa: F401
+                       NearEnoughDispatcher)
 from .fsm import HoloFSM  # noqa: F401
 from .graph import HoloGraph  # noqa: F401
 from .hashmap import HoloMap  # noqa: F401
@@ -15,4 +17,5 @@ from .sketch import FrequencySketch, MembershipFilter  # noqa: F401
 
 __all__ = ["HoloMap", "MembershipFilter", "FrequencySketch", "RecordSpace",
            "HoloStack", "SequenceMemory", "NGramEncoder", "HoloGraph",
-           "HoloFSM", "SparseDistributedMemory"]
+           "HoloFSM", "SparseDistributedMemory",
+           "NearEnoughDispatcher", "BandedDispatcher", "FastNGramProfiler"]

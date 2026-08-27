@@ -84,6 +84,27 @@ will hit the plunge-region conditioning and needs truncated-SVD or
 Tikhonov treatment from the start — the literature says this is
 workable, not fatal.
 
+## Dispatch delta (2026-08-26, near-enough dispatch)
+
+Positioning for `holo/dispatch.py` (rules as similarity). Adjacent
+lines that exist: the HDC/VSA surveys (part II, arXiv:2112.15424)
+name **similarity-based reasoning** — search, classification,
+analogy — as a core capability of the framework, and HDC text/intent
+classification is a standard application; *Probabilistic Abduction
+for Visual Abstract Reasoning via Learning Rules in Vector-symbolic
+Architectures* (arXiv:2401.16024) learns and executes RULES inside a
+VSA (visual domain); similarity-preserving hypervector encodings of
+sequences (arXiv:2201.11691, arXiv:2112.15475) are the literature's
+answer to exactly the order-blindness gap our trigram conditions
+carry. On the engineering side, embedding-based "semantic routers"
+(learned sentence embeddings + nearest-centroid intent routing) are
+established practice. *What appears open as of this sweep: the
+engineered synthesis — a rule ENGINE contract with hash-derived
+determinism (no learned model), an explicit sqrt(N/2d) capacity
+budget, whole-rulebook-as-one-vector and banded/clustered variants
+with measured compute trades, abstention as policy, and
+CRDT-mergeable rule tables.* Re-verify before claiming externally.
+
 Re-run this sweep before any writeup or release; log deltas here with
 the date. Track daily 3DGS postings via the awesome-gaussians list
 (github.com/longxiang-ai/awesome-gaussians).
