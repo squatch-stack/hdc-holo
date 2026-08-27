@@ -98,10 +98,6 @@ max-args = 8          # numeric kernels legitimately take (points, W, S, chunk, 
 "tests/test_crdt.py" = ["SIM118"]
 "tests/test_orset.py" = ["SIM118"]
 "tests/test_live_sync.py" = ["SIM118"]
-# The compat shims already carry `# noqa: F401,F403` at each re-export
-# site — that annotation IS the documentation, so no blanket ignore.
-"hdc/*.py" = ["F405"]
-"hdc_splat.py" = ["F405"]
 
 # --- Language server ---------------------------------------------------
 # Two servers, one config source. `ruff server` provides diagnostics,

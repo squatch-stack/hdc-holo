@@ -63,3 +63,57 @@ def test_storage_facade_carries_all_three_codecs():
     assert storage.pack_complex is phase.pack_complex
     assert storage.pack_polar is phase.pack_polar
     assert storage.unpack is phase.unpack
+
+
+def test_runtime_backend_patch_reaches_the_facade_and_the_shim():
+    """Issue #10: the facades bound accel's function OBJECTS at import,
+    so an out-of-tree backend patching `holo.accel.readout` left every
+    facade-routed call on the original NumPy path — silently, because
+    the results stayed correct and only the speed told you. Late
+    binding is what makes this test possible to write at all.
+    """
+    import hdc.accel
+    import holo.accel
+    import holo.backend
+
+    def patched(*args, **kwargs):
+        return "PATCHED"
+
+    original = holo.accel.readout
+    holo.accel.readout = patched
+    try:
+        assert holo.backend.readout("p", "W", "S") == "PATCHED"
+        assert hdc.accel.readout("p", "W", "S") == "PATCHED"
+    finally:
+        holo.accel.readout = original
+    assert holo.backend.readout is original
+    assert hdc.accel.readout is original
+
+
+def test_shims_do_not_forward_dunders():
+    # forwarding __getstate__/__reduce__ and friends confuses pickling
+    # and introspection; a shim's dunders are its own
+    import hdc.fhrr
+    for name in ("__path__", "__wrapped__", "__getstate__"):
+        try:
+            getattr(hdc.fhrr, name)
+        except AttributeError:
+            continue
+        raise AssertionError("shim forwarded dunder %r" % name)
+
+
+def test_facade_rejects_unknown_names():
+    import holo.backend
+    try:
+        getattr(holo.backend, "no_such_kernel")
+    except AttributeError as e:
+        assert "no_such_kernel" in str(e)
+    else:
+        raise AssertionError("the facade must not invent attributes")
+
+
+def test_dir_still_lists_the_surface():
+    import hdc.fhrr
+    import holo.backend
+    assert "readout" in dir(holo.backend)
+    assert "FHRR" in dir(hdc.fhrr)

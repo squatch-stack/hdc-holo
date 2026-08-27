@@ -1,3 +1,5 @@
 """Compatibility shim: the implementation lives in holo/fsm.py."""
 
-from holo.fsm import *  # noqa: F403
+from ._shim import delegate
+
+__getattr__, __dir__ = delegate("holo.fsm")
