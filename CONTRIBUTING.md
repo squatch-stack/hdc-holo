@@ -63,6 +63,20 @@ commits and push once per work session, not per commit.
 
 ## Concurrency between sessions
 
+### Check what landed before you claim
+
+The worktree discipline below prevents two sessions editing one file.
+It does not prevent two sessions doing one job — a distinct failure
+that has cost this repo real hours. Before opening a lane:
+`git fetch github`, then `git log github/main -5 --oneline -- <area>`
+and `gh pr list --state all --limit 10` for work in flight or recently
+merged. Read what exists before writing a replacement, and announce a
+lane when you open it rather than when you land it: a claim that
+arrives with the PR is a notification, not coordination. Identify the
+session you are addressing by its announcement, never by inferring
+authorship from commit timing — several sessions share one committer
+identity.
+
 ### Every lane gets a worktree
 
 Several sessions share one checkout, so the checkout itself is common
