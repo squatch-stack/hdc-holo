@@ -290,7 +290,329 @@ def _front_matter_findings(root, config, claims):
 
 # ---------------------------------------------------------------------- run
 
-def run(root, strict=False, config=None, claims=None):
+class _Scan:
+    """Everything the individual checks share, resolved once.
+
+    `run` used to hold all of this in one 259-line scope with a closure
+    over a paragraph cache; the checks below take a _Scan instead, which
+    is what let them become separate functions at all.
+    """
+
+    def __init__(self, root, config, claims):
+        self.root = root
+        self.config = config
+        self.claims = claims
+        self.current = [c for c in claims if c.status == "current"]
+        self.stale = [c for c in claims
+                      if c.status in ("superseded", "retracted")]
+        self.by_id = {c.id: c for c in claims}
+        self.sections = _changelog_sections(root)
+        self.hist_after = _historical_zones(root, config)
+        self.surfaces = _surface_files(root, config)
+        self.patterned = [c for c in claims if c.patterns]
+        self._paras = {}
+        self._raw = {}
+
+    def paras(self, rel):
+        """Normalized paragraphs for a surface, parsed at most once."""
+        if rel not in self._paras:
+            ps = normalize_file(os.path.join(self.root, rel))
+            for p in ps:
+                p.file = rel      # zone/allowlist keys are repo-relative
+            self._paras[rel] = ps
+            with open(os.path.join(self.root, rel), encoding="utf-8",
+                      errors="replace") as f:
+                self._raw[rel] = f.read()
+        return self._paras[rel]
+
+    def raw(self, rel):
+        self.paras(rel)
+        return self._raw[rel]
+
+    def is_historical(self, par, claim):
+        return _is_historical(par, claim, self.config, self.sections,
+                              self.hist_after)
+
+
+def _historical_zones(root, config):
+    """{file: first line of its dated-record zone} — below that line,
+    superseded values are history rather than drift."""
+    zones = {}
+    for rel, heading in config.get("historical_after_heading", {}).items():
+        path = os.path.join(root, rel)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for i, line in enumerate(f):
+                if line.strip().startswith(heading):
+                    zones[rel] = i + 1
+                    break
+    return zones
+
+
+def _floor_finding(claim, cite, par, got):
+    """(ok, finding) for an 'N+' style citation against a count claim."""
+    try:
+        cited, current = int(got), int(canon(claim.value))
+    except ValueError:
+        return False, None
+    if cited > current:
+        return False, Finding(
+            "FAIL", "cite-overclaim", claim.id, cite, par.line_start,
+            "floor %s+ exceeds current %s" % (cited, current))
+    if current and (current - cited) / current > 0.10:
+        return True, Finding(
+            "WARN", "floor-lag", claim.id, cite, par.line_start,
+            "floor %s+ lags current %s by >10%%" % (cited, current))
+    return True, None
+
+
+def _belongs_to_another_claim(scan, claim, par, got):
+    """A value another claim states in the SAME paragraph is not drift
+    of this one — "encode 37x, decode 106x" is one sentence, two claims."""
+    for other in scan.patterned:
+        if other.id == claim.id:
+            continue
+        if got not in {canon(v) for v in other.accepted_values()}:
+            continue
+        if any(g == got for g, _ in _match_values(other, par.text)):
+            return True
+    return False
+
+
+def _classify_hit(scan, claim, cite, par, got, floor, cur_canon,
+                  stale_values):
+    """One matched value in one cite file: (states_current, findings)."""
+    if got in cur_canon:
+        return True, []
+    if floor and claim.kind in ("count", "floor"):
+        ok, finding = _floor_finding(claim, cite, par, got)
+        return ok, [finding] if finding else []
+    if got in stale_values:
+        superseded = stale_values[got]
+        if scan.is_historical(par, superseded):
+            return False, []
+        return False, [Finding(
+            "FAIL", "cite-drift", claim.id, cite, par.line_start,
+            "cites superseded %r (current: %r)" % (got, claim.value))]
+    if _belongs_to_another_claim(scan, claim, par, got):
+        return False, []
+    return False, [Finding(
+        "FAIL", "cite-drift", claim.id, cite, par.line_start,
+        "cites %r but current is %r" % (got, claim.value))]
+
+
+def _check_one_citation(scan, claim, cite, cur_canon, stale_values):
+    hits = [(par, got, floor)
+            for par in scan.paras(cite)
+            for got, floor in _match_values(claim, par.text)]
+    if not hits:
+        return [Finding("FAIL", "cite-missing", claim.id, cite, 0,
+                        "no longer states this claim (current: %r)"
+                        % claim.value)]
+    findings, states_current = [], False
+    for par, got, floor in hits:
+        ok, new = _classify_hit(scan, claim, cite, par, got, floor,
+                                cur_canon, stale_values)
+        states_current = states_current or ok
+        findings.extend(new)
+    if not states_current and not findings:
+        findings.append(Finding(
+            "FAIL", "cite-missing", claim.id, cite, 0,
+            "states no current value (current: %r)" % claim.value))
+    return findings
+
+
+def _check_citations(scan):
+    """(b) every cite file must still state its claim's current value."""
+    findings = []
+    for claim in scan.current:
+        if not claim.patterns:
+            continue
+        cur_canon = {canon(v) for v in claim.accepted_values()}
+        stale_values = {canon(v): s for s in scan.stale
+                        if base_id(s.id) == claim.id
+                        for v in s.accepted_values()}
+        for cite in claim.cites:
+            findings.extend(_check_one_citation(scan, claim, cite,
+                                                cur_canon, stale_values))
+    return findings
+
+
+def _superseded_in_paragraph(scan, claim, cur, rel, par, stale_canon):
+    findings = []
+    for got, _ in _match_values(claim, par.text):
+        if got not in stale_canon or scan.is_historical(par, claim):
+            continue
+        findings.append(Finding(
+            "FAIL", "superseded-value", claim.id, rel, par.line_start,
+            "%s value %r appears un-annotated%s"
+            % (claim.status, got,
+               " (current: %r)" % cur.value if cur else "")))
+    return findings
+
+
+def _check_superseded(scan):
+    """(a) a retired value anywhere outside a historical context."""
+    findings = []
+    for claim in scan.stale:
+        if not claim.patterns:
+            continue
+        stale_canon = {canon(v) for v in claim.accepted_values()}
+        cur = scan.by_id.get(claim.superseded_by or base_id(claim.id))
+        for rel in scan.surfaces:
+            for par in scan.paras(rel):
+                findings.extend(_superseded_in_paragraph(
+                    scan, claim, cur, rel, par, stale_canon))
+    return findings
+
+
+def _check_derivations(scan):
+    """The REGISTRY against code/tree ground truth."""
+    findings = []
+    for claim in scan.current:
+        fn = DERIVATIONS.get(claim.check.get("fn")) if claim.check else None
+        if not fn:
+            continue
+        try:
+            derived = fn(scan.root)
+        except Exception as e:   # a derivation may need an absent extra
+            findings.append(Finding(
+                "WARN", "derivation-error", claim.id, "", 0,
+                "%s: %s" % (claim.check.get("fn"), e)))
+            continue
+        if canon(derived) not in {canon(v) for v in claim.accepted_values()}:
+            findings.append(Finding(
+                "FAIL", "derived-mismatch", claim.id, "", 0,
+                "registry says %r but tree derives %r — update the claim, "
+                "then its cites" % (claim.value, derived)))
+    return findings
+
+
+def _check_figures(scan):
+    """(findings, referenced) — every cited figure must exist."""
+    findings, referenced = [], set()
+    for rel in scan.surfaces:
+        if not rel.endswith(".md"):
+            continue
+        raw = scan.raw(rel)
+        for ref in figure_refs(raw):
+            referenced.add(ref)
+            if os.path.exists(os.path.join(scan.root, ref)):
+                continue
+            line = next((i + 1 for i, text in enumerate(raw.split("\n"))
+                         if ref in text), 0)
+            findings.append(Finding(
+                "FAIL", "figure-missing", "", rel, line,
+                "references %s which does not exist" % ref))
+    return findings, referenced
+
+
+def _check_versions(scan):
+    """holo.__version__ against the CHANGELOG heading and CITATION.cff."""
+    try:
+        import holo
+        version = holo.__version__
+    except Exception:
+        return []
+    findings = []
+    heads = [v for v, _, _ in scan.sections if v is not None]
+    if heads and heads[0] != _semver(version):
+        findings.append(Finding(
+            "FAIL", "version-skew", "project.version", "CHANGELOG.md", 0,
+            "newest release heading %s != holo.__version__ %s"
+            % (".".join(map(str, heads[0])), version)))
+    cff = os.path.join(scan.root, "CITATION.cff")
+    if os.path.exists(cff):
+        with open(cff, encoding="utf-8") as f:
+            m = re.search(r"^version:\s*[\"']?(\d+\.\d+\.\d+)",
+                          f.read(), re.M)
+        if m and m.group(1) != version:
+            findings.append(Finding(
+                "FAIL", "version-skew", "project.version", "CITATION.cff", 0,
+                "cff version %s != holo.__version__ %s"
+                % (m.group(1), version)))
+    return findings
+
+
+def _check_orphan_figures(scan, referenced):
+    findings = []
+    for directory in ("results", "out"):
+        base = os.path.join(scan.root, directory)
+        if not os.path.isdir(base):
+            continue
+        for name in sorted(os.listdir(base)):
+            rel = "%s/%s" % (directory, name)
+            if name.endswith((".png", ".gif")) and rel not in referenced:
+                findings.append(Finding("WARN", "orphan-figure", "", rel, 0,
+                                        "cited nowhere"))
+    return findings
+
+
+def _check_evidence(scan):
+    prefixes = tuple(scan.config.get("evidence_unverifiable_prefixes", []))
+    if not prefixes:
+        return []
+    return [Finding("WARN", "unverifiable-evidence", claim.id, ev, 0,
+                    "evidence is gitignored — unverifiable in CI")
+            for claim in scan.current for ev in claim.evidence
+            if ev.startswith(prefixes)]
+
+
+_CANDIDATE_NUMBERS = [
+    (re.compile(r"\b\d+(?:\.\d+)?x\b"),
+     ("faster", "speedup", "encode", "decode", "slower")),
+    (re.compile(r"\b\d+\s+tests\b"), ()),
+    (re.compile(r"\b\d+(?:\.\d+)?\s*(?:s|ms|min)\b"),
+     ("pipeline", "end to end", "end-to-end", "per frame", "s/frame",
+      "wall")),
+]
+
+
+def _is_candidate_number(par):
+    low = par.text.lower()
+    for pattern, context in _CANDIDATE_NUMBERS:
+        if pattern.search(par.text) and \
+                (not context or any(c in low for c in context)):
+            return True
+    return False
+
+
+def _unregistered_in_surface(scan, rel):
+    findings = []
+    for par in scan.paras(rel):
+        if par.kind == "verbatim" or \
+                any(p.startswith("ignore") for p in par.pragmas):
+            continue
+        if not _is_candidate_number(par):
+            continue
+        if any(_match_values(c, par.text) for c in scan.patterned):
+            continue
+        text = par.text[:90] + ("…" if len(par.text) > 90 else "")
+        findings.append(Finding(
+            "WARN", "unregistered-number", "", rel, par.line_start,
+            "high-signal number with no registered claim: %r" % text))
+    return findings
+
+
+def _check_unregistered(scan, cap=20):
+    """(c) high-signal numbers attributable to no claim — candidates for
+    registration, capped so one messy file cannot bury the other tiers."""
+    skip = set(scan.config.get("unregistered_skip", []))
+    found = []
+    for rel in scan.surfaces:
+        if rel.endswith(".md") and rel not in skip:
+            found.extend(_unregistered_in_surface(scan, rel))
+    if len(found) <= cap:
+        return found
+    return [*found[:cap], Finding(
+        "WARN", "unregistered-number", "", "", 0,
+        "…and %d more (run with --json for all)" % (len(found) - cap))]
+
+
+def run(root, config=None, claims=None):
+    """Every tier, in reporting order. Each check is independent and
+    takes the shared _Scan; this function only sequences them."""
     config = config or load_config(root)
     claims = claims if claims is not None else \
         load_registry(os.path.join(root, "claims", "registry.jsonl"))
@@ -300,252 +622,18 @@ def run(root, strict=False, config=None, claims=None):
         result.findings.append(Finding("FAIL", "registry-invalid", "",
                                        "claims/registry.jsonl", 0, err))
     if result.fails:
-        return result
+        return result           # a broken registry makes every tier lie
 
-    current = [c for c in claims if c.status == "current"]
-    stale = [c for c in claims if c.status in ("superseded", "retracted")]
-    by_id = {c.id: c for c in claims}
-    sections = _changelog_sections(root)
+    scan = _Scan(root, config, claims)
+    figure_findings, referenced = _check_figures(scan)
 
-    hist_after = {}
-    for rel, heading in config.get("historical_after_heading", {}).items():
-        path = os.path.join(root, rel)
-        if os.path.exists(path):
-            with open(path, encoding="utf-8", errors="replace") as f:
-                for i, line in enumerate(f):
-                    if line.strip().startswith(heading):
-                        hist_after[rel] = i + 1
-                        break
-
-    surfaces = _surface_files(root, config)
-    paras = {}   # rel path -> [Paragraph]
-    raw = {}     # rel path -> raw text
-
-    def get_paras(rel):
-        if rel not in paras:
-            ps = normalize_file(os.path.join(root, rel))
-            for p in ps:
-                p.file = rel   # zone/allowlist keys are repo-relative
-            paras[rel] = ps
-            with open(os.path.join(root, rel), encoding="utf-8",
-                      errors="replace") as f:
-                raw[rel] = f.read()
-        return paras[rel]
-
-    for rel in surfaces:
-        get_paras(rel)
-
-    # (b) citation checks for current claims
-    for claim in current:
-        if not claim.patterns:
-            continue
-        cur_canon = {canon(v) for v in claim.accepted_values()}
-        stale_values = {canon(v): s for s in stale
-                        if base_id(s.id) == claim.id
-                        for v in s.accepted_values()}
-        for cite in claim.cites:
-            hits = []
-            for par in get_paras(cite):
-                for got, floor in _match_values(claim, par.text):
-                    hits.append((par, got, floor))
-            if not hits:
-                result.findings.append(Finding(
-                    "FAIL", "cite-missing", claim.id, cite, 0,
-                    "no longer states this claim (current: %r)" % claim.value))
-                continue
-            ok = False
-            for par, got, floor in hits:
-                if got in cur_canon:
-                    ok = True
-                    continue
-                if floor and claim.kind in ("count", "floor"):
-                    try:
-                        cited, curv = int(got), int(canon(claim.value))
-                    except ValueError:
-                        cited = curv = None
-                    if cited is not None:
-                        if cited > curv:
-                            result.findings.append(Finding(
-                                "FAIL", "cite-overclaim", claim.id, cite,
-                                par.line_start,
-                                "floor %s+ exceeds current %s" % (cited, curv)))
-                        else:
-                            ok = True
-                            if curv and (curv - cited) / curv > 0.10:
-                                result.findings.append(Finding(
-                                    "WARN", "floor-lag", claim.id, cite,
-                                    par.line_start,
-                                    "floor %s+ lags current %s by >10%%"
-                                    % (cited, curv)))
-                    continue
-                if got in stale_values:
-                    s = stale_values[got]
-                    if _is_historical(par, s, config, sections, hist_after):
-                        continue
-                    result.findings.append(Finding(
-                        "FAIL", "cite-drift", claim.id, cite, par.line_start,
-                        "cites superseded %r (current: %r)"
-                        % (got, claim.value)))
-                    continue
-                # a value that belongs to ANOTHER claim stated in the same
-                # paragraph is not drift of this one (e.g. "encode 37x,
-                # decode 106x ... render scale 65x" in one paragraph)
-                if any(c2.id != claim.id
-                       and got in {canon(v) for v in c2.accepted_values()}
-                       and any(g == got for g, _ in
-                               _match_values(c2, par.text))
-                       for c2 in claims if c2.patterns):
-                    continue
-                result.findings.append(Finding(
-                    "FAIL", "cite-drift", claim.id, cite, par.line_start,
-                    "cites %r but current is %r" % (got, claim.value)))
-            if not ok and not any(f.claim_id == claim.id and f.file == cite
-                                  for f in result.findings):
-                result.findings.append(Finding(
-                    "FAIL", "cite-missing", claim.id, cite, 0,
-                    "states no current value (current: %r)" % claim.value))
-
-    # (a) superseded/retracted values anywhere outside historical context
-    for claim in stale:
-        if not claim.patterns:
-            continue
-        stale_canon = {canon(v) for v in claim.accepted_values()}
-        cur = by_id.get(claim.superseded_by or base_id(claim.id))
-        cur_canon = {canon(v) for v in cur.accepted_values()} if cur else set()
-        for rel in surfaces:
-            for par in get_paras(rel):
-                for got, _ in _match_values(claim, par.text):
-                    if got in cur_canon and got not in stale_canon:
-                        continue
-                    if got not in stale_canon:
-                        continue
-                    if _is_historical(par, claim, config, sections, hist_after):
-                        continue
-                    result.findings.append(Finding(
-                        "FAIL", "superseded-value", claim.id, rel,
-                        par.line_start,
-                        "%s value %r appears un-annotated%s"
-                        % (claim.status, got,
-                           " (current: %r)" % cur.value if cur else "")))
-
-    # derived checks: the registry against code/tree ground truth
-    for claim in current:
-        fn = DERIVATIONS.get(claim.check.get("fn")) if claim.check else None
-        if not fn:
-            continue
-        try:
-            derived = fn(root)
-        except Exception as e:  # import guards: derivation unavailable here
-            result.findings.append(Finding(
-                "WARN", "derivation-error", claim.id, "", 0,
-                "%s: %s" % (claim.check.get("fn"), e)))
-            continue
-        if canon(derived) not in {canon(v) for v in claim.accepted_values()}:
-            result.findings.append(Finding(
-                "FAIL", "derived-mismatch", claim.id, "", 0,
-                "registry says %r but tree derives %r — update the claim, "
-                "then its cites" % (claim.value, derived)))
-
-    # (d1) structural, hard
-    referenced = set()
-    for rel in surfaces:
-        if not rel.endswith(".md"):
-            continue
-        for ref in figure_refs(raw[rel]):
-            referenced.add(ref)
-            if not os.path.exists(os.path.join(root, ref)):
-                line = next((i + 1 for i, l in
-                             enumerate(raw[rel].split("\n")) if ref in l), 0)
-                result.findings.append(Finding(
-                    "FAIL", "figure-missing", "", rel, line,
-                    "references %s which does not exist" % ref))
-
-    try:
-        import holo
-        pkg_version = holo.__version__
-    except Exception:
-        pkg_version = None
-    if pkg_version:
-        rel_heads = [v for v, _, _ in sections if v is not None]
-        if rel_heads and rel_heads[0] != _semver(pkg_version):
-            result.findings.append(Finding(
-                "FAIL", "version-skew", "project.version", "CHANGELOG.md", 0,
-                "newest release heading %s != holo.__version__ %s"
-                % (".".join(map(str, rel_heads[0])), pkg_version)))
-        cff = os.path.join(root, "CITATION.cff")
-        if os.path.exists(cff):
-            with open(cff, encoding="utf-8") as f:
-                m = re.search(r"^version:\s*[\"']?(\d+\.\d+\.\d+)", f.read(),
-                              re.M)
-            if m and m.group(1) != pkg_version:
-                result.findings.append(Finding(
-                    "FAIL", "version-skew", "project.version", "CITATION.cff",
-                    0, "cff version %s != holo.__version__ %s"
-                    % (m.group(1), pkg_version)))
-
-    # (d2) structural, soft
-    for d in ("results", "out"):
-        base = os.path.join(root, d)
-        if not os.path.isdir(base):
-            continue
-        for name in sorted(os.listdir(base)):
-            if not name.endswith((".png", ".gif")):
-                continue
-            rel = "%s/%s" % (d, name)
-            if rel not in referenced:
-                result.findings.append(Finding(
-                    "WARN", "orphan-figure", "", rel, 0, "cited nowhere"))
-
+    result.findings.extend(_check_citations(scan))
+    result.findings.extend(_check_superseded(scan))
+    result.findings.extend(_check_derivations(scan))
+    result.findings.extend(figure_findings)
+    result.findings.extend(_check_versions(scan))
+    result.findings.extend(_check_orphan_figures(scan, referenced))
     result.findings.extend(_front_matter_findings(root, config, claims))
-
-    prefixes = tuple(config.get("evidence_unverifiable_prefixes", []))
-    for claim in current:
-        for ev in claim.evidence:
-            if prefixes and ev.startswith(prefixes):
-                result.findings.append(Finding(
-                    "WARN", "unverifiable-evidence", claim.id, ev, 0,
-                    "evidence is gitignored — unverifiable in CI"))
-
-    # (c) unregistered high-signal numbers (WARN, capped)
-    candidates = [
-        (re.compile(r"\b\d+(?:\.\d+)?x\b"),
-         ("faster", "speedup", "encode", "decode", "slower")),
-        (re.compile(r"\b\d+\s+tests\b"),
-         ()),
-        (re.compile(r"\b\d+(?:\.\d+)?\s*(?:s|ms|min)\b"),
-         ("pipeline", "end to end", "end-to-end", "per frame", "s/frame",
-          "wall")),
-    ]
-    all_patterned = [c for c in claims if c.patterns]
-    unregistered = []
-    skip_c = set(config.get("unregistered_skip", []))
-    for rel in surfaces:
-        if not rel.endswith(".md") or rel in skip_c:
-            continue
-        for par in get_paras(rel):
-            if par.kind == "verbatim" or any(p.startswith("ignore")
-                                             for p in par.pragmas):
-                continue
-            low = par.text.lower()
-            hit = False
-            for pat, ctx in candidates:
-                if pat.search(par.text) and \
-                        (not ctx or any(c in low for c in ctx)):
-                    hit = True
-                    break
-            if not hit:
-                continue
-            if any(_match_values(c, par.text) for c in all_patterned):
-                continue
-            unregistered.append(Finding(
-                "WARN", "unregistered-number", "", rel, par.line_start,
-                "high-signal number with no registered claim: %r"
-                % (par.text[:90] + ("…" if len(par.text) > 90 else ""))))
-    result.findings.extend(unregistered[:20])
-    if len(unregistered) > 20:
-        result.findings.append(Finding(
-            "WARN", "unregistered-number", "", "", 0,
-            "…and %d more (run with --json for all)"
-            % (len(unregistered) - 20)))
-
+    result.findings.extend(_check_evidence(scan))
+    result.findings.extend(_check_unregistered(scan))
     return result

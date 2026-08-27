@@ -125,7 +125,7 @@ def main(argv=None):
         return calmod.main(root)
 
     try:
-        result = checkmod.run(root, strict=args.strict)
+        result = checkmod.run(root)
     except Exception as e:
         print("internal error: %s" % e, file=sys.stderr)
         return 2
