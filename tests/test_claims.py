@@ -99,6 +99,27 @@ def test_changelog_version_scoping():
     assert not _is_historical(in_020, old, config, sections)
 
 
+def test_no_check_tier_exceeds_the_complexity_cap():
+    # run() was one 259-line scope at cyclomatic complexity 107 — four
+    # times the worst function in the repo, and the reason the tiers
+    # could not be tested apart. Each is now its own function; this
+    # pins the decomposition so it cannot silently re-merge.
+    import ast
+    import inspect
+
+    from holo.facts import check as checkmod
+    from holo.quality.graph import _complexity
+
+    source = inspect.getsource(checkmod)
+    tree = ast.parse(source)
+    scores = {node.name: _complexity(node) for node in tree.body
+              if isinstance(node, ast.FunctionDef)}
+    assert scores["run"] <= 5, scores["run"]
+    over = {n: c for n, c in scores.items()
+            if n.startswith("_check_") and c > 10}
+    assert over == {}, over
+
+
 def test_head_has_no_stale_claims():
     # THE gate: a FAIL here means a registered claim drifted in the
     # working tree — run `holo-facts check` for the findings.
