@@ -1,10 +1,12 @@
 cff-version: 1.2.0
 message: "If you use holo in your research, please cite it as below."
-title: "holo: holographic computing on FHRR hypervectors"
+title: "hdc-holo: holographic computing on FHRR hypervectors"
 type: software
 authors:
   - name: "Squatch CC"
 license: Apache-2.0
+version: 0.3.0
+date-released: 2026-08-27
 doi: 10.5281/zenodo.22116367
 repository-code: "https://github.com/squatch-stack/hdc-holo"
 abstract: >-
