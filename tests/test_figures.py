@@ -45,20 +45,38 @@ def test_recorded_drivers_exist():
     """Every `python examples/<driver>.py` named in the record must be
     a file that is actually there, so the commands stay runnable across
     renames and moves."""
-    drivers = set(re.findall(r"python (examples/[\w./-]+\.py)", _record()))
-    assert drivers, "no drivers recorded — the table lost its commands"
-    missing = sorted(d for d in drivers
-                     if not os.path.isfile(os.path.join(ROOT, d)))
+    mods = set(re.findall(r"python -m (examples\.[\w-]+)", _record()))
+    assert mods, "no drivers recorded — the table lost its commands"
+    missing = sorted(m for m in mods if not os.path.isfile(
+        os.path.join(ROOT, m.replace(".", os.sep) + ".py")))
     assert not missing, "recorded drivers that do not exist: " + str(missing)
 
 
 def test_recorded_demo_targets_exist():
     """`hdc-demos <name>` entries must name registered demos."""
     from holo.cli import DEMOS
-    names = set(re.findall(r"`hdc-demos ([\w-]+)`", _record()))
-    assert names, "no hdc-demos targets recorded"
+    names = set(re.findall(r"python -m holo\.cli ([\w-]+)", _record()))
+    assert names, "no demo targets recorded"
     unknown = sorted(n for n in names if n not in DEMOS)
     assert not unknown, "recorded demos that are not registered: " + str(unknown)
+
+
+def test_commands_are_module_form_not_paths():
+    """From a worktree, `python examples/foo.py` and `hdc-demos foo`
+    both import the SHARED checkout — the editable install's meta-path
+    finder outranks sys.path, and a script puts its own directory on
+    sys.path[0] rather than the repo root. Since all work happens in
+    worktrees, a path-form command here would regenerate figures from
+    main's code while looking correct. Measured, not assumed."""
+    # only the table rows carry commands; the prose deliberately
+    # quotes the wrong forms as counter-examples
+    rows = [ln for ln in _record().splitlines() if ln.startswith("|")]
+    bad = [ln.strip() for ln in rows
+           if re.search(r"python examples/[\w-]+\.py", ln)
+           or re.search(r"hdc-demos [\w-]+", ln)]
+    assert not bad, ("figure commands must be module form "
+                     "(python -m examples.x / python -m holo.cli x): "
+                     + str(bad))
 
 
 def test_the_one_unregenerable_figure_is_declared():
