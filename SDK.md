@@ -420,6 +420,20 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   by design: trigram cosine scores the CORRECTED license line 0.21
   against the retracted claim — it cannot tell corrected from stale,
   so exact matching owns the gate and fuzzy only warns.
+- **Facts MCP server** (facts lane, phase 3 complete): the registry
+  and fuzzy corpus are now queryable by any MCP client —
+  `holo-facts mcp` (stdio) serves `search_claims` (registry keyword
+  ranking unioned with fuzzy chunk hits mapped back through cite
+  files), `get_claim` (record + supersession chain + LIVE derivation
+  + cite sites), and `search_kb` (same matrix search over a knowledge-base
+  checkout; honest not-configured payload until phase 4 exists). The
+  `mcp` dependency is the `[facts]` extra with a python>=3.10 marker
+  — this Mac's system python is 3.9, so the tool logic lives in
+  holo/facts/query.py (stdlib, tested on 3.9) and the REAL stdio
+  handshake is proven on CI's 3.12 leg
+  (tests/test_facts_mcp.py: spawn server, initialize, list tools,
+  call search_claims). Registration one-liner and .mcp.json example
+  in docs/facts.md.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,
