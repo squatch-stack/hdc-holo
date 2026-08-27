@@ -226,7 +226,7 @@ def test_search_kb_reports_unconfigured_honestly():
     finally:
         if old is not None:
             os.environ["HOLO_KB_PATH"] = old
-    # config kb_path is null until knowledge-base exists (phase 4)
+    # config kb_path is null until a knowledge base is configured
     assert out["configured"] is False
     assert "note" in out
 
