@@ -15,6 +15,7 @@ A wrong retrieval makes deletion corrupt the store instead of shrinking it.
 
 import numpy as np
 
+from .demokit import Table, banner
 from .fhrr import FHRR, ItemMemory
 
 
@@ -44,8 +45,10 @@ class HoloMap:
 
 
 def demo(dim=4096, seed=0):
-    print(f"== HoloMap: hash map in superposition (d={dim}) ==")
-    print(f"{'pairs N':>8} {'load N/d':>9} {'pred noise':>11} {'accuracy':>9}")
+    banner("HoloMap: hash map in superposition", dim)
+    table = Table(("pairs N", 8), ("load N/d", 9, ".2f"),
+                  ("pred noise", 11, ".3f"), ("accuracy", 9, ".1%"))
+    table.header()
     n_values = 256
     for n_pairs in [100, 500, 1000, 2000, 4000]:
         space = FHRR(dim, seed=seed)
@@ -57,14 +60,21 @@ def demo(dim=4096, seed=0):
             m.put(k, v)
         correct = sum(m.get(k)[0] == v for k, v in pairs)
         noise = np.sqrt((n_pairs - 1) / (2 * dim))
-        print(f"{n_pairs:>8} {n_pairs/dim:>9.2f} {noise:>11.3f} "
-              f"{correct/n_pairs:>9.1%}")
+        table.row(n_pairs, n_pairs / dim, noise, correct / n_pairs)
 
     space = FHRR(dim, seed=seed)
     m = HoloMap(space)
     for k, v in [("alice", "eng"), ("bob", "sales"), ("carol", "legal")]:
         m.put(k, v)
-    print(f"get('bob') -> {m.get('bob')}")
-    print(f"delete('bob') -> {m.delete('bob')}")
-    print(f"get('bob') after delete -> {m.get('bob')}   (noise: score ~0)")
+    # scores rounded deliberately: the post-delete score is CROSSTALK,
+    # and numpy's complex multiply reproduces only to ~1 ulp across
+    # runs (SDK.md's determinism caveat), so printing 17 digits of it
+    # made this demo's output differ run to run for no information
+    def show(label, hit):
+        print("%s -> (%r, %.3f)" % (label, hit[0], hit[1]))
+
+    show("get('bob')", m.get("bob"))
+    show("delete('bob')", m.delete("bob"))
+    show("get('bob') after delete", m.get("bob"))
+    print("   (the last score is noise: ~0)")
     print()
