@@ -15,5 +15,6 @@
     "gaussian splatting",
     "random fourier features",
     "CRDT"
-  ]
+  ],
+  "license": "Apache-2.0"
 }

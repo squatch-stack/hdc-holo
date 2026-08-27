@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+<!-- claims: allow project.license@0.2.1 -->
+- **Relicensed to Apache-2.0** (LICENSE.md). FSL-1.1-Apache-2.0's
+  non-compete clause is designed for products with hosted competitors;
+  a library is a thing other code *depends on*, and the clause
+  propagates to every dependent — the one cost that strikes at what
+  this artifact is for. It also kept the project out of conda-forge and
+  the distros, off the `License :: OSI Approved` classifier, and past
+  many corporate review processes, all during the window a new library
+  most needs adoption (FSL converts to Apache after two years anyway).
+  Apache's patent grant is the real protection against someone gating
+  the ideas. Releases 0.2.0 and 0.2.1 remain under FSL as published.
+
+
 - Export bridge: `save_ply` (raw Gaussian PLY, INRIA layout, SH
   degree 0, ecosystem y-down convention on disk — lossless to float32
   rounding) and `save_spz` (SPZ v2, 16.4x smaller at 0.04-0.07% field

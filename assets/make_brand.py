@@ -159,7 +159,7 @@ def render_social(path):
     ax.text(592, 152, "squatch-stack/hdc-holo",
             fontsize=18, color=CREAM, alpha=0.9,
             fontfamily="Menlo")
-    ax.text(592, 96, "FSL-1.1, converting to Apache-2.0   ·   "
+    ax.text(592, 96, "Apache-2.0   ·   "
             "squatch.cc", fontsize=15, color=GOLD_DIM,
             fontfamily="Helvetica Neue")
     fig.savefig(path, dpi=100)
