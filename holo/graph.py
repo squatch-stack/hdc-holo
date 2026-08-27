@@ -17,6 +17,7 @@ bundle both directions.
 
 import numpy as np
 
+from .demokit import Table, banner
 from .fhrr import FHRR, ItemMemory, Permutation
 
 
@@ -48,38 +49,51 @@ class HoloGraph:
         return self.nodes.matches(x, self.threshold)
 
 
+def _random_digraph(rng, n_nodes, m):
+    """m distinct directed edges over n_nodes, no self-loops."""
+    edges = set()
+    while len(edges) < m:
+        u, v = rng.integers(n_nodes, size=2)
+        if u != v:
+            edges.add((int(u), int(v)))
+    return edges
+
+
+def _measure_graph(dim, seed, n_nodes, m):
+    """(precision, recall, neighbor-set exactness) for an m-edge graph."""
+    space = FHRR(dim, seed=seed)
+    g = HoloGraph(space, directed=True)
+    rng = np.random.default_rng(seed + 4)
+    edges = _random_digraph(rng, n_nodes, m)
+    adj = {}
+    for u, v in edges:
+        g.add_edge(f"n{u}", f"n{v}")
+        adj.setdefault(u, set()).add(v)
+
+    # positive probes: every edge; negative probes: as many absent pairs
+    tp = sum(g.has_edge(f"n{u}", f"n{v}")[0] for u, v in edges)
+    neg, fp = 0, 0
+    while neg < m:
+        u, v = rng.integers(n_nodes, size=2)
+        if u != v and (int(u), int(v)) not in edges:
+            fp += g.has_edge(f"n{u}", f"n{v}")[0]
+            neg += 1
+    precision = tp / (tp + fp) if tp + fp else 1.0
+    exact = sum({lbl for lbl, _ in g.neighbors(f"n{u}")} ==
+                {f"n{v}" for v in vs}
+                for u, vs in adj.items()) / len(adj)
+    return precision, tp / m, exact
+
+
 def demo(dim=4096, seed=0):
-    print(f"== HoloGraph: edge set in superposition (d={dim}) ==")
+    banner("HoloGraph: edge set in superposition", dim)
     n_nodes = 60
-    print(f"{'edges m':>8} {'edge precision':>15} {'edge recall':>12} "
-          f"{'neighbor-set exact':>19}")
+    table = Table(("edges m", 8), ("edge precision", 15, ".1%"),
+                  ("edge recall", 12, ".1%"),
+                  ("neighbor-set exact", 19, ".1%"))
+    table.header()
     for m in [100, 400, 1000, 2000]:
-        space = FHRR(dim, seed=seed)
-        g = HoloGraph(space, directed=True)
-        rng = np.random.default_rng(seed + 4)
-        edges = set()
-        while len(edges) < m:
-            u, v = rng.integers(n_nodes, size=2)
-            if u != v:
-                edges.add((int(u), int(v)))
-        adj = {}
-        for u, v in edges:
-            g.add_edge(f"n{u}", f"n{v}")
-            adj.setdefault(u, set()).add(v)
-        # positive probes: every edge; negative probes: absent pairs
-        tp = sum(g.has_edge(f"n{u}", f"n{v}")[0] for u, v in edges)
-        neg, fp = 0, 0
-        while neg < m:
-            u, v = rng.integers(n_nodes, size=2)
-            if u != v and (int(u), int(v)) not in edges:
-                fp += g.has_edge(f"n{u}", f"n{v}")[0]
-                neg += 1
-        precision = tp / (tp + fp) if tp + fp else 1.0
-        exact = sum(
-            {lbl for lbl, _ in g.neighbors(f"n{u}")} ==
-            {f"n{v}" for v in vs}
-            for u, vs in adj.items()) / len(adj)
-        print(f"{m:>8} {precision:>15.1%} {tp/m:>12.1%} {exact:>19.1%}")
+        table.row(m, *_measure_graph(dim, seed, n_nodes, m))
 
     space = FHRR(dim, seed=seed)
     g = HoloGraph(space, directed=False)

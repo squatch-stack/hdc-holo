@@ -313,6 +313,39 @@ class ORStrokeScene:
         return readout(points, self.W, self.store.merged(), chunk=chunk)
 
 
+def _demo_plot(before, after_a, naive):
+    """The point of the whole module in three panels: merged strokes,
+    a concurrent double-undo handled correctly, and the negative hole
+    arithmetic retraction would have left."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return
+
+    import os
+    os.makedirs("out", exist_ok=True)
+    vmax = float(before.max())
+    panels = [("5 strokes, merged", before),
+              ("concurrent double-undo of one stroke\n(observed-remove:"
+               " subtracted once)", after_a),
+              ("what arithmetic retraction would do\n(double-subtract:"
+               " negative hole)", naive)]
+    fig, axes = plt.subplots(1, 3, figsize=(12.6, 4.4))
+    for ax, (title, img) in zip(axes, panels):
+        ax.imshow(np.clip(img / vmax, 0, 1), origin="lower")
+        ax.set_title(title, fontsize=9.5)
+        ax.set_xticks([])
+        ax.set_yticks([])
+    fig.suptitle("Deletion as set membership: tombstones, not "
+                 "subtractions", fontsize=12)
+    fig.tight_layout()
+    fig.savefig("out/orset_undo.png", dpi=110)
+    plt.close(fig)
+    print("  saved out/orset_undo.png")
+
+
 def demo(dim=4096, seed=0, save_png=True):
     try:
         from .crdt import HAVE_LORO, HoloReplica, ReplicatedHoloMap
@@ -341,8 +374,13 @@ def demo(dim=4096, seed=0, save_png=True):
     or_a.remove("doomed")               # same concurrent double-remove
     or_b.remove("doomed")
     A.sync(B)
+    # `+ 0.0` normalizes a -0.00 that carries no information: this score
+    # is crosstalk around zero, and its SIGN moves with allocation
+    # layout (the ~1 ulp caveat in SDK.md), so printing it signed made
+    # the demo's own output depend on unrelated imports
     print(f"  observed-remove (orset.py), same scenario:      "
-          f"score {or_a.get('doomed')[1]:+.2f}  <- clean zero")
+          f"score {round(or_a.get('doomed')[1], 2) + 0.0:+.2f}"
+          f"  <- clean zero")
 
     # -- add-wins --------------------------------------------------------
     or_a.put("config", "v1")
@@ -403,32 +441,7 @@ def demo(dim=4096, seed=0, save_png=True):
           f"reads unchanged ({va2[0]!r}, {va2[1]:.2f})")
 
     if save_png:
-        try:
-            import matplotlib
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-        except ImportError:
-            print()
-            return
-        import os
-        os.makedirs("out", exist_ok=True)
-        vmax = float(before.max())
-        panels = [("5 strokes, merged", before),
-                  ("concurrent double-undo of one stroke\n(observed-remove:"
-                   " subtracted once)", after_a),
-                  ("what arithmetic retraction would do\n(double-subtract:"
-                   " negative hole)", naive)]
-        fig, axes = plt.subplots(1, 3, figsize=(12.6, 4.4))
-        for ax, (title, img) in zip(axes, panels):
-            ax.imshow(np.clip(img / vmax, 0, 1), origin="lower")
-            ax.set_title(title, fontsize=9.5)
-            ax.set_xticks([]), ax.set_yticks([])
-        fig.suptitle("Deletion as set membership: tombstones, not "
-                     "subtractions", fontsize=12)
-        fig.tight_layout()
-        fig.savefig("out/orset_undo.png", dpi=110)
-        plt.close(fig)
-        print("  saved out/orset_undo.png")
+        _demo_plot(before, after_a, naive)
     print()
 
 
