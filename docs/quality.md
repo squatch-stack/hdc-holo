@@ -76,6 +76,56 @@ Editors: VS Code — the Ruff and BasedPyright extensions read this
 their LSP config at `ruff server` and `basedpyright-langserver
 --stdio`.
 
+**The code graph.** Structure questions are graph questions — *what
+breaks if I change this, what does nothing call, which module is the
+hub* — and grep answers none of them. `holo-quality graph build`
+walks the tree with Python's `ast` and writes an embedded Kùzu
+database (`quality/codegraph`, gitignored, ~3 s to rebuild); `graph
+query` answers Cypher against it, and `graph checks` runs the canned
+questions. Current shape of this repo: 116 modules, 566 functions, 39
+classes, 246 in-repo imports, 862 resolved calls.
+
+```
+(:Module   {path, package, lane, basename, needs_test, loc, functions})
+(:Function {qualname, module, name, lineno, loc, complexity, args})
+(:Class    {qualname, module, name, lineno, methods})
+
+(:Module)-[:IMPORTS {names}]->(:Module)      resolved, in-repo only
+(:Module)-[:DEFINES]->(:Function|:Class)
+(:Class)-[:HAS_METHOD]->(:Function)
+(:Function)-[:CALLS {count}]->(:Function)    name-resolved
+```
+
+`needs_test` carries the *same* predicate `structure.py` enforces, so
+the `untested-modules` query and the `module-test-pair` rule cannot
+drift apart — the structure rule genuinely IS a Cypher query.
+
+**What the graph is honest about.** `IMPORTS`, `DEFINES`,
+`HAS_METHOD` and every node property are exact — they are syntax, not
+inference. `CALLS` is resolved by name against in-repo definitions
+only: same-named methods on two classes are ambiguous (those edges are
+dropped rather than guessed), calls through variables or `getattr` are
+invisible, and calls into numpy or any dependency are absent by
+design. So `CALLS` proves reachability and only *hints* at deadness —
+which is why `uncalled-functions` says HINT in its own description and
+excludes demos and `main`, both registered in dicts rather than
+called.
+
+```bash
+holo-quality graph build
+holo-quality graph checks                 # all canned questions
+holo-quality graph checks import-hubs     # just one
+holo-quality graph query "MATCH (f:Function) WHERE f.args > 6 \
+    RETURN f.qualname, f.args ORDER BY f.args DESC"
+```
+
+First-run findings on this repo, all real: `holo/facts/check.py::run`
+carries complexity **107** (the worst function in the tree by 4x — the
+claims checker's own core); `holo/__init__.py` has 49 dependents, so
+its blast radius is the whole package; and lane leakage between
+facts/quality/capture is **zero**, which is the coordination
+convention holding up under measurement rather than assertion.
+
 **Failure modes.** The ratchet is blind to violations that move
 *between* files (delete a bad line in `a.py`, write it in `b.py`, and
 the new pair is caught — but a same-file swap of one rule for another
