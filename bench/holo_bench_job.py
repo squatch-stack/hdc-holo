@@ -90,18 +90,26 @@ def main():
 
     if backend == "torch-cuda":
         dev = lib.device("cuda")
-        T = lambda a: lib.from_numpy(np.ascontiguousarray(a)).to(dev)
+        def T(a):
+            return lib.from_numpy(np.ascontiguousarray(a)).to(dev)
+
         cos, sin, exp = lib.cos, lib.sin, lib.exp
-        zeros = lambda s: lib.zeros(s, device=dev)
+        def zeros(s):
+            return lib.zeros(s, device=dev)
+
         sync = lib.cuda.synchronize
-        back = lambda t: t.cpu().numpy()
+        def back(t):
+            return t.cpu().numpy()
+
         device_name = lib.cuda.get_device_name(0)
     elif backend == "cupy":
         # cupy fp32 GEMMs use cuBLAS default math mode (no TF32 unless
         # CUPY_TF32=1 is set in the environment — leave it unset)
         T = lib.asarray
         cos, sin, exp = lib.cos, lib.sin, lib.exp
-        zeros = lambda s: lib.zeros(s, dtype=lib.float32)
+        def zeros(s):
+            return lib.zeros(s, dtype=lib.float32)
+
         sync = lib.cuda.Stream.null.synchronize
         back = lib.asnumpy
         props = lib.cuda.runtime.getDeviceProperties(0)
@@ -110,14 +118,20 @@ def main():
         T = lib.array
         cos, sin, exp = lib.cos, lib.sin, lib.exp
         zeros = lib.zeros
-        sync = lambda: None                 # eval() below forces
+        def sync():
+            pass                            # eval() below forces
+
         back = np.array
         device_name = "Apple Metal (MLX)"
     else:
-        T = lambda a: a
+        def T(a):
+            return a
+
         cos, sin, exp = np.cos, np.sin, np.exp
         zeros = np.zeros
-        sync = lambda: None
+        def sync():
+            pass
+
         back = lambda a: a
         import platform
         device_name = f"NumPy on {platform.processor() or platform.machine()}"

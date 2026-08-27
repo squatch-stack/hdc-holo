@@ -96,7 +96,7 @@ def normalize_markdown(text, path):
             raw = "\n".join(buf)
             pragmas = _pragmas_in(raw) | pending_pragmas
             pending_pragmas = set()
-            joined = " ".join(_strip_markup(l) for l in buf if _strip_markup(l))
+            joined = " ".join(_strip_markup(ln) for ln in buf if _strip_markup(ln))
             if joined:
                 out.append(Paragraph(path, buf_start, end_line, kind,
                                      joined, pragmas))
@@ -121,7 +121,7 @@ def normalize_markdown(text, path):
                     labels.extend(_MERMAID_QUOTED.findall(bl))
                     if bl.strip().lower().startswith("note "):
                         labels.append(bl.split(":", 1)[-1])
-                textm = " ".join(_strip_markup(l) for l in labels if l.strip())
+                textm = " ".join(_strip_markup(ln) for ln in labels if ln.strip())
                 if textm:
                     out.append(Paragraph(path, start, end, "mermaid", textm))
             else:
@@ -177,8 +177,8 @@ def normalize_python(text, path):
             continue
         lineno = getattr(node, "lineno", 1)
         for block in doc.split("\n\n"):
-            joined = " ".join(_strip_markup(l) for l in block.split("\n")
-                              if _strip_markup(l))
+            joined = " ".join(_strip_markup(ln) for ln in block.split("\n")
+                              if _strip_markup(ln))
             if joined:
                 out.append(Paragraph(path, lineno, lineno, "docstring",
                                      joined, _pragmas_in(block)))

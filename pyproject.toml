@@ -58,6 +58,12 @@ ignore = [
     # Numeric code compares against literal thresholds constantly;
     # naming every 0.5 would be noise, not clarity.
     "PLR2004",
+    # Functions dispatched from a registry share one signature by
+    # contract — every demo takes (dim, seed, save_png), every
+    # derivation takes (root) — so a parameter one of them ignores is
+    # the interface, not an oversight. (Genuinely dead parameters get
+    # deleted; two were, in this pass.)
+    "ARG001",
     # Lazy imports are load-bearing architecture here, not sloppiness:
     # every optional extra (mlx, loro, matplotlib, mcp, kuzu) is imported
     # inside the function that needs it so the core stays stdlib+numpy.
