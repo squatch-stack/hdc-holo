@@ -553,6 +553,35 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   it honestly needs footprint/area integration (rasterization
   semantics) rather than point samples, which is a different evaluator
   and a real open question adjacent to the occlusion gap.
+- **Footprint-integration evaluator** (capture lane;
+  `footprint_blur`, `exact_slice(footprint=)`), answering the open
+  question the scale-clamp audit raised: what does ground truth look
+  like if you measure the way a rasterizer does — averaging over a
+  pixel — instead of point-sampling? The convolution is exact and
+  nearly free, because a Gaussian convolved with a Gaussian is a
+  Gaussian: covariances add, so a box pixel of side `pix` is
+  `render_mip` at sigma = pix/sqrt(12). Pinned against a 9^3
+  supersample of the pixel volume (<2%), and against the case it
+  exists for: a needle 100x thinner than a pixel reads ~0 to point
+  samples and >10x that under integration.
+  Two results. (1) **The floor is radiometric, not just geometric:**
+  clamping a thin axis up while holding PEAK amplitude fixed raises
+  each splat's integral, and across Red Rock that inflates total scene
+  mass **11x**. Footprint integration does not wash this out (4365% ->
+  4484% clamped-vs-raw) because the difference was never geometric.
+  Worth a design decision someday: clamping could preserve mass
+  instead of peak, which would keep radiometry at the cost of making
+  needles fainter. (2) **Matched to a pixel-integrated target the
+  pipeline does BETTER than its headline numbers:** encoding the
+  footprint-blurred scene and refereeing against the footprint ground
+  truth gives **11.5%** on Red Rock where the sharp-vs-sharp pair
+  gives 18.1% — blurring concentrates each splat's spectrum, so the
+  codebook covers it better, the same mechanism that makes the X-ray
+  mip encode work.
+  Caution recorded, because it produced a 71.7% scare first: the
+  encode and the referee must describe the SAME field. Comparing a
+  sharp encode against a footprint referee (or the reverse) measures
+  the blur, not the hologram.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,

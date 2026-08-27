@@ -824,8 +824,36 @@ def decode_slice(points, bundles, books, bands=None, chunk=4096):
     return out
 
 
-def exact_slice(points, scene, members, bands=None, chunk=2048):
-    """Ground truth with the same cell-locality cutoff as the hologram."""
+def footprint_blur(scene, pix):
+    """Convolve a scene with a square pixel footprint of side `pix`.
+
+    Point-sampling a splat mixture asks what the field is at infinitely
+    small points; a rasterizer asks what it AVERAGES over a pixel. The
+    two differ enormously for real captures, where 99%+ of splats are
+    needles thinner than a pixel (SDK.md's scale-clamp audit): a
+    5.8e-5-thick sheet is nearly invisible to point samples and plainly
+    visible to a pixel that integrates across it.
+
+    The convolution is exact and cheap because a Gaussian convolved
+    with a Gaussian is a Gaussian: covariances add. A box pixel of side
+    `pix` is matched by the Gaussian of equal variance, sigma =
+    pix/sqrt(12), so this is `render_mip` at that sigma — mass
+    preserved, peak lowered.
+    """
+    return render_mip(scene, pix / np.sqrt(12.0))
+
+
+def exact_slice(points, scene, members, bands=None, chunk=2048,
+                footprint=0.0):
+    """Ground truth with the same cell-locality cutoff as the hologram.
+
+    `footprint` > 0 integrates over a pixel of that side instead of
+    point-sampling (see `footprint_blur`) — the honest referee when the
+    scene contains splats thinner than a pixel, which real captures
+    overwhelmingly do.
+    """
+    if footprint > 0:
+        scene = footprint_blur(scene, footprint)
     out = np.zeros((len(points), scene.channels), dtype=np.float32)
     inv_cov = np.linalg.inv(scene.cov.astype(np.float64)).astype(np.float32)
     for name, cap, cell in (bands or BANDS):
