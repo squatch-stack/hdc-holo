@@ -4,6 +4,35 @@ Several sessions — human and agent — share this one checkout. The rules
 below exist because every one of them was learned by breaking something.
 Full contributor detail lives in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Before you open a lane: is this already done?
+
+A worktree stops two sessions writing the same *file*. It says nothing
+about two sessions doing the same *work*, and that is a different
+failure with the same cost. Both happened here on the same day: one
+session re-did a landed citations-and-figures pass without noticing it
+was on main, and another opened a file claim addressed to the wrong
+session because it inferred authorship from commit timing.
+
+So before creating the branch, spend ten seconds:
+
+```bash
+git fetch github
+git log github/main -5 --oneline -- <the area you are about to touch>
+gh pr list -R <repo> --state all --limit 10   # open AND recently merged
+```
+
+If someone landed it, read theirs before writing yours; if it is in
+flight, message that session first. Neither of those collisions cost
+anything to prevent and both cost an hour to discover.
+
+Two habits that make this work:
+
+- **Address a session by evidence, not inference.** Commit timing does
+  not identify an author when several sessions share one identity;
+  ask, or check who announced the lane.
+- **Announce a lane when you open it**, not when you land it. A claim
+  that arrives with the PR is a notification, not coordination.
+
 ## Work in a worktree. Never in the shared checkout.
 
 The shared checkout is common ground: its files, its index, and its
