@@ -53,8 +53,8 @@ def serve(root):
 
     @app.tool()
     def search_kb(query: str, limit: int = 8) -> dict:
-        """Search the configured knowledge-base knowledge base (topics,
-        algorithms, learnings; returns arXiv ids per hit)."""
+        """Search the configured knowledge base (topics, algorithms,
+        learnings; returns arXiv ids per hit)."""
         return q.search_kb(root, query, limit=limit)
 
     app.run()
