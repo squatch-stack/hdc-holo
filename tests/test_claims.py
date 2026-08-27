@@ -104,3 +104,83 @@ def test_head_has_no_stale_claims():
     # working tree — run `holo-facts check` for the findings.
     result = run(ROOT)
     assert result.fails == [], "\n".join(f.render() for f in result.fails)
+
+
+def test_chunker_splits_bullet_runs():
+    # consecutive bullets have no blank lines between them; merging
+    # them made one 216-line "paragraph" out of SDK.md's log before
+    # this was a rule (masking the SDK dated-record zone besides)
+    import os
+    import tempfile
+    from holo.facts.chunk import chunk_file
+    md = ("# log\n\n" +
+          "- first entry about the encode kernel " + "alpha " * 40 + "\n" +
+          "- second entry about storage codecs " + "beta " * 40 + "\n" +
+          "- third entry about the render path " + "gamma " * 40 + "\n")
+    with tempfile.NamedTemporaryFile("w", suffix=".md",
+                                     delete=False) as f:
+        f.write(md)
+        path = f.name
+    try:
+        chunks = chunk_file(path, "f.md")
+    finally:
+        os.unlink(path)
+    assert len(chunks) == 3
+    assert all(c.heading == "log" for c in chunks)
+    assert "alpha" in chunks[0].text and "alpha" not in chunks[1].text
+
+
+def test_hg8_roundtrip_preserves_profile_ranking():
+    # HG-8 is the codec measured faithful on wide-dynamic-range
+    # bundles; a profile row must come back ranking-equivalent
+    import numpy as np
+    from holo import FHRR
+    from holo.dispatch import FastNGramProfiler
+    from holo.storage import pack_polar, unpack
+    space = FHRR(dim=2048, seed=0)
+    prof = FastNGramProfiler(space, n=3)
+    texts = ["the encode kernel runs far faster on the metal backend",
+             "tombstone sets make deletion idempotent across peers",
+             "ridge fitting treats the bundle as a weight vector"]
+    rows = [prof.unit_profile(t) for t in texts]
+    back = [unpack(pack_polar(v, bits=8)).astype(np.complex64)
+            for v in rows]
+    back = [b / np.linalg.norm(b) for b in back]
+    for v, b in zip(rows, back):
+        assert np.real(np.vdot(v, b)) > 0.99   # HG-8 drift ~0.01
+    q = prof.unit_profile("how quick is encoding on the gpu backend")
+    orig_top = int(np.argmax([np.real(np.vdot(v, q)) for v in rows]))
+    back_top = int(np.argmax([np.real(np.vdot(b, q)) for b in back]))
+    assert orig_top == back_top == 0
+
+
+def test_fuzzy_retrieves_paraphrase_and_scrambled_noise_abstains():
+    # the fuzzy layer's whole contract: a digit-free paraphrase of a
+    # claim scores above threshold on the right chunk, while true
+    # noise (character-scrambled text — word order barely moves a
+    # trigram profile, so word shuffles are NOT noise) stays below
+    import numpy as np
+    from holo import FHRR
+    from holo.dispatch import FastNGramProfiler
+    space = FHRR(dim=2048, seed=0)
+    prof = FastNGramProfiler(space, n=3)
+    corpus = [
+        "the mlx encode kernel measures thirty seven times faster than "
+        "numpy on an m one max at full dimension",
+        "observed remove tombstones keep concurrent deletion idempotent "
+        "and add wins under merge",
+        "the saguaro turntable renders thirty six frames from the cell "
+        "bundles at about five seconds per frame",
+    ]
+    mat = np.stack([prof.unit_profile(t) for t in corpus])
+    q = prof.unit_profile(
+        "the encode kernel is roughly thirtyseven fold quicker than "
+        "numpy on the m one max")
+    scores = np.real(mat.conj() @ q)
+    assert int(np.argmax(scores)) == 0
+    assert scores[0] > 0.30          # calibrated signal median ~0.39
+    rng = np.random.default_rng(7)
+    chars = np.array(list(corpus[0].replace(" ", "")))
+    rng.shuffle(chars)
+    noise = np.real(mat.conj() @ prof.unit_profile("".join(chars)))
+    assert noise.max() < 0.18        # calibrated noise p95 ~0.10

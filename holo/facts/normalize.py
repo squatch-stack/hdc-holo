@@ -138,6 +138,13 @@ def normalize_markdown(text, path):
             pending_pragmas |= _pragmas_in(stripped)
             i += 1
             continue
+        # a new top-level list item starts its own paragraph — bullet
+        # runs have no blank lines between items, and merging them makes
+        # marker proximity, line attribution, and chunking all coarser
+        # than the prose actually is
+        if re.match(r"(?:[-*]|\d+\.)\s", stripped) and \
+                not line.startswith((" ", "\t")) and buf:
+            flush(i)
         if buf_start is None:
             buf_start = i + 1
         buf.append(line)
