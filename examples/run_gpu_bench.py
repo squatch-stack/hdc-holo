@@ -92,8 +92,12 @@ def merge(paths):
     print(f"{'backend':>11} {'device':<28} {'encode s':>9} {'readout s':>10} "
           f"{'Msplat/s':>9} {'Mpoint/s':>9} {'vs numpy':>9}")
     for r in sorted(rows, key=lambda r: r["encode_s"]):
-        speed = ("—" if base is None or r is base else
-                 f"{(base['encode_s'] + base['readout_s']) / (r['encode_s'] + r['readout_s']):.0f}x")
+        if base is None or r is base:
+            speed = "—"
+        else:
+            ratio = ((base["encode_s"] + base["readout_s"])
+                     / (r["encode_s"] + r["readout_s"]))
+            speed = f"{ratio:.0f}x"
         print(f"{r['backend']:>11} {r['device'][:28]:<28} "
               f"{r['encode_s']:>9.2f} {r['readout_s']:>10.2f} "
               f"{r['encode_msplat_per_s']:>9.2f} "
