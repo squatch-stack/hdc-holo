@@ -109,7 +109,10 @@ def _to_y_up(pos, quat):
 # flipping a scene without flipping its harmonics silently mirrors the
 # view-dependent color; for an axis-aligned 180-degree turn every basis
 # function maps to +-itself, so the whole rotation is this sign vector.
-# Derived numerically from the basis (tests/test_capture.py pins it).
+# Two independent derivations agree on this table
+# (tests/test_capture.py): numerically, by rotating the basis
+# functions; and algebraically, from the parity of each
+# coefficient's monomial under (x, y, z) -> (x, -y, -z).
 _SH_FLIP_X180 = np.array([
     -1, -1, 1,                            # degree 1
     -1, 1, 1, -1, 1,                      # degree 2
