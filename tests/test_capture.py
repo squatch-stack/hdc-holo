@@ -138,6 +138,34 @@ def test_ply_loader_both_variants(tmp_path):
     assert np.allclose(rgba[:, :3], rgb / 255.0, atol=1e-6)
 
 
+def test_ascii_ply_colour_is_clamped_to_the_declared_uchar_range(tmp_path):
+    from holo.capture import load_ply
+    # `property uchar` is a declaration, not a guarantee. The binary
+    # branch cannot violate it (u1 dtype); the ascii branch parses
+    # floats and would carry anything the writer emitted. A real iPhone
+    # LiDAR export in data/ does exactly this — channels from -44 to
+    # 298 over 1.8% of its points — and unclamped those become negative
+    # premultiplied amplitudes downstream in build_scene, i.e. light
+    # with negative energy.
+    pts = np.zeros((3, 3))
+    rgb = [(-44, 128, 298), (0, 255, 255), (300, -1, 128)]
+    a = tmp_path / "outofrange.ply"
+    with open(a, "w") as f:
+        f.write("ply\nformat ascii 1.0\nelement vertex 3\n"
+                "property float x\nproperty float y\nproperty float z\n"
+                "property uchar red\nproperty uchar green\n"
+                "property uchar blue\nend_header\n")
+        for p, c in zip(pts, rgb):
+            f.write("%g %g %g %d %d %d\n" % (p[0], p[1], p[2], *c))
+    _pos, _scale, rgba, _quat = load_ply(str(a))
+    assert rgba[:, :3].min() >= 0.0
+    assert rgba[:, :3].max() <= 1.0
+    # in-range values must pass through untouched, not be rescaled
+    assert np.isclose(rgba[1, 0], 0.0)
+    assert np.isclose(rgba[1, 1], 1.0)
+    assert np.isclose(rgba[0, 1], 128 / 255.0)
+
+
 def test_ply_loader_gaussian_3dgs_layout(tmp_path):
     from holo.capture import SH_C0, load_ply
     rng = np.random.default_rng(21)
