@@ -188,6 +188,51 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **Orthogonal coupling answers issue #3 by being an instrument, not a
+  fix** (research lane; `holo/spectral.py` `sample_frequencies(coupling=)`,
+  `examples/run_coupling.py`, `docs/spatial.md`). Orthogonal random
+  features (Yu et al. 2016) reduce the VARIANCE of the kernel estimate
+  and change nothing else — same d, same bytes, same decode path, only a
+  different draw of W — so the share of a scene's error they remove IS
+  the share that was variance. Saguaro: **+18.4%/+17.6%**. Train, the
+  dense scene the issue is about: **+1.9%/+1.5%**. The dense residual is
+  therefore not variance, which is what the d-doubling experiment could
+  only hint at, obtained here without spending 600 MB.
+  *And the interaction is the confirmation.* On saguaro, shrinkage's gain
+  roughly halves once coupling has run (14.8% -> 7.4%, and -3.3% on the
+  side): they compete for the same error. On train they do not interact
+  at all (40.1% -> 40.5%), and shrinkage removes **+40.1%/+19.4%** —
+  far more than its 14.8%/4.8% on saguaro. So shrinkage is the general
+  tool and coupling is the specific one.
+  *Two corrections to my own reasoning, both found by measuring.* First,
+  I had written that ORF would help little at input dimension 3 because
+  it only orthogonalises within blocks of that size. Exactly backwards:
+  the gain is LARGEST in low dimension (43% at dim 3, 37% at 8, 0.1% at
+  32) because high-dimensional Gaussian rows are already near-orthogonal.
+  Second, the synthetic gain does not transfer — 46% kernel-estimate MSE
+  reduction at d=8192 became 18% on a real sparse capture and ~2% on a
+  dense one. Synthetic kernel MSE is not a proxy for pipeline error.
+  *Implementation trap worth the line:* `np.linalg.qr` is not Haar —
+  fold `sign(diag(R))` back into Q. Without it the row marginal drifts
+  (per-axis KS 0.167 against a 0.0056 critical value) and
+  `decode_weights`, which evaluates rho at each drawn frequency, goes
+  quietly wrong everywhere while nothing raises. numpy has no built-in
+  orthogonal sampler and scipy is not a dependency. Pinned by a test that
+  fails against the uncorrected construction.
+  *Default unchanged* (`coupling="iid"`), verified byte-identical against
+  main including the rng stream position, because every committed number
+  was taken under it.
+
+- **A diagnostic that does not work, logged so it is not retried**
+  (research lane). Spatial autocorrelation of the residual field looks
+  like it should separate coherent error from Monte-Carlo error. It does
+  not: correlation length is 3 px on saguaro (ac@1 0.715) and 1 px on
+  train (ac@1 0.227) against a white-noise control at 1 px (ac@1 0.002),
+  so the DENSE scene — the coherent one — has the whiter residual. The
+  statistic tracks how much fine structure a scene has, not whether its
+  error averages down with dimension. Coupling answers the intended
+  question precisely because it varies variance alone.
+
 - **Deliberate shrinkage beats the accidental one, and the accident had
   largely evaporated** (research lane; `holo/denoise.py`,
   `tests/test_denoise.py`, `docs/storage.md`; issue #1). Reproducing the

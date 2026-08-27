@@ -642,7 +642,7 @@ def render_mip(scene, sigma_b):
 # Bands, cells, codebooks
 # ---------------------------------------------------------------------------
 
-def band_codebooks(rng, bands=None, dim=DIM, s_floor=S_LO):
+def band_codebooks(rng, bands=None, dim=DIM, s_floor=S_LO, coupling="iid"):
     """Per band: a mixture codebook spanning [s_floor, band cap] — NOT
     just the band's own scale range. Bands are assigned by MAX axis
     scale, so a mid-band needle splat can still have thin axes at the
@@ -650,12 +650,16 @@ def band_codebooks(rng, bands=None, dim=DIM, s_floor=S_LO):
     1/s_floor, the importance weights along those thin directions are
     heavy-tailed and that cell decodes as plane-wave herringbone.
     Finest component at beta = 1 so floor-scale directions sample as
-    unit phasors."""
+    unit phasors.
+
+    `coupling` is passed through to `sample_frequencies`; "orthogonal"
+    couples the draw within each mixture component (issue #3). Default
+    stays "iid" because every committed measurement was taken under it."""
     books = {}
     for name, cap, _cell in (bands or BANDS):
         n_comp = 3 + max(2, int(round(np.log2(cap / s_floor))))
         rho = list(1.0 / np.geomspace(s_floor, cap, n_comp))
-        freqs = sample_frequencies(dim, 3, rho, rng)
+        freqs = sample_frequencies(dim, 3, rho, rng, coupling=coupling)
         books[name] = (freqs, rho, decode_weights(freqs, rho))
     return books
 

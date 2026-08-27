@@ -101,7 +101,44 @@ def random_scene(n, dim, rng, scale_range=(0.02, 0.045), channels=1,
 # Frequency codebook
 # ---------------------------------------------------------------------------
 
-def sample_frequencies(d, dim, sigma_rho, rng):
+def _haar_orthogonal(dim, rng):
+    """A Haar-uniform random orthogonal matrix.
+
+    The QR of a Gaussian matrix is NOT Haar-uniform on its own: LAPACK
+    fixes no sign convention, so Q's columns carry the arbitrary signs
+    of R's diagonal and the resulting distribution is biased. Folding
+    those signs back is the standard correction (Mezzadri 2007), and
+    skipping it fails SILENTLY -- the matrix is still orthogonal, so
+    nothing raises, but the row marginal drifts off N(0, sigma^2 I) and
+    `decode_weights` (which evaluates rho at each drawn frequency) is
+    then subtly wrong everywhere. Measured on the uncorrected version:
+    per-axis KS 0.167 against a 0.0056 critical value.
+
+    numpy has no built-in orthogonal sampler and scipy is not a
+    dependency here, so this is the implementation.
+    """
+    q, r = np.linalg.qr(rng.standard_normal((dim, dim)))
+    return q * np.sign(np.diag(r))
+
+
+def _orthogonally_coupled(n, dim, sigma, rng):
+    """n frequencies with N(0, sigma^2 I) marginals, coupled in blocks.
+
+    A Gaussian vector factors as (radius) x (uniform direction), with
+    the radius chi-distributed. Keeping the chi radii and replacing the
+    directions with the rows of a Haar orthogonal matrix therefore
+    preserves each row's marginal exactly while making rows within a
+    block mutually orthogonal -- which is the whole variance reduction
+    (Yu et al. 2016).
+    """
+    blocks = []
+    for _ in range(-(-n // dim)):                    # ceil division
+        radii = np.sqrt(rng.chisquare(dim, size=dim))
+        blocks.append((radii[:, None] * _haar_orthogonal(dim, rng)) * sigma)
+    return np.vstack(blocks)[:n]
+
+
+def sample_frequencies(d, dim, sigma_rho, rng, coupling="iid"):
     """d random frequencies from rho = N(0, sigma_rho^2 I). Shape (d, dim).
 
     sigma_rho may also be a sequence of stds: then rho is an equal-weight
@@ -109,12 +146,56 @@ def sample_frequencies(d, dim, sigma_rho, rng):
     weights stay bounded across a spread of splat scales, instead of one
     sigma_rho that must cover the narrowest splat and pays a large variance
     penalty on the widest.
+
+    `coupling` selects how the rows relate to each other:
+
+        "iid"         independent draws (the default, and what every
+                      measured number in this repo was taken under)
+        "orthogonal"  orthogonally coupled within blocks of `dim`, and
+                      within each mixture component separately
+
+    Orthogonal coupling costs nothing -- same d, same bytes, same decode
+    path, only a different draw -- and its benefit is LARGEST in low
+    input dimension, which is the opposite of the intuition that random
+    directions are cheap to spread out. In high dimension independent
+    Gaussian rows are already nearly orthogonal so there is nothing to
+    gain; at dim=3, orthogonalising 3 of 3 directions constrains the
+    entire space. Measured kernel-estimate MSE reduction at d=8192,
+    dim=3: 46%, rising to 61% for nearby point pairs and falling to 6%
+    for far ones -- so it targets exactly the dense-scene crosstalk that
+    more dimension could not remove.
+
+    The marginal is preserved by construction, so `decode_weights` needs
+    no change; `tests/test_spectral.py` pins that, because a broken
+    marginal would not raise anywhere.
     """
+    if coupling not in ("iid", "orthogonal"):
+        raise ValueError("coupling must be 'iid' or 'orthogonal', not %r"
+                         % (coupling,))
     sigmas = np.atleast_1d(np.asarray(sigma_rho, dtype=np.float64))
+    if coupling == "iid":
+        # unchanged, and deliberately so: this path's exact rng call
+        # sequence is what every committed measurement was taken under
+        if sigmas.size == 1:
+            return (float(sigmas[0])
+                    * rng.standard_normal((d, dim))).astype(np.float32)
+        comp = rng.integers(0, sigmas.size, size=d)
+        return (sigmas[comp, None]
+                * rng.standard_normal((d, dim))).astype(np.float32)
     if sigmas.size == 1:
-        return (float(sigmas[0]) * rng.standard_normal((d, dim))).astype(np.float32)
+        return _orthogonally_coupled(d, dim, float(sigmas[0]),
+                                     rng).astype(np.float32)
+    # couple WITHIN each component: mixing components inside one
+    # orthogonal block would give the block rows different scales and
+    # break the per-component marginal that decode_weights assumes
     comp = rng.integers(0, sigmas.size, size=d)
-    return (sigmas[comp, None] * rng.standard_normal((d, dim))).astype(np.float32)
+    out = np.empty((d, dim), dtype=np.float64)
+    for c in range(sigmas.size):
+        idx = np.flatnonzero(comp == c)
+        if idx.size:
+            out[idx] = _orthogonally_coupled(idx.size, dim,
+                                             float(sigmas[c]), rng)
+    return out.astype(np.float32)
 
 
 def decode_weights(freqs, sigma_rho):
