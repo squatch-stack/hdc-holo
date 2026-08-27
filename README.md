@@ -10,7 +10,7 @@ superposed in one complex vector</p>
 
 <p align="center">
   <a href="https://github.com/squatch-stack/hdc-holo/actions/workflows/ci.yml"><img src="https://github.com/squatch-stack/hdc-holo/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-C2562E" alt="License: FSL-1.1-Apache-2.0"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-Apache--2.0-C2562E" alt="License: Apache-2.0"></a>
   <a href="docs/README.md"><img src="https://img.shields.io/badge/docs-per--technique-274f42" alt="Docs"></a>
   <a href="ROADMAP.md"><img src="https://img.shields.io/badge/roadmap-0.3-C9A84C" alt="Roadmap"></a>
   <a href="https://zenodo.org/badge/latestdoi/1347417619"><img src="https://zenodo.org/badge/1347417619.svg" alt="DOI"></a>
@@ -254,11 +254,11 @@ free; *ordered* composition needs a role tag. The docstrings in
 
 ## License
 
-[FSL-1.1-Apache-2.0](LICENSE.md) (the Functional Source License, ALv2
-future variant). In plain terms: use, read, modify, and redistribute
-freely for anything except offering a competing commercial product or
-service; internal use, education, non-commercial research, and
-professional services are all explicitly permitted. Each release
-automatically converts to plain **Apache-2.0 two years after
-publication** — the protection is a fuse, not a wall. Sponsorship and
-commercial licensing inquiries: see [ROADMAP.md](ROADMAP.md).
+[Apache-2.0](LICENSE.md). Use it, fork it, ship it, depend on it —
+commercially included — with attribution and the patent grant Apache
+carries. A library earns its keep by being imported, and the previous
+licence (FSL-1.1-Apache-2.0) put a non-compete clause in the way of
+exactly that; releases 0.2.0 and 0.2.1 remain under it, as published.
+<!-- claims: allow project.license@0.2.1 -->
+If the work is useful, [sponsorship](https://github.com/sponsors/squatch-stack)
+is what keeps it going.

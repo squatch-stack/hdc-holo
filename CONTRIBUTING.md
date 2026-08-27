@@ -171,6 +171,8 @@ design: [docs/facts.md](docs/facts.md). Commit checklist addition:
 
 ## License
 
-FSL-1.1-Apache-2.0 ([LICENSE.md](LICENSE.md)): free for everything
-except competing use, converting to Apache-2.0 two years after each
-release. Contributions are accepted under the same terms.
+Apache-2.0 ([LICENSE.md](LICENSE.md)). Contributions are accepted under
+the same terms — opening a PR licenses your work that way, and there is
+no CLA. Releases 0.2.0 and 0.2.1 shipped under FSL-1.1-Apache-2.0 and
+stay that way; everything from 0.3 is Apache-2.0.
+<!-- claims: allow project.license@0.2.1 -->
