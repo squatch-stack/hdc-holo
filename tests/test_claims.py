@@ -48,7 +48,8 @@ def test_every_derived_check_matches_the_tree():
 
 
 def test_normalize_rejoins_hard_wrapped_numbers():
-    paras = normalize_markdown("the pipeline ran 13\nmin on NumPy and 24\ns after.", "f.md")
+    paras = normalize_markdown(
+        "the pipeline ran 13\nmin on NumPy and 24\ns after.", "f.md")
     assert len(paras) == 1
     assert "13 min" in paras[0].text
     assert "24 s" in paras[0].text
@@ -56,7 +57,8 @@ def test_normalize_rejoins_hard_wrapped_numbers():
 
 def test_normalize_extracts_mermaid_labels():
     # the historical "3 scale bands" bug lived in a mermaid node label
-    md = 'x\n\n```mermaid\nflowchart LR\n  A["4 scale bands<br/>by max axis"] --> B["cells"]\n```\n'
+    md = ('x\n\n```mermaid\nflowchart LR\n'
+          '  A["4 scale bands<br/>by max axis"] --> B["cells"]\n```\n')
     paras = normalize_markdown(md, "f.md")
     mermaid = [p for p in paras if p.kind == "mermaid"]
     assert len(mermaid) == 1

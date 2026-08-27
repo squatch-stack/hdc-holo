@@ -87,7 +87,8 @@ class ORStore:
         return self.replica.doc.get_map("or-folded")
 
     def _epoch_key(self, epoch=None):
-        return f"{self.name}/{self.replica.peer}.{self.epoch if epoch is None else epoch}"
+        which = self.epoch if epoch is None else epoch
+        return f"{self.name}/{self.replica.peer}.{which}"
 
     # -- adding ----------------------------------------------------------
 

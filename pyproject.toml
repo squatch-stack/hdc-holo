@@ -82,6 +82,12 @@ max-complexity = 10
 max-args = 8          # numeric kernels legitimately take (points, W, S, chunk, …)
 
 [tool.ruff.lint.per-file-ignores]
+# The brand generator emits SVG: its long lines are markup written out
+# verbatim, and breaking an XML tag mid-attribute to satisfy a column
+# rule meant for code makes both the code and the output worse. Every
+# other rule still applies here — this is a one-rule exemption, not an
+# excluded file.
+"assets/*.py" = ["E501"]
 # Loro's LoroMap supports .keys() but is NOT iterable, so SIM118's
 # "k in d.keys() -> k in d" rewrite raises TypeError here. Measured:
 # it broke 14 tests. The rule stays on for plain dicts elsewhere.
