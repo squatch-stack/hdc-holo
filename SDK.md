@@ -501,6 +501,26 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   so 1024 is the tested default. Verification chain worth copying:
   independent spec decoder in tests + visual confirmation in a
   third-party renderer, which is what isolated the reader limit.
+- **Band assignment could lose splats silently** (capture lane; found
+  by following a lint flag rather than a bug report). A B007 warning
+  said `cap` was unused in `encode_bands`'s loop — cosmetically true,
+  since the cap does its work upstream in `band_of` (which assigns the
+  band) and `band_codebooks` (which builds the mixture), while the
+  encode step needs only the codebook and the cell size, and every
+  decode path applies `reach = 3 * cap` correctly. But checking WHY it
+  was unused surfaced a real hole next to it: `band_of` is a
+  `searchsorted`, so a splat larger than the LAST cap gets an index one
+  past the end, matches no band, and is dropped — no error, no warning,
+  and every downstream number (slice error, byte count, render) still
+  looks healthy. Measured: a 60-splat scene with 10 oversize splats
+  encoded 50 and lost 10 in silence. `build_scene` cannot reach that
+  state (it clamps to S_HI and the coarse cap IS S_HI), and the render
+  path clears it by 0.005 of arithmetic luck, so nothing shipped wrong
+  — but any custom `bands` list narrower than its scene would have.
+  `encode_bands` now refuses with the count and the offending scale.
+  The generalizable bit: an "unused variable" is worth one minute of
+  asking why it is unused, and silent data loss is the failure mode to
+  hunt near index arithmetic.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,

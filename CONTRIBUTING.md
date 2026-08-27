@@ -76,9 +76,9 @@ git fetch github
 git worktree add /tmp/wt-<lane> -b <lane>/<topic> github/main
 
 git -C /tmp/wt-<lane> status                     # git takes -C
-PYTHONPATH=/tmp/wt-<lane> .venv/bin/python -m pytest /tmp/wt-<lane>/tests -q
-.venv/bin/holo-facts   check --root /tmp/wt-<lane> --strict
-.venv/bin/holo-quality check --root /tmp/wt-<lane>   # gates take --root
+env -C /tmp/wt-<lane> .venv/bin/python -m pytest tests -q
+env -C /tmp/wt-<lane> .venv/bin/holo-facts   check --strict
+env -C /tmp/wt-<lane> .venv/bin/holo-quality check
 
 git -C /tmp/wt-<lane> commit -m "..."            # commit freely, here
 git -C /tmp/wt-<lane> push github HEAD:refs/heads/<lane>/<topic>
@@ -91,6 +91,15 @@ git push github --delete <lane>/<topic>
 
 Rebase inside the worktree as well (`git -C <wt> rebase github/main`),
 where a conflict cannot disturb anyone else's files.
+
+Use `env -C` for anything that imports `holo`, not `PYTHONPATH`: the
+shared `.venv` installs the package through an editable *meta-path
+finder*, which Python consults before `sys.path`, so a run started
+from the shared checkout imports the shared checkout's code however
+`PYTHONPATH` is set — your worktree's changes silently absent while
+the suite still passes. (`--root` flags aim the gates' analysis at a
+tree; that is not the same as importing from it.) `env -C` sets the
+working directory of one child process and never moves your shell.
 
 In the shared checkout: **no destructive git commands** — no
 `reset --hard`, no `checkout --` over edits you did not write, no
