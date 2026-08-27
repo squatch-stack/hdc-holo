@@ -106,57 +106,8 @@ def noise_of(scene, rho, freqs, pts, exact, mean_amp):
     return errs  # squared, for seed-averaging
 
 
-def main():
-    t0 = time.time()
-    rng = np.random.default_rng(42)
-    scene, base_scale = multiscale_scene(N_SPLATS, rng)
-    mean_amp = float(scene.amp.mean())
-    near = (scene.mu[rng.integers(0, N_SPLATS, 1024)]
-            + 0.03 * rng.standard_normal((1024, 3))).astype(np.float32)
-    pts = np.concatenate([near, rng.uniform(0, 1, (1024, 3)).astype(np.float32)])
-    exact = eval_scene_exact(scene, pts)
-
-    order = np.argsort(base_scale)
-    terciles = np.array_split(order, 3)
-    ter_names = [f"σ {base_scale[t].min():.3f}–{base_scale[t].max():.3f}"
-                 for t in terciles]
-    ter_exact = [eval_scene_exact(subset(scene, t), pts) for t in terciles]
-
-    codebooks = [("single ρ", SINGLE_RHO), ("mixture ρ", MIX_RHO)]
-    curves = {name: np.zeros(len(D_VALUES)) for name, _ in codebooks}
-    ter_noise = {name: np.zeros(3) for name, _ in codebooks}
-    d_ter = 8192
-
-    for seed in range(N_SEEDS):
-        book_rng = np.random.default_rng(1000 + seed)
-        for name, rho in codebooks:
-            freqs = sample_frequencies(max(D_VALUES), 3, rho, book_rng)
-            curves[name] += noise_of(scene, rho, freqs, pts, exact, mean_amp)
-            for i, t in enumerate(terciles):
-                b = spectral_bundle(subset(scene, t), freqs[:d_ter])
-                approx = decode_field(b, freqs[:d_ter], rho, pts)
-                ter_noise[name][i] += np.mean(
-                    (approx - ter_exact[i]) ** 2) / mean_amp**2
-
-    for name in curves:
-        curves[name] = np.sqrt(curves[name] / N_SEEDS)
-        ter_noise[name] = np.sqrt(ter_noise[name] / N_SEEDS)
-
-    floor = np.sqrt(N_SPLATS / (2 * np.array(D_VALUES, dtype=float)))
-    print(f"splat scales {S_MIN}-{S_MAX} (5x), N={N_SPLATS}, "
-          f"{N_SEEDS} codebook seeds")
-    print(f"{'d':>7} {'single ρ':>10} {'mixture ρ':>10} {'floor √(N∕2d)':>14}"
-          f" {'penalty single':>15} {'penalty mix':>12}")
-    for i, d in enumerate(D_VALUES):
-        print(f"{d:>7} {curves['single ρ'][i]:>10.3f} "
-              f"{curves['mixture ρ'][i]:>10.3f} {floor[i]:>14.3f} "
-              f"{curves['single ρ'][i]/floor[i]:>14.2f}x "
-              f"{curves['mixture ρ'][i]/floor[i]:>11.2f}x")
-    print(f"noise by splat-scale tercile at d={d_ter}:")
-    for i, tn in enumerate(ter_names):
-        print(f"  {tn:>18}: single {ter_noise['single ρ'][i]:.3f}  "
-              f"mixture {ter_noise['mixture ρ'][i]:.3f}")
-
+def _figure(codebooks, curves, d_ter, floor, t0, ter_names, ter_noise):
+    """The penalty curves and the ternary-scene comparison."""
     # ---- figure ----
     fig, (ax1, ax2) = plt.subplots(
         1, 2, figsize=(11.8, 4.9), gridspec_kw={"width_ratios": [1.3, 1]})
@@ -216,6 +167,61 @@ def main():
     plt.close(fig)
     print(f"saved {path}  ({time.time() - t0:.0f}s)")
 
+
+
+
+def main():
+    t0 = time.time()
+    rng = np.random.default_rng(42)
+    scene, base_scale = multiscale_scene(N_SPLATS, rng)
+    mean_amp = float(scene.amp.mean())
+    near = (scene.mu[rng.integers(0, N_SPLATS, 1024)]
+            + 0.03 * rng.standard_normal((1024, 3))).astype(np.float32)
+    pts = np.concatenate([near, rng.uniform(0, 1, (1024, 3)).astype(np.float32)])
+    exact = eval_scene_exact(scene, pts)
+
+    order = np.argsort(base_scale)
+    terciles = np.array_split(order, 3)
+    ter_names = [f"σ {base_scale[t].min():.3f}–{base_scale[t].max():.3f}"
+                 for t in terciles]
+    ter_exact = [eval_scene_exact(subset(scene, t), pts) for t in terciles]
+
+    codebooks = [("single ρ", SINGLE_RHO), ("mixture ρ", MIX_RHO)]
+    curves = {name: np.zeros(len(D_VALUES)) for name, _ in codebooks}
+    ter_noise = {name: np.zeros(3) for name, _ in codebooks}
+    d_ter = 8192
+
+    for seed in range(N_SEEDS):
+        book_rng = np.random.default_rng(1000 + seed)
+        for name, rho in codebooks:
+            freqs = sample_frequencies(max(D_VALUES), 3, rho, book_rng)
+            curves[name] += noise_of(scene, rho, freqs, pts, exact, mean_amp)
+            for i, t in enumerate(terciles):
+                b = spectral_bundle(subset(scene, t), freqs[:d_ter])
+                approx = decode_field(b, freqs[:d_ter], rho, pts)
+                ter_noise[name][i] += np.mean(
+                    (approx - ter_exact[i]) ** 2) / mean_amp**2
+
+    for name in curves:
+        curves[name] = np.sqrt(curves[name] / N_SEEDS)
+        ter_noise[name] = np.sqrt(ter_noise[name] / N_SEEDS)
+
+    floor = np.sqrt(N_SPLATS / (2 * np.array(D_VALUES, dtype=float)))
+    print(f"splat scales {S_MIN}-{S_MAX} (5x), N={N_SPLATS}, "
+          f"{N_SEEDS} codebook seeds")
+    print(f"{'d':>7} {'single ρ':>10} {'mixture ρ':>10} {'floor √(N∕2d)':>14}"
+          f" {'penalty single':>15} {'penalty mix':>12}")
+    for i, d in enumerate(D_VALUES):
+        print(f"{d:>7} {curves['single ρ'][i]:>10.3f} "
+              f"{curves['mixture ρ'][i]:>10.3f} {floor[i]:>14.3f} "
+              f"{curves['single ρ'][i]/floor[i]:>14.2f}x "
+              f"{curves['mixture ρ'][i]/floor[i]:>11.2f}x")
+    print(f"noise by splat-scale tercile at d={d_ter}:")
+    for i, tn in enumerate(ter_names):
+        print(f"  {tn:>18}: single {ter_noise['single ρ'][i]:.3f}  "
+              f"mixture {ter_noise['mixture ρ'][i]:.3f}")
+
+    _figure(codebooks, curves, d_ter, floor, t0, ter_names, ter_noise)
 
 if __name__ == "__main__":
     main()
