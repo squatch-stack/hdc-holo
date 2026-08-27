@@ -69,6 +69,15 @@ commits and push once per work session, not per commit.
   encodes (two concurrent real-scene runs have OOM-killed each other).
 - Replicated bundle blobs MUST go through `pack_bundle`/`unpack_bundle`
   (wire v1) — readers refuse raw complex64 bytes.
+- **Never `pip install -e .` from a clone or worktree.** The shared
+  `.venv` has ONE editable mapping for `holo`; installing from a
+  temporary tree silently repoints it, so every other session imports
+  your in-flight code. It hides well, too: pytest puts its rootdir on
+  `sys.path` first, so the suite keeps testing the right tree while
+  plain `python examples/foo.py` gets the hijacked one. Run tools
+  against a clone with `PYTHONPATH=<clone>` for that shell, or give
+  the clone its own venv. To repair a hijacked venv:
+  `.venv/bin/pip install -e . --no-deps` from the real repo.
 
 ## Commits
 
