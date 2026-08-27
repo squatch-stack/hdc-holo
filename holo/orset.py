@@ -46,6 +46,7 @@ import json
 import numpy as np
 
 from .crdt import pack_bundle, unpack_bundle
+from .demokit import banner
 from .fhrr import FHRR, ItemMemory
 from .field import GaussianSplatField
 
@@ -355,7 +356,7 @@ def demo(dim=4096, seed=0, save_png=True):
     if not HAVE_LORO:
         print("== OR-Set demo skipped: pip install loro ==\n")
         return
-    print(f"== Observed-remove holographic containers (d={dim}) ==")
+    banner("Observed-remove holographic containers", dim)
 
     # -- the anomaly, then the fix --------------------------------------
     A, B = HoloReplica(FHRR(dim, seed=seed)), HoloReplica(FHRR(dim, seed=seed))
