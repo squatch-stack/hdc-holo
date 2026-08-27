@@ -188,6 +188,46 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **Analytic L2 projection measured: the box is the better objective and
+  the window is the usable one** (research lane;
+  `examples/run_analytic_projection.py`, `docs/fit.md`; issue #2). The
+  sampling limit in the per-cell fit is a property of fitting to
+  SAMPLES; projecting the exact mixture onto the codebook needs none,
+  and `spectral_bundle` already computes the right-hand side — it IS
+  the mixture's Fourier transform — so the whole difference from
+  forward encoding is replacing the diagonal importance weighting with
+  a Gram solve. Median over the six most populated xfine cells of
+  saguaro, d=2048: forward 0.1879 whole-cell, box **0.2052** (worse),
+  Gaussian window s=h/2 **0.0739** (2.5x better). Restrict the splats
+  to the cell interior and the ordering inverts: forward 0.1464, box
+  **0.0273** (5.4x better), window 0.0609.
+  *The inversion is the finding.* The box's right-hand side is the
+  whole-space transform, correct only for splats well inside the cell.
+  The exact box-restricted transform of an ANISOTROPIC Gaussian needs
+  the complex error function, does not separate for non-diagonal
+  covariance, and is not in numpy — so the box's advantage is real but
+  not reachable without scipy or an approximation. The window has no
+  such problem: window x Gaussian is another Gaussian, so its RHS is
+  exact at any splat position, which is why it barely degrades between
+  the two columns where the box collapses.
+  *Two further practical results.* The window needs no truncation
+  tuning — monotone and stable at full rank — where the box must be
+  truncated and detonates if it is not (0.0273 at keep=1536, 8.6 at
+  2048 interior; 677 at 2048 whole-cell). And the rank ceiling that
+  might have killed the spike does NOT bind: space-bandwidth gives
+  ~3,322 usable DOF per cell against ~330 splats, a 10x margin.
+  *Not promoted.* This is a measured spike; the charter wants a
+  deterministic test and a documented failure mode before an SDK API
+  exists. The `G_c = D G0 D^H` factorisation is pinned by test, because
+  one decomposition per band instead of per cell is the whole cost
+  model.
+  *Method note, since it cost three reversals.* The synthetic study
+  said box 2.7x; real cells said box loses; the interior control said
+  box is best-but-fragile. Each measurement overturned the previous
+  reading, and only the third was actionable. Synthetic geometry chosen
+  to be convenient — isotropic splats, interior-only evaluation — was
+  what made the first two disagree.
+
 - **Orthogonal coupling answers issue #3 by being an instrument, not a
   fix** (research lane; `holo/spectral.py` `sample_frequencies(coupling=)`,
   `examples/run_coupling.py`, `docs/spatial.md`). Orthogonal random

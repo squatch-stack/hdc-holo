@@ -40,15 +40,56 @@ SAMPLING-LIMITED and loses (saguaro: fitted 0.72/0.53 vs forward
 0.52/0.38, with dropout speckle where sampling starved): hundreds of
 floor-scale splats per cell need target coverage at their own kernel
 width — tens of thousands of samples per cell, beyond the dual solve.
-Open direction: the analytic L2 projection — the box-region Gram
-`G_jk = integral e^{i(w_j-w_k)p} dp` is a separable product of sincs,
-so the optimum has a closed form needing zero samples. This is the
-classical Fourier extension problem (see
-[related-work.md](related-work.md)): expect plunge-region
-ill-conditioning and regularize from day one. One difference from the
-classical setting: our frequencies are RANDOM (mixture-drawn), not a
-lattice — the plunge structure smears, but the Adcock-Huybrechs frames
-theory covers arbitrary frames, so the stability guarantees survive.
+**The analytic L2 projection, measured** (`examples/run_analytic_projection.py`,
+issue #2). The sampling limit above is a property of *fitting to
+samples*; projecting the exact mixture onto the codebook needs none.
+`spectral_bundle` already computes the projection's right-hand side —
+it IS the mixture's Fourier transform — so the whole difference from
+forward encoding is replacing the diagonal importance weighting with a
+Gram solve. Median relative error over the six most populated xfine
+cells of the saguaro capture, d=2048:
+
+| objective | interior splats only | whole cell |
+|---|---|---|
+| forward encoding | 0.1464 | 0.1879 |
+| box + TSVD | **0.0273** (5.4x better) | 0.2052 (*worse*) |
+| Gaussian window, s = h/2 | 0.0609 | **0.0739** (2.5x better) |
+
+Read those two columns together, because the story is entirely in the
+difference. **The box is the better objective and the window is the
+usable one.** The box's right-hand side is the whole-space transform,
+which is only correct for splats well inside the cell; the exact
+box-restricted transform of an anisotropic Gaussian needs the complex
+error function, does not separate for non-diagonal covariance, and is
+not available in numpy. Real cells hold splats at their boundaries, so
+that approximation costs more than the method wins. The window has no
+such problem — a Gaussian window times a Gaussian splat is another
+Gaussian, so its right-hand side is exact at any splat position, which
+is why it barely degrades between the columns (0.0609 -> 0.0739) where
+the box collapses (0.0273 -> 0.2052).
+
+Two practical consequences. The **window needs no truncation tuning**:
+it improves monotonically and is stable at full rank, where the box
+must be truncated and detonates if it is not (0.0273 at keep=1536,
+8.6 at 2048 on interior splats; 677 at 2048 on whole cells). And
+**one eigendecomposition serves a whole band**, because both Grams
+factorise as `G_c = D G0 D^H` with `D` a unitary diagonal of
+cell-centre phases — cell position enters only as a phase, so the
+expensive step is per band, not per cell.
+
+Window WIDTH is a real knob and not a forgiving one: s = h/2 gives
+0.0739, s = h gives 0.1587, and wider is worse still, because a wide
+window weights territory the cell's own splats do not describe.
+
+*Positioning.* This is the classical Fourier extension problem (see
+[related-work.md](related-work.md)) with the smooth-window variant
+being the partition-of-unity method familiar from meshfree
+approximation. Our frequencies are RANDOM (mixture-drawn) rather than a
+lattice, so the plunge structure smears — but the Adcock-Huybrechs
+frames theory covers arbitrary frames, and the stability guarantees
+survive. Not promoted to the SDK surface: this is a measured spike, and
+`SDK.md`'s charter wants a deterministic test and a documented failure
+mode before an API exists.
 
 **Failure modes.** The finest band must stay >= the sample spacing or
 the model memorizes training points and rings between them (train PSNR

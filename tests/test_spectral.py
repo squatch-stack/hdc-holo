@@ -221,3 +221,58 @@ def test_unknown_coupling_is_refused():
     with pytest.raises(ValueError, match=r"iid.*orthogonal"):
         sample_frequencies(16, 3, 1.0, np.random.default_rng(0),
                            coupling="antithetic")
+
+
+# --- per-cell Gram factorisation (issue #2) --------------------------------
+
+def test_cell_gram_factorises_so_one_decomposition_serves_a_band():
+    """`G_c = D G0 D^H` with D a unitary diagonal of cell-centre phases.
+
+    The analytic projection's whole cost model rests on this: cell
+    position enters only as a phase, so ONE eigendecomposition serves
+    every cell in a band instead of one per cell — 1,624 of them on the
+    saguaro fine band. If cell geometry ever stops being a translation
+    of a common box, this should fail loudly rather than silently making
+    the projection quadratically more expensive.
+    """
+    rng = np.random.default_rng(0)
+    freqs = rng.normal(0, 8.0, size=(48, 3))
+    half = 0.0625
+
+    def gram(centre):
+        delta = freqs[:, None, :] - freqs[None, :, :]
+        phase = np.exp(1j * (delta @ np.asarray(centre, dtype=float)))
+        sinc = np.prod(2 * half * np.sinc(delta * half / np.pi), axis=2)
+        return phase * sinc
+
+    origin = gram([0.0, 0.0, 0.0])
+    for centre in ([0.3, -0.7, 1.1], [5.0, 2.0, -3.0], list(rng.normal(size=3))):
+        d = np.diag(np.exp(1j * (freqs @ np.asarray(centre, dtype=float))))
+        assert np.allclose(gram(centre), d @ origin @ d.conj().T, atol=1e-10)
+        # the consequence that matters: identical spectra, so a single
+        # decomposition is reusable across cells
+        assert np.allclose(np.linalg.svd(origin, compute_uv=False),
+                           np.linalg.svd(gram(centre), compute_uv=False),
+                           rtol=1e-9)
+
+
+def test_a_gaussian_window_conditions_better_than_a_hard_box():
+    """Why the windowed objective is the usable one. The Gram IS the
+    window's Fourier transform, so a box gives slowly-decaying sincs and
+    a Gaussian gives Gaussian decay.
+
+    The threshold here is deliberately modest because the test runs at
+    d=512, where the measured ratio is ~460x and BOTH Grams are still
+    full rank. The gap widens sharply with dimension — at d=2048 it is
+    6e19 against 1.2e11, and the box has lost 400 modes — but asserting
+    that here would mean carrying a 2048x2048 eigendecomposition in the
+    unit suite for a fact the driver already reports."""
+    rng = np.random.default_rng(1)
+    sigmas = 1.0 / np.geomspace(0.002, 0.004, 5)      # real xfine codebook
+    comp = rng.integers(0, len(sigmas), size=512)
+    freqs = sigmas[comp, None] * rng.standard_normal((512, 3))
+    half = (1 / 32) / 2
+    delta = freqs[:, None, :] - freqs[None, :, :]
+    box = np.prod(2 * half * np.sinc(delta * half / np.pi), axis=2)
+    win = np.exp(-0.5 * (half / 2) ** 2 * (delta ** 2).sum(2))
+    assert np.linalg.cond(win) < np.linalg.cond(box) / 100
