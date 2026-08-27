@@ -23,6 +23,7 @@ is a natural CRDT sync unit; see crdt.py).
 
 import numpy as np
 
+from .demokit import banner
 from .field import GaussianSplatField
 
 
@@ -109,7 +110,7 @@ def demo(dim=4096, seed=0, save_png=True):
     rng = np.random.default_rng(seed + 8)
 
     # -- multi-band: broad isotropic blobs + thin rotated streaks --------
-    print(f"== Multi-band field: per-splat covariance classes (d={dim}) ==")
+    banner("Multi-band field: per-splat covariance classes", dim)
     sigmas = [np.eye(2) * 0.05 ** 2,
               _rot2(35) @ np.diag([0.09 ** 2, 0.008 ** 2]) @ _rot2(35).T]
     mb = MultiBandSplatField(dim, sigmas, seed=seed)
@@ -128,7 +129,7 @@ def demo(dim=4096, seed=0, save_png=True):
           f"storage: {len(sigmas)} bundles = {len(sigmas)*8*dim} bytes")
 
     # -- chunked 3-D scene ----------------------------------------------
-    print(f"== Chunked 3-D field: one bundle per octree cell (d={dim}) ==")
+    banner("Chunked 3-D field: one bundle per octree cell", dim)
     n_splats = 1500
     mus = rng.uniform(0.05, 0.95, size=(n_splats, 3))
     alphas = rng.uniform(0.5, 1.0, size=n_splats)

@@ -433,7 +433,7 @@ def demo_codec(dim=4096, seed=0, save_png=True):
     _codec_plot(rows)
 
 def demo(dim=4096, seed=0):
-    print(f"== Phase-only & quantized storage (d={dim}) ==")
+    banner("Phase-only & quantized storage", dim)
     space = FHRR(dim, seed=seed)
     v = space.random()
     for bits in [16, 8, 4, 2]:

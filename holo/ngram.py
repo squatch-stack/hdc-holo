@@ -12,6 +12,7 @@ language replaces an explicit n-gram count table.
 """
 
 
+from .demokit import banner
 from .fhrr import FHRR, ItemMemory, Permutation
 
 
@@ -74,7 +75,7 @@ TEST = [
 
 
 def demo(dim=4096, seed=0):
-    print(f"== N-gram profiles: language ID in one vector each (d={dim}) ==")
+    banner("N-gram profiles: language ID in one vector each", dim)
     space = FHRR(dim, seed=seed)
     enc = NGramEncoder(space, n=3)
     profiles = {lang: enc.profile(text) for lang, text in TRAIN.items()}

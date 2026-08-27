@@ -5,7 +5,7 @@ f-strings demokit replaced: eighteen demos print capacity tables, and
 a formatting change here would rewrite all of their evidence at once.
 """
 
-import holo.demokit as demokit
+from holo import demokit
 from holo.demokit import Table, banner
 
 
@@ -64,3 +64,27 @@ def test_unknown_keyword_is_refused():
 def test_module_documents_its_own_test_file():
     # this file is named in demokit's docstring; keep that honest
     assert "tests/test_demokit.py" in demokit.__doc__
+
+
+def test_no_module_hand_rolls_a_banner_or_table_header():
+    """demokit exists because eighteen modules had each re-derived this
+    formatting in f-strings, which is how column widths drifted apart
+    (sdm's rows were a space narrower than its own header). A new module
+    doing it again would restart that, so the rule is checked, not
+    merely written down."""
+    import glob
+    import os
+    import re
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    banner_re = re.compile(r'print\(f"== .*\(d=\{dim\}\) =="\)')
+    header_re = re.compile(r"""print\(f"\{'""")
+    offenders = []
+    for path in sorted(glob.glob(os.path.join(root, "holo", "*.py"))):
+        with open(path, encoding="utf-8") as f:
+            src = f.read()
+        if banner_re.search(src) or header_re.search(src):
+            offenders.append(os.path.basename(path))
+    assert offenders == [], (
+        "these print a banner or table header by hand; use "
+        "holo.demokit.banner / Table: %s" % offenders)

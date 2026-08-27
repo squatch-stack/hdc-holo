@@ -13,6 +13,8 @@ attractor. Used autoassociatively here: data == address.
 
 import numpy as np
 
+from .demokit import Table
+
 
 class SparseDistributedMemory:
     def __init__(self, n_locations=5000, dim=256, radius=108, seed=0):
@@ -51,7 +53,12 @@ def demo(dim=4096, seed=0):  # dim arg unused; SDM has its own geometry
     active = sdm._active(patterns[0]).sum()
     print(f"stored 150 random patterns autoassociatively "
           f"(~{active} locations activated per write)")
-    print(f"{'address noise':>14} {'exact recovery':>15} {'avg bit errors':>15}")
+    # the row format used width 13 for a column the header set to 14,
+    # so the numbers sat one space left of their heading — the drift
+    # this library exists to stop. One table now defines both.
+    table = Table(("address noise", 14, ".0%"), ("exact recovery", 15, ".1%"),
+                  ("avg bit errors", 15, ".1f"))
+    table.header()
     for flip_frac in [0.05, 0.10, 0.20, 0.30, 0.40]:
         exact, bit_errs = 0, 0
         for p in patterns:
@@ -62,6 +69,6 @@ def demo(dim=4096, seed=0):  # dim arg unused; SDM has its own geometry
             errs = int((out != p).sum())
             exact += errs == 0
             bit_errs += errs
-        print(f"{flip_frac:>13.0%} {exact/len(patterns):>15.1%} "
-              f"{bit_errs/len(patterns):>15.1f}")
+        table.row(flip_frac, exact / len(patterns),
+                  bit_errs / len(patterns))
     print()
