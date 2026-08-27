@@ -48,7 +48,7 @@ def test_two_process_live_sync_converges_with_concurrent_undo():
     # BOTH painters concurrently undo the same stroke (observed-remove
     # over a real wire) — digests must still match
     out = subprocess.run(
-        [sys.executable, "live_sync.py", "--rounds", "3", "--dim", "1024",
+        [sys.executable, "examples/live_sync.py", "--rounds", "3", "--dim", "1024",
          "--res", "48", "--undo-round", "2", "--no-montage"],
         capture_output=True, text=True, timeout=300)
     assert out.returncode == 0, out.stdout + out.stderr

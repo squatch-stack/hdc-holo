@@ -35,8 +35,10 @@ without running the suite several times in a row.
   inline. Mermaid diagrams use the GitHub-safe subset (flowchart,
   sequence, state, class, er, pie, xychart-beta, packet-beta) with no
   custom themes — GitHub handles dark mode.
-- Demos register in `holo.cli.DEMOS`; example drivers (`run_*.py`)
-  stay at the root and wrap the package's public API only.
+- Demos register in `holo.cli.DEMOS`; example drivers live in
+  `examples/` (never the repo root) and wrap the package's public API
+  only. Root holds project metadata, config, and the `hdc_splat.py`
+  shim — nothing else; `holo-quality structure` enforces it.
 
 ## Tests
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Serve any splat file in the real-time viewer (examples/viewer).
 
-    run_viewer.py                       # data/iphone/redrock.ply
-    run_viewer.py data/scan-tucson.spz
-    run_viewer.py out/mine.ply --port 8200 --no-browser
+    examples/run_viewer.py                       # data/iphone/redrock.ply
+    examples/run_viewer.py data/scan-tucson.spz
+    examples/run_viewer.py out/mine.ply --port 8200 --no-browser
 
 Rendering is Spark (three.js) with occlusion-correct compositing —
 the display complement to holo/render.py's X-ray evidence renderer.
@@ -23,7 +23,7 @@ import threading
 import webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VIEWER = os.path.join(HERE, "examples", "viewer", "index.html")
+VIEWER = os.path.join(HERE, "viewer", "index.html")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):

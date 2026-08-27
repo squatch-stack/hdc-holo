@@ -81,7 +81,7 @@ tie (crosstalk dominates quantization there); real capture bundles are
 where the codecs separate.
 
 **Measured on real capture bundles** (saguaro fine band: 1624 cells,
-d=8192, 4 premultiplied channels; `run_codec_capture.py`, ~60s). The
+d=8192, 4 premultiplied channels; `examples/run_codec_capture.py`, ~60s). The
 dynamic-range prediction holds: cell-bundle |S| spans p99.9/p50 =
 987x. Round-tripping every bundle and decoding the evidence slices:
 

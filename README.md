@@ -66,7 +66,7 @@ puts crosstalk of std `~sqrt(N/(2d))` under every readout.
 | `holo/color.py` | color buffers | RGB as three channel bundles on one frequency basis; color fits & renders |
 | `holo/orset.py` | delete/undo semantics | observed-remove: deletion as tombstone sets — idempotent, add-wins, stroke undo |
 | `holo/dispatch.py` | rules engine / intent router | conditions as trigram profiles, dispatch as similarity, abstention as *policy*; a whole rulebook as one vector, banded + clustered routing at scale |
-| `live_sync.py` | multiplayer netcode | two OS processes co-paint one scene over TCP via Loro deltas |
+| `examples/live_sync.py` | multiplayer netcode | two OS processes co-paint one scene over TCP via Loro deltas |
 | `holo/accel.py` | the GPU | MLX/Metal backend, cos/sin real formulation: encode 37x, decode 106x on an M1 Max, NumPy-identical to 1e-7 |
 
 `holo/field.py` is the bridge to Gaussian splatting: encoding a point as
@@ -76,18 +76,18 @@ theorem / random Fourier features). A scene of N splats bundles into one
 fixed-size complex vector; evaluating the mixture anywhere is a single
 inner product. See `out/field_comparison.png` after running the demo.
 
-The spectral strand (`holo/spectral.py`; drivers `run_prototype.py`,
-`run_mog.py`) drops the shared-covariance restriction: a splat's hypervector is its
+The spectral strand (`holo/spectral.py`; drivers `examples/run_prototype.py`,
+`examples/run_mog.py`) drops the shared-covariance restriction: a splat's hypervector is its
 Fourier *spectrum* sampled at the shared codebook, so every splat keeps
 its own anisotropic `Sigma` inside one bundle — paid for with an
 importance-sampling variance penalty over the single-scale codebook.
-`run_mog.py` shrinks that penalty by drawing the codebook from a mixture
+`examples/run_mog.py` shrinks that penalty by drawing the codebook from a mixture
 of Gaussians spanning the splat-scale range. Complementary to
 `holo/spatial.py`'s bands (discrete covariance classes, one bundle each):
 bands quantize, the mixture keeps covariance continuous, and the two
 compose. Figures land in `results/`.
 
-`holo/capture.py` (driven by `run_real_scene.py`) runs the whole stack
+`holo/capture.py` (driven by `examples/run_real_scene.py`) runs the whole stack
 on real captures. The recommended input is the raw Gaussian `.ply`
 (INRIA 3DGS layout — what Scaniverse exports from a phone): full
 per-splat covariance and color, nothing quantized away, and the best
@@ -128,7 +128,7 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 ```
 
 Extras: `.[crdt]` (Loro replication), `.[viz]` (figures), `.[gpu]`
-(MLX/Metal backend, macOS). `run_demos.py` remains as a shim.
+(MLX/Metal backend, macOS). `examples/run_demos.py` remains as a shim.
 
 The `holo` package is both the SDK surface and the implementation home
 (`import holo` — charter-named facade modules `core`, `encode`,
@@ -183,7 +183,7 @@ under arithmetic retraction.
 
 Requires `pip install loro`; everything else runs without it.
 
-The sync story runs live: `python live_sync.py` spawns two OS processes
+The sync story runs live: `python examples/live_sync.py` spawns two OS processes
 that co-paint one color scene over TCP, exchanging only length-prefixed
 Loro delta frames (`HoloReplica.version()` / `updates_since()` — no
 access to the peer's doc). Warm strokes come from painter A, cool from

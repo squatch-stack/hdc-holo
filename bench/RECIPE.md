@@ -40,7 +40,7 @@ backend.
 
 ## Verifying the install
 
-Submit any `scene.npz` produced by this repo's `run_gpu_bench.py
+Submit any `scene.npz` produced by this repo's `examples/run_gpu_bench.py
 --make-payload`; the returned `bench.json` carries float64 checksums
 (`check_bundle_sum`, `check_readout_sum`) that must match the values
 computed locally on any other backend for the same payload — same

@@ -1,7 +1,7 @@
 """Compatibility shim: the spectral encoder now lives in holo.spectral.
 
-Kept so the research scripts (run_prototype.py, run_mog.py,
-run_real_scene.py) and any notebooks keep working unchanged. New code
+Kept so the research scripts (examples/run_prototype.py, examples/run_mog.py,
+examples/run_real_scene.py) and any notebooks keep working unchanged. New code
 should import from `holo` / `holo.encode`.
 """
 

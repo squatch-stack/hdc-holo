@@ -29,7 +29,7 @@ the outputs ship in bench.json so cross-hardware runs can verify they
 computed the same thing before comparing clocks.
 
 Local use: python bench/holo_bench_job.py --backend mlx|numpy
-Payload:   built by run_gpu_bench.py (sizes chosen to fit a 12 GB
+Payload:   built by examples/run_gpu_bench.py (sizes chosen to fit a 12 GB
            VRAM budget with chunked transients).
 """
 

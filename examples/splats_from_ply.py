@@ -6,7 +6,7 @@ phone; `.splat` and `.spz` load the same way), encode it into
 per-cell complex64 bundles, then answer questions with inner
 products: a color slice checked against the exact mixture, and an
 orthographic X-ray view with no ray marching and no sort. The full
-evidence driver with figures is run_real_scene.py; the math and the
+evidence driver with figures is examples/run_real_scene.py; the math and the
 failure modes are docs/real-scenes.md.
 
     python examples/splats_from_ply.py [capture.ply]

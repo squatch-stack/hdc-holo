@@ -13,7 +13,7 @@ Three questions, measured (2-D scenes, the spectral encoder's own API):
    an id phasor: one vector answers (id, t) queries by two unbinds and
    an argmax. Localization error vs ground-truth trajectories.
 
-Run:  python dynamic_prototype.py            (figure -> out/)
+Run:  python examples/dynamic_prototype.py            (figure -> out/)
 """
 
 import time

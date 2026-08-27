@@ -20,7 +20,7 @@ each band.
 
 Scene: 3D, N = 999 anisotropic splats, base scales log-uniform in
 [0.02, 0.10] (a 5x spread). Metric: RMS decode error per unit mean splat
-amplitude (the crosstalk-noise metric of run_prototype.py), averaged over
+amplitude (the crosstalk-noise metric of examples/run_prototype.py), averaged over
 codebook seeds. The dotted floor is the phasor-encoder theory sqrt(N/2d),
 the best any shared-codebook superposition can do here.
 

@@ -12,7 +12,7 @@
     "examples/*.md",
     "examples/*.py",
     "holo/*.py",
-    "run_gpu_bench.py",
+    "examples/run_gpu_bench.py",
     "pyproject.toml",
     "CITATION.cff",
     ".zenodo.json"

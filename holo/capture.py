@@ -6,7 +6,7 @@ clamping (a resolution floor + a reach cap), scale-banded spatial
 chunking with per-band mixture codebooks, cell-local decode/ground
 truth for slices, and closed-form X-ray projection straight from the
 cell bundles (with the dedicated mip encode projections need).
-`docs/real-scenes.md` carries the narrative; `run_real_scene.py` is the
+`docs/real-scenes.md` carries the narrative; `examples/run_real_scene.py` is the
 example driver that produced the evidence figures.
 
 Formats (both byte-verified against the reference implementations):

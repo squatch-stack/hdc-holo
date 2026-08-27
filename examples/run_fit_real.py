@@ -8,7 +8,7 @@ decodes the same evidence slices from both and compares against ground
 truth. Writes results/real_fit.png. See docs/real-scenes.md.
 
 Usage:
-    run_fit_real.py [data/scan-tucson.spz | data/train.splat]
+    examples/run_fit_real.py [data/scan-tucson.spz | data/train.splat]
 """
 
 import os
@@ -21,9 +21,10 @@ from holo.capture import (band_codebooks, build_scene, decode_slice,
                           encode_bands, exact_slice, fit_cells, mass_mode,
                           slice_grid)
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-RESULTS = os.path.join(HERE, "results")
-DEFAULT_SCENE = os.path.join(HERE, "data", "scan-tucson.spz")
+# repo root: this driver lives in examples/, its assets do not
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RESULTS = os.path.join(ROOT, "results")
+DEFAULT_SCENE = os.path.join(ROOT, "data", "scan-tucson.spz")
 
 
 def to_rgb(field, ref):

@@ -3,7 +3,7 @@
 *[← docs index](README.md) · fields & scenes*
 
 *(implementation: `holo/spectral.py`, exported via `holo.encode`;
-example drivers `run_prototype.py`, `run_mog.py`; `hdc_splat.py` is a
+example drivers `examples/run_prototype.py`, `examples/run_mog.py`; `hdc_splat.py` is a
 compatibility shim)*
 
 **What.** Drops the shared-covariance restriction of the FPE field
@@ -59,4 +59,4 @@ short of the global scale floor):
 ![herringbone failure mode: per-cell plane-wave patches](../results/failure_herringbone.png)
 
 Also `results/recon_2d.png`, `results/translation.png` (shift-theorem
-equivariance); `run_prototype.py`, `run_mog.py`.
+equivariance); `examples/run_prototype.py`, `examples/run_mog.py`.
