@@ -233,6 +233,38 @@ PREAMBLE = r"""% Generated from paper/draft.md by paper/md2tex.py — edit the
 """
 
 
+# arXiv's submission form takes the abstract as PLAIN TEXT: it renders
+# no backticks, no markdown emphasis, and no non-ASCII glyphs. Pasting
+# the paper's abstract there produces mojibake in the one piece of the
+# paper every reader sees first. These are the ASCII readings of the
+# three expressions the abstract uses.
+ASCII_MATH = {
+    "e^{iWp}": "exp(i W p)",
+    "N(0, Σ⁻¹)": "N(0, Sigma^-1)",
+    "σ ~ √(N·R / 2d)": "sigma ~ sqrt(N R / 2d)",
+}
+ASCII_UNI = [("—", " -- "), ("–", "-"), ("−", "-"), ("±", "+/-"),
+             ("×", "x"), ("·", " "), ("√", "sqrt"), ("σ", "sigma"),
+             ("Σ", "Sigma"), ("²", "^2"), ("¹", "^1"), ("⁻", "^-"),
+             ("½", "1/2"), ("ᵀ", "^T"), ("§", "Section "),
+             ("’", "'"), ("‘", "'"), ("“", '"'), ("”", '"')]
+
+
+def abstract_text(src):
+    """The abstract as ASCII plain text, for arXiv's submission form."""
+    text = _read(src)
+    body = text.split("## Abstract", 1)[1].split("\n## ", 1)[0].strip()
+    for code, plain in ASCII_MATH.items():
+        body = body.replace("`%s`" % code, plain)
+    body = re.sub(r"`([^`]+)`", r"\1", body)
+    body = re.sub(r"\*\*([^*]+)\*\*", r"\1", body)
+    body = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"\1", body)
+    for a, b in ASCII_UNI:
+        body = body.replace(a, b)
+    body = re.sub(r"[ \t]+", " ", " ".join(body.split("\n")))
+    return wrap(body.strip(), 78) + "\n"
+
+
 def _figure(lines, i, m, cited_here):
     """One markdown figure plus its `**Figure N.**` caption paragraph."""
     num = m.group(1)
@@ -369,6 +401,8 @@ def main(root):
                   os.path.join(here, "references.bib"))
     with open(os.path.join(here, "main.tex"), "w") as f:
         f.write(tex)
+    with open(os.path.join(here, "abstract.txt"), "w") as f:
+        f.write(abstract_text(os.path.join(here, "draft.md")))
     return tex
 
 
