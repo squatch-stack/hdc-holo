@@ -2,9 +2,9 @@
 """Two OS processes co-painting ONE holographic scene, live over TCP —
 with observed-remove undo.
 
-    python live_sync.py                 # driver: spawns painters A and B
-    python live_sync.py --rounds 6      # shorter session
-    python live_sync.py --undo-round -1 # disable the undo event
+    python examples/live_sync.py                 # driver: spawns painters A and B
+    python examples/live_sync.py --rounds 6      # shorter session
+    python examples/live_sync.py --undo-round -1 # disable the undo event
 
 Painter A (warm palette) listens; painter B (cool palette) connects.
 Each round every painter lays one brush stroke — an ORStrokeScene epoch

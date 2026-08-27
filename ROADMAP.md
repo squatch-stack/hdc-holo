@@ -61,7 +61,7 @@ Tracked as GitHub issues under the [0.3 milestone](https://github.com/squatch-st
 - **Package name decision** ([#7](https://github.com/squatch-stack/hdc-holo/issues/7)) — `holo` is the charter's working name;
   rename happens once, before PyPI.
 - **Dynamic holograms** (no issue yet; prototype
-  `dynamic_prototype.py`) — animation as algebra inside the bundle.
+  `examples/dynamic_prototype.py`) — animation as algebra inside the bundle.
   Measured: rigid motion of an object's sub-bundle is one phase ramp
   (`translate_bundle`) — algebraically exact (bundle gap ~5e-7) and
   O(d) regardless of splat count (0.6 ms vs 200 ms re-encode at 20k
@@ -76,7 +76,7 @@ Tracked as GitHub issues under the [0.3 milestone](https://github.com/squatch-st
   own idea), object identity via OR-Set epochs, CRDT-merged animated
   scenes, promotion to a module + docs page per the charter bar.
 - **Interop** (LANDED) — `save_ply` + `save_spz` export, and
-  `run_viewer.py` renders any capture in real time through Spark.
+  `examples/run_viewer.py` renders any capture in real time through Spark.
   Measured: SPZ v2 is 16.4x smaller at 0.04-0.07% field error,
   because raw captures are already u8-quantized inside float32
   containers (SDK.md log). Still open: SPZ v3/v4 parser bump (the

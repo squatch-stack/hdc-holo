@@ -6,8 +6,8 @@ script on every local backend, and merges any remote bench.json (e.g.
 from a sandboxed GPU job runner — see bench/RECIPE.md) into one table.
 Checksums must agree across backends before clocks are compared.
 
-    .venv/bin/python run_gpu_bench.py                 # payload + local runs
-    .venv/bin/python run_gpu_bench.py --merge gpugate-*/bench.json
+    .venv/bin/python examples/run_gpu_bench.py                 # payload + local runs
+    .venv/bin/python examples/run_gpu_bench.py --merge gpugate-*/bench.json
 
 Artifacts land in ./gpubench/ (gitignored).
 """
@@ -21,16 +21,17 @@ import sys
 
 import numpy as np
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "gpubench")
-JOB = os.path.join(HERE, "bench", "holo_bench_job.py")
+# repo root: this driver lives in examples/, its assets do not
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(ROOT, "gpubench")
+JOB = os.path.join(ROOT, "bench", "holo_bench_job.py")
 
 N, P, D, C, CHUNK = 131072, 262144, 32768, 4, 16384
 S_LO, S_CAP = 0.002, 0.004                      # the xfine band's range
 
 
 def make_payload(path):
-    sys.path.insert(0, HERE)
+    sys.path.insert(0, ROOT)
     from holo.capture import quat_to_rot
     from holo.spectral import decode_weights, sample_frequencies
 

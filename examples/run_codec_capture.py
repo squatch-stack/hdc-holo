@@ -9,7 +9,7 @@ mixture (fidelity to ground truth). The two metrics diverge on forward
 bundles because small components are mostly crosstalk noise — see the
 "accidental shrinkage denoiser" entry in SDK.md's 0.2 log.
 
-Usage: run_codec_capture.py [data/scan-tucson.spz]
+Usage: examples/run_codec_capture.py [data/scan-tucson.spz]
 """
 
 import os
@@ -22,8 +22,9 @@ from holo.capture import (band_codebooks, build_scene, decode_slice,
                           encode_bands, exact_slice, mass_mode, slice_grid)
 from holo.phase import pack_complex, pack_polar, unpack
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_SCENE = os.path.join(HERE, "data", "scan-tucson.spz")
+# repo root: this driver lives in examples/, its assets do not
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_SCENE = os.path.join(ROOT, "data", "scan-tucson.spz")
 
 
 def roundtrip(bundles, codec, bits, gamma=0.5):

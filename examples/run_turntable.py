@@ -4,7 +4,7 @@ bundles: encode the mip once (blur = covariance addition), then each
 view folds a projection-slice factor into the cell bundles and reads
 out — no geometry, no rasterizer, no per-frame re-encode.
 
-    run_turntable.py [data/iphone/redrock.ply | data/scan-tucson.spz]
+    examples/run_turntable.py [data/iphone/redrock.ply | data/scan-tucson.spz]
                      [--frames N] [--res R]
 
 Outputs results/real_turntable-<name>.gif and a contact-sheet PNG.

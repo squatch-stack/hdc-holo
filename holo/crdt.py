@@ -205,7 +205,7 @@ class HoloReplica:
 
     def updates_since(self, vv):
         """Delta of every op not covered by version vector vv — the
-        socket-transportable form of updates_for (see live_sync.py)."""
+        socket-transportable form of updates_for (see examples/live_sync.py)."""
         self.flush()
         return self.doc.export(ExportMode.Updates(from_=vv))
 

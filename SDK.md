@@ -23,20 +23,20 @@ or theory, (b) a deterministic test, and (c) a documented failure mode.**
 | Technique | Where | Evidence |
 |---|---|---|
 | FHRR algebra (bind/unbind/bundle/permute, hash-derived codewords) | `holo/fhrr.py` | test suite; crosstalk matches `sqrt(N/2d)` throughout |
-| Holographic data structures (map, sketch, record, sequence, ngram, graph, FSM, SDM) | `holo/*.py` | per-structure capacity tables in `run_demos.py`; tests |
+| Holographic data structures (map, sketch, record, sequence, ngram, graph, FSM, SDM) | `holo/*.py` | per-structure capacity tables in `examples/run_demos.py`; tests |
 | Splat fields via fractional power encoding | `holo/field.py` | `out/field_comparison.png`; error ~ `1/sqrt(d)` test |
 | Spectral encoder (per-splat anisotropic covariance, one codebook) | `holo/spectral.py` | capacity curves fit `d^-0.50` exactly (`results/capacity_curve.png`) |
-| Mixture-of-Gaussians codebooks (multi-scale scenes) | `holo/spectral.py`, `run_mog.py` | 3-10x noise cut, penalty 16-33x -> 2.4-3.2x (`results/mog_penalty.png`) |
-| Scale bands + spatial chunking | `holo/spatial.py`, `run_real_scene.py` | chunked beats global at equal d (test); locality = per-cell noise |
+| Mixture-of-Gaussians codebooks (multi-scale scenes) | `holo/spectral.py`, `examples/run_mog.py` | 3-10x noise cut, penalty 16-33x -> 2.4-3.2x (`results/mog_penalty.png`) |
+| Scale bands + spatial chunking | `holo/spatial.py`, `examples/run_real_scene.py` | chunked beats global at equal d (test); locality = per-cell noise |
 | Attribute/record payloads on splats (`what_is_at`, `where_is`) | `holo/attribute_field.py` | SNR cliff table; class-filter renders (`out/attribute_field.png`) |
-| CRDT replication incl. attributed scenes + records (Loro) | `holo/crdt.py`, `live_sync.py` | convergence tests; bit-identical merges; TCP demo |
+| CRDT replication incl. attributed scenes + records (Loro) | `holo/crdt.py`, `examples/live_sync.py` | convergence tests; bit-identical merges; TCP demo |
 | Ridge-fitting holograms (bundle = RFF weight vector) | `holo/fit.py` | fitted beats forward-encoded ~70x held-out (`out/fit_photo.png`) |
-| Closed-form X-ray rendering (projection-slice) | `holo/render.py`, `run_real_scene.py` | trefoil 5-7% RMSE; real-scene renders vs analytic mip |
+| Closed-form X-ray rendering (projection-slice) | `holo/render.py`, `examples/run_real_scene.py` | trefoil 5-7% RMSE; real-scene renders vs analytic mip |
 | Real-capture pipeline (.splat / .spz v2 loaders, crop, clamp) | `holo/capture.py` | byte-verified parsers (synthetic round-trip tests); `results/real_scan-tucson*.png`, `results/real_train*.png` |
 | Phase-only / quantized storage (2x/8x/16x) | `holo/phase.py` | round-trip similarity tests |
 | GPU backend (MLX/Metal, real cos/sin formulation, batched cell decode) | `holo/accel.py` | 37x encode / 106x decode kernels on M1 Max; real-scene holographic stages 13 min -> 24 s end-to-end; matches NumPy to 1e-7 |
 | Observed-remove deletion (OR-Set tombstones, epoch/stroke undo, owner compaction) | `holo/orset.py` | phantom-vs-clean demo (`out/orset_undo.png`); idempotence/add-wins/compaction tests |
-| Capture export + real-time viewing (`save_ply` / `save_spz`, Spark viewer) | `holo/capture.py`, `examples/viewer`, `run_viewer.py` | lossless PLY round trip and SPZ-grid round trip (tests); 16.4x compression at 0.04-0.07% field error vs the exact mixture (`docs/real-scenes.md`) |
+| Capture export + real-time viewing (`save_ply` / `save_spz`, Spark viewer) | `holo/capture.py`, `examples/viewer`, `examples/run_viewer.py` | lossless PLY round trip and SPZ-grid round trip (tests); 16.4x compression at 0.04-0.07% field error vs the exact mixture (`docs/real-scenes.md`) |
 | Near-enough dispatch (similarity rule engine: matrix / one-vector bundle / banded+clustered routing, abstention as policy) | `holo/dispatch.py` | brittleness + banding-rescue + abstention tables (`hdc-demos dispatch`); capacity cliff and rescue pinned by test at N=d (`tests/test_dispatch.py`); `docs/dispatch.md` |
 
 Documented failure modes that the SDK must carry in its docs, not bury:
@@ -102,7 +102,7 @@ Principles:
    *Done so far:* `pyproject.toml` with extras `[crdt]`, `[viz]`,
    `[gpu]`, `[dev]`; `pip install -e .` verified importable from
    anywhere; `__version__ = "0.1.0"`; console scripts `hdc-demos` /
-   `holo-demos` (`holo/cli.py`; `run_demos.py` is a shim — register new
+   `holo-demos` (`holo/cli.py`; `examples/run_demos.py` is a shim — register new
    demos in `holo.cli.DEMOS`); `CHANGELOG.md` started. **The physical
    migration is done**: every implementation module lives in `holo/`
    (one file per concept, `git mv`'d with history) underneath the
@@ -121,7 +121,7 @@ Principles:
    (.splat/.spz loaders with a `parse_spz` seam, mass-centered crop,
    banded cells, slice/X-ray decode + exact referees), exported via
    `holo.encode` / `holo.scene` and flat off `holo`;
-   `run_real_scene.py` is a thin example driver.
+   `examples/run_real_scene.py` is a thin example driver.
    `tests/test_spectral.py` + `tests/test_capture.py` cover them (the
    loader tests author both formats synthetically — CI needs no data
    files); docs pages moved off "pre-migration" wording; the stale
@@ -190,7 +190,7 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 - **Per-cell ridge fitting of real scenes** (`fit_cells` in
   `holo/capture.py`, `ridge_cell_fit(prior=)` in `holo/accel.py`,
-  driver `run_fit_real.py`, figure `results/real_fit.png`): two results.
+  driver `examples/run_fit_real.py`, figure `results/real_fit.png`): two results.
   (1) Naive ridge under mixture codebooks FAILS (12x worse than
   forward) — minimum-norm regression spreads energy into the codebook's
   finest frequencies and memorizes samples as kernel-width bumps; a
@@ -212,7 +212,7 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   known frame-regularization theory; the zero-sample Gram route should
   start with truncated-SVD/Tikhonov, and docs/fit.md +
   docs/related-work.md carry the full placement.
-- **Real-scene turntable done** (peer lane): `run_turntable.py` orbits
+- **Real-scene turntable done** (peer lane): `examples/run_turntable.py` orbits
   scan-tucson (519k splats) entirely from 135 cell bundles (135 MB) —
   36 frames at 5.2 s/frame, no geometry at render time, gamma-0.5
   tone map (X-ray ground-plane integrals crush linear exposure), high
@@ -239,7 +239,7 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   dimensions (crosstalk dominates quantization there). Earns its keep
   on wide-dynamic-range bundles; open item: measure on real-capture
   premultiplied channels.
-- **HG-on-capture measured** (`run_codec_capture.py`, saguaro
+- **HG-on-capture measured** (`examples/run_codec_capture.py`, saguaro
   fine-band cells, d=8192, 4ch, both evidence slices): capture bundles
   ARE the wide-dynamic-range case — |S| spans 987x (p99.9/p50). At 8
   bits HG is the faithful codec: round-trip drift 0.013 vs HM's 0.124
@@ -273,7 +273,7 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 - **Cross-hardware bench + the TF32 finding** (capture/spectral lane +
   the job-runner session): bench/holo_bench_job.py runs the two dominant
   kernels from ONE file on torch-cuda/cupy/mlx/numpy with float64
-  checksums for cross-hardware verification (run_gpu_bench.py drives;
+  checksums for cross-hardware verification (examples/run_gpu_bench.py drives;
   local M1 Max: MLX 25x numpy on the capture-shaped workload). Recipe
   bring-up on the studio's RTX 5090 surfaced a platform gotcha worthy of
   the Accelerate-bug shelf: **fp32 matmuls default to TF32 tensor cores
@@ -464,7 +464,7 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   (drops the 9.9% view-dependent term) and its rotation error grows
   as ~grid/w near 180-degree rotations (storing xyz, recovering w).
   `save_ply` round-trips losslessly to float32 rounding on the full
-  capture. `run_viewer.py` + `examples/viewer` render any of it in
+  capture. `examples/run_viewer.py` + `examples/viewer` render any of it in
   real time via Spark (CDN, nothing installed): the display
   complement to the X-ray evidence renderer, with occlusion. Two
   gotchas worth the shelf: (1) a URL-constructed SplatMesh added to

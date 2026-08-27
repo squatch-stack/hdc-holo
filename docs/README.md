@@ -97,7 +97,7 @@ the shared frequencies, inflating sigma by ~1.5-3x over the i.i.d. law.
 
 | Page | Technique | Implementation |
 |---|---|---|
-| [sync.md](sync.md) | CRDT replication on Loro | `holo/crdt.py`, `live_sync.py` |
+| [sync.md](sync.md) | CRDT replication on Loro | `holo/crdt.py`, `examples/live_sync.py` |
 | [orset.md](orset.md) | observed-remove deletion & undo | `holo/orset.py` |
 | [storage.md](storage.md) | phase-only + magnitude codecs | `holo/phase.py` |
 | [facts.md](facts.md) | claims registry + stale-claim gate | `holo/facts/` |
