@@ -42,8 +42,7 @@ import time
 import numpy as np
 
 from . import accel as _accel
-from .spectral import (SplatScene, decode_weights, sample_frequencies,
-                       spectral_bundle)
+from .spectral import SplatScene, decode_weights, sample_frequencies, spectral_bundle
 
 # axis scales are clamped to [S_LO, S_HI] of the normalized scene extent
 # — a resolution floor (min) and a cap bounding every cell's query reach
