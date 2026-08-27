@@ -79,6 +79,7 @@ the shared frequencies, inflating sigma by ~1.5-3x over the i.i.d. law.
 | [spectral.md](spectral.md) | spectral encoder + mixture codebooks | `holo/spectral.py` |
 | [attributes.md](attributes.md) | attribute & record payloads on splats | `holo/attribute_field.py` |
 | [real-scenes.md](real-scenes.md) | real-capture pipeline (.splat/.spz) | `holo/capture.py` |
+| [baselines.md](baselines.md) | fidelity per byte vs per-splat codecs | `examples/run_baseline_table.py` |
 
 **Learning and imaging**
 
