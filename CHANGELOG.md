@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Raw Gaussian `.ply` (INRIA 3DGS layout) promoted to the recommended
+  capture interchange — full per-splat covariance, nothing quantized
+  away; Red Rock is the flagship capture. README front page now shows
+  the work (turntable showcase); `run_turntable.py --crop` for
+  captures that concentrate mass in a small core.
+- Capture orientation fix: 3DGS `.ply` and `.splat` load in the
+  COLMAP y-down convention and were rendering upside down; loaders
+  now normalize every format to a y-up world (180° rotation about x,
+  positions and per-splat rotations together — covariance congruence
+  test-pinned). Train and Red Rock evidence figures regenerated.
+
 ## 0.2.1 — 2026-08-26
 
 - Launch polish: duet brand mark (sasquatch + saguaro, one interference
