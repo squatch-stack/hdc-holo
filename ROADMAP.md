@@ -56,7 +56,11 @@ Tracked as GitHub issues under the [0.3 milestone](https://github.com/squatch-st
 - **Publication pass** ([#6](https://github.com/squatch-stack/hdc-holo/issues/6)) — SKELETON WRITTEN: [PAPER.md](PAPER.md)
   picks three claims (scene-as-vector with algebraic query; a view as a
   bundle; superposition as an almost-CRDT) with the capacity law as
-  spine, and records what was excluded and why. Superseded framing
+  spine, records what was excluded and why, carries the adopted
+  citations, and names the venue: the HDC/VSA community (arXiv
+  cs.NE first), NOT graphics — we do not do novel-view synthesis,
+  the baseline table is a loss on the axis graphics weighs, and all
+  three claims are algebraic. Only a draft-freeze re-sweep remains. Superseded framing
   below, kept for the record — arXiv note on the strongest findings (codec
   split + accidental denoiser; observed-remove holographic CRDTs; the
   per-cell fit negative result and its Fourier-extension framing),
