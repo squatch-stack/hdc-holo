@@ -119,12 +119,22 @@ destroyed another session's uncommitted work once.
 - **Never `pip install -e .` from a clone or worktree.** The shared
   `.venv` has ONE editable mapping for `holo`; installing from a
   temporary tree silently repoints it, so every other session imports
-  your in-flight code. It hides well, too: pytest puts its rootdir on
-  `sys.path` first, so the suite keeps testing the right tree while
-  plain `python examples/foo.py` gets the hijacked one. Run tools
-  against a clone with `PYTHONPATH=<clone>` for that shell, or give
-  the clone its own venv. To repair a hijacked venv:
-  `.venv/bin/pip install -e . --no-deps` from the real repo.
+  your in-flight code. Repair with `.venv/bin/pip install -e .
+  --no-deps` from the real repo.
+- **`PYTHONPATH` cannot aim an import at a worktree** — measured, and
+  it is the reason the rule above is `env -C`. The editable install
+  works through a meta-path *finder*, which Python consults BEFORE
+  anything on `sys.path`, so neither `PYTHONPATH` nor pytest's rootdir
+  insertion outranks it:
+
+  ```
+  PYTHONPATH=<wt> .venv/bin/python -m pytest <wt>/tests  -> shared checkout
+  env -C <wt>     .venv/bin/python -m pytest tests       -> the worktree
+  ```
+
+  A whole session's local verification can pass while testing code the
+  branch does not contain. Probe it when in doubt: a throwaway test
+  that raises `holo.__file__` says which tree actually loaded.
 
 ## Commits
 

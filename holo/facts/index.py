@@ -150,44 +150,53 @@ def search(root, query, k=8, verify=True):
     return out
 
 
+def _chunk_text(root, chunk, cache):
+    """The chunk's text as it reads on disk NOW; None when the index row
+    is stale (the sha no longer matches any chunk in that file)."""
+    key = (chunk["file"], tuple(chunk["lines"]))
+    if key not in cache:
+        path = os.path.join(root, chunk["file"])
+        match = [c for c in chunk_file(path, chunk["file"])
+                 if c.sha == chunk["sha256"]] if os.path.exists(path) else []
+        cache[key] = match[0].text if match else None
+    return cache[key]
+
+
+def _paraphrase_probes(root, claim, prof, meta, mat, threshold, cache):
+    """Chunks that read like this retired claim but carry no matchable
+    value — the paraphrases exact matching cannot see."""
+    from .check import Finding, _match_values
+    probe = claim.statement.replace("{value}", str(claim.value))
+    scores = np.real(mat.conj() @ prof.unit_profile(probe))
+    findings = []
+    for i in np.argsort(scores)[::-1][:3]:
+        if scores[i] < threshold:
+            break
+        chunk = meta["chunks"][int(i)]
+        text = _chunk_text(root, chunk, cache)
+        if text is None or _match_values(claim, text):
+            continue          # stale row, or the exact tier owns this site
+        findings.append(Finding(
+            "WARN", "fuzzy-paraphrase", claim.id, chunk["file"],
+            chunk["lines"][0],
+            "possible paraphrased restatement (score %.2f) — verify"
+            % scores[i]))
+    return findings
+
+
 def fuzzy_findings(root, claims, config, cap=15):
     """WARN-tier probes: superseded/retracted claim statements against
     the chunk matrix. A high-scoring chunk with no exact pattern match
     is a candidate PARAPHRASED stale restatement — verify by hand."""
-    from .check import Finding, _match_values
     threshold = config.get("fuzzy_threshold", 0.18)
     prof = profiler()
     meta, mat = load_index(root)
+    cache = {}
     findings = []
-    stale_claims = [c for c in claims
-                    if c.status in ("superseded", "retracted")
-                    and c.statement]
-    texts = None
-    for claim in stale_claims:
-        probe = claim.statement.replace("{value}", str(claim.value))
-        q = prof.unit_profile(probe)
-        scores = np.real(mat.conj() @ q)
-        for i in np.argsort(scores)[::-1][:3]:
-            if scores[i] < threshold:
-                break
-            c = meta["chunks"][int(i)]
-            if texts is None:
-                texts = {}
-            key = (c["file"], tuple(c["lines"]))
-            if key not in texts:
-                path = os.path.join(root, c["file"])
-                match = [ch for ch in chunk_file(path, c["file"])
-                         if ch.sha == c["sha256"]] \
-                    if os.path.exists(path) else []
-                texts[key] = match[0].text if match else None
-            text = texts[key]
-            if text is None:
-                continue  # stale index row; reindex will resolve
-            if _match_values(claim, text):
-                continue  # exact tier already owns this site
-            findings.append(Finding(
-                "WARN", "fuzzy-paraphrase", claim.id, c["file"],
-                c["lines"][0],
-                "possible paraphrased restatement (score %.2f) — verify"
-                % scores[i]))
+    for claim in claims:
+        if claim.status not in ("superseded", "retracted") \
+                or not claim.statement:
+            continue
+        findings.extend(_paraphrase_probes(root, claim, prof, meta, mat,
+                                           threshold, cache))
     return findings[:cap]

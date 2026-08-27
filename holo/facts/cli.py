@@ -43,7 +43,7 @@ def _find_root(start):
         d = parent
 
 
-def main(argv=None):
+def _build_parser():
     ap = argparse.ArgumentParser(prog="holo-facts", description=__doc__)
     sub = ap.add_subparsers(dest="cmd")
     p_check = sub.add_parser("check", help="run the stale-claim checker")
@@ -64,95 +64,123 @@ def main(argv=None):
                            help="score histograms -> threshold advice")
     p_cal.add_argument("--root", default=".")
     sub.add_parser("mcp")
-    args = ap.parse_args(argv)
+    return ap
 
-    if args.cmd == "new":
-        print(json.dumps(_TEMPLATE))
-        return 0
-    if args.cmd == "mcp":
-        root = _find_root(".")
-        if root is None:
-            print("no claims/config.json found upward of cwd",
-                  file=sys.stderr)
-            return 2
-        from . import mcp_server
-        try:
-            mcp_server.serve(root)
-        except RuntimeError as e:
-            print(str(e), file=sys.stderr)
-            return 2
-        return 0
-    if args.cmd not in ("check", "index", "search", "calibrate"):
-        ap.print_help()
+
+def _cmd_new(args, root):
+    print(json.dumps(_TEMPLATE))
+    return 0
+
+
+def _cmd_mcp(args, root):
+    from . import mcp_server
+    try:
+        mcp_server.serve(root)
+    except RuntimeError as e:
+        print(str(e), file=sys.stderr)
         return 2
+    return 0
 
-    root = _find_root(args.root)
-    if root is None:
-        print("no claims/config.json found upward of %s" % args.root,
+
+def _cmd_index(args, root):
+    from . import index as indexmod
+    try:
+        n = indexmod.build_index(root, checkmod.load_config(root))
+    except RuntimeError as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    print("indexed %d chunks -> %s" % (n, indexmod.INDEX_DIR))
+    return 0
+
+
+def _cmd_search(args, root):
+    from . import index as indexmod
+    threshold = checkmod.load_config(root).get("fuzzy_threshold", 0.18)
+    try:
+        hits = indexmod.search(root, args.query, k=args.k)
+    except (RuntimeError, FileNotFoundError) as e:
+        print("index unavailable (%s) — run: holo-facts index" % e,
               file=sys.stderr)
         return 2
+    for score, c, stale in hits:
+        tag = " (stale — reindex)" if stale else ""
+        tag += " (abstain)" if score < threshold else ""
+        print("%6.3f  %s:%d-%d  [%s]%s"
+              % (score, c["file"], c["lines"][0], c["lines"][1],
+                 (c["heading"] or "-")[:48], tag))
+    return 0
 
-    if args.cmd == "index":
-        from . import index as indexmod
-        try:
-            n = indexmod.build_index(root, checkmod.load_config(root))
-        except RuntimeError as e:
-            print(str(e), file=sys.stderr)
-            return 2
-        print("indexed %d chunks -> %s" % (n, indexmod.INDEX_DIR))
-        return 0
 
-    if args.cmd == "search":
-        from . import index as indexmod
-        config = checkmod.load_config(root)
-        threshold = config.get("fuzzy_threshold", 0.18)
-        try:
-            hits = indexmod.search(root, args.query, k=args.k)
-        except (RuntimeError, FileNotFoundError) as e:
-            print("index unavailable (%s) — run: holo-facts index" % e,
-                  file=sys.stderr)
-            return 2
-        for score, c, stale in hits:
-            tag = " (stale — reindex)" if stale else ""
-            tag += " (abstain)" if score < threshold else ""
-            print("%6.3f  %s:%d-%d  [%s]%s"
-                  % (score, c["file"], c["lines"][0], c["lines"][1],
-                     (c["heading"] or "-")[:48], tag))
-        return 0
+def _cmd_calibrate(args, root):
+    from . import calibrate as calmod
+    return calmod.main(root)
 
-    if args.cmd == "calibrate":
-        from . import calibrate as calmod
-        return calmod.main(root)
 
+def _add_fuzzy_findings(result, root):
+    """WARN-only paraphrase probes; returns an exit code or None."""
+    from . import index as indexmod
+    from .registry import load_registry
+    try:
+        claims = load_registry(
+            os.path.join(root, "claims", "registry.jsonl"))
+        result.findings.extend(indexmod.fuzzy_findings(
+            root, claims, checkmod.load_config(root)))
+    except (RuntimeError, FileNotFoundError) as e:
+        print("fuzzy layer unavailable (%s) — run: holo-facts index"
+              % e, file=sys.stderr)
+        return 2
+    return None
+
+
+def _report(result, as_json):
+    if as_json:
+        print(result.to_json())
+        return
+    for f in result.findings:
+        print(f.render())
+    print("%d FAIL, %d WARN" % (len(result.fails), len(result.warns)))
+
+
+def _cmd_check(args, root):
     try:
         result = checkmod.run(root)
     except Exception as e:
         print("internal error: %s" % e, file=sys.stderr)
         return 2
     if args.fuzzy:
-        import os as _os
+        failed = _add_fuzzy_findings(result, root)
+        if failed is not None:
+            return failed
+    _report(result, args.json)
+    return 1 if (args.strict and result.fails) else 0
 
-        from . import index as indexmod
-        from .registry import load_registry
-        try:
-            claims = load_registry(
-                _os.path.join(root, "claims", "registry.jsonl"))
-            result.findings.extend(indexmod.fuzzy_findings(
-                root, claims, checkmod.load_config(root)))
-        except (RuntimeError, FileNotFoundError) as e:
-            print("fuzzy layer unavailable (%s) — run: holo-facts index"
-                  % e, file=sys.stderr)
-            return 2
 
-    if args.json:
-        print(result.to_json())
-    else:
-        for f in result.findings:
-            print(f.render())
-        print("%d FAIL, %d WARN" % (len(result.fails), len(result.warns)))
-    if args.strict and result.fails:
-        return 1
-    return 0
+COMMANDS = {"new": _cmd_new, "mcp": _cmd_mcp, "index": _cmd_index,
+            "search": _cmd_search, "calibrate": _cmd_calibrate,
+            "check": _cmd_check}
+
+#: `new` needs no repo at all; `mcp` resolves from its own working
+#: directory because the client, not the caller, chooses where it runs
+_ROOTLESS = {"new"}
+_ROOT_FROM_CWD = {"mcp"}
+
+
+def main(argv=None):
+    ap = _build_parser()
+    args = ap.parse_args(argv)
+    if args.cmd not in COMMANDS:
+        ap.print_help()
+        return 2
+    if args.cmd in _ROOTLESS:
+        return COMMANDS[args.cmd](args, None)
+
+    start = "." if args.cmd in _ROOT_FROM_CWD else args.root
+    root = _find_root(start)
+    if root is None:
+        print("no claims/config.json found upward of %s" % start,
+              file=sys.stderr)
+        return 2
+    return COMMANDS[args.cmd](args, root)
 
 
 if __name__ == "__main__":
