@@ -29,6 +29,7 @@ import hashlib
 
 import numpy as np
 
+from .demokit import Table
 from .fhrr import FHRR, ItemMemory
 
 
@@ -128,6 +129,62 @@ def _scene(space, seed, n_splats, labels, sigma=0.04):
     return field
 
 
+def _measure_capacity(dim, seed, labels, n_bg):
+    """(crosstalk floor, what_is_at accuracy) for a 100-probe grid plus
+    n_bg background splats placed two boxes away — zero kernel overlap,
+    so any accuracy loss is pure SNR rather than scene ambiguity."""
+    space = FHRR(dim, seed=seed)
+    field = AttributeSplatField(space, 0.04)
+    rng = np.random.default_rng(seed + 23)
+    probes = []
+    for i in range(10):
+        for j in range(10):
+            mu = (np.array([0.05 + 0.1 * i, 0.05 + 0.1 * j])
+                  + rng.uniform(-0.01, 0.01, 2))
+            lab = labels[(i * 10 + j) % len(labels)]
+            field.add_splat(mu, lab, alpha=1.0)
+            probes.append((mu, lab))
+    for _ in range(n_bg):
+        field.add_splat(rng.uniform([2.0, 0.0], [3.0, 1.0]),
+                        labels[int(rng.integers(len(labels)))],
+                        alpha=float(rng.uniform(0.5, 1.0)))
+    ok = sum(field.what_is_at(mu)[0] == lab for mu, lab in probes)
+    noise = np.sqrt((len(probes) + n_bg) / (2 * dim))
+    return noise, ok / len(probes)
+
+
+def _demo_plot(pairs, grid):
+    """Truth above, unbound hologram below, one column per label."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("matplotlib not available; skipping image")
+        return
+
+    fig, axes = plt.subplots(2, len(pairs), figsize=(4 * len(pairs), 7.6))
+    vmax = max(t.max() for _, t, _, _ in pairs)
+    for col, (lab, truth, holo, _) in enumerate(pairs):
+        for row, img in enumerate((truth, holo)):
+            ax = axes[row, col]
+            ax.imshow(img.reshape(grid, grid), origin="lower",
+                      extent=(0, 1, 0, 1), cmap="magma", vmin=0, vmax=vmax)
+            ax.set_xticks([])
+            ax.set_yticks([])
+        axes[0, col].set_title(f"{lab}: class mixture (truth)", fontsize=10)
+        axes[1, col].set_title(f'unbind(S, "{lab}") rendered', fontsize=10)
+    fig.suptitle("One vector holds 60 labeled splats — unbinding a label "
+                 "leaves a hologram of just that class", fontsize=11)
+    fig.tight_layout()
+    import os
+    os.makedirs("out", exist_ok=True)
+    path = os.path.join("out", "attribute_field.png")
+    fig.savefig(path, dpi=110)
+    plt.close(fig)
+    print(f"saved {path}")
+
+
 def demo(dim=4096, seed=0, save_png=True):
     print(f"== Attribute field: role-filler payloads on splats (d={dim}) ==")
     labels = ["tree", "rock", "water", "house", "path"]
@@ -139,26 +196,11 @@ def demo(dim=4096, seed=0, save_png=True):
     # anyway (the locality argument for chunking, see spatial.py), so
     # what_is_at accuracy tracks sqrt(N_total/2d) alone — pure SNR, no
     # scene-geometry ambiguity mixed in.
-    print(f"  {'background N':>13} {'crosstalk √(N∕2d)':>18} {'accuracy':>9}")
+    table = Table(("background N", 13), ("crosstalk √(N∕2d)", 18, ".2f"),
+                  ("accuracy", 9, ".0%"), indent="  ")
+    table.header()
     for n_bg in [0, 1000, 4000, 16000]:
-        space = FHRR(dim, seed=seed)
-        field = AttributeSplatField(space, 0.04)
-        rng = np.random.default_rng(seed + 23)
-        probes = []
-        for i in range(10):
-            for j in range(10):
-                mu = (np.array([0.05 + 0.1 * i, 0.05 + 0.1 * j])
-                      + rng.uniform(-0.01, 0.01, 2))
-                lab = labels[(i * 10 + j) % len(labels)]
-                field.add_splat(mu, lab, alpha=1.0)
-                probes.append((mu, lab))
-        for _ in range(n_bg):
-            field.add_splat(rng.uniform([2.0, 0.0], [3.0, 1.0]),
-                            labels[int(rng.integers(len(labels)))],
-                            alpha=float(rng.uniform(0.5, 1.0)))
-        ok = sum(field.what_is_at(mu)[0] == lab for mu, lab in probes)
-        noise = np.sqrt((len(probes) + n_bg) / (2 * dim))
-        print(f"  {n_bg:>13} {noise:>18.2f} {ok/len(probes):>9.0%}")
+        table.row(n_bg, *_measure_capacity(dim, seed, labels, n_bg))
 
     # -- records as payloads: two exact unbinds deep ----------------------
     from .record import RecordSpace
@@ -205,31 +247,5 @@ def demo(dim=4096, seed=0, save_png=True):
               f"(peak {truth.max():.2f})")
 
     if save_png:
-        try:
-            import matplotlib
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-        except ImportError:
-            print("matplotlib not available; skipping image")
-            print()
-            return
-        fig, axes = plt.subplots(2, len(pairs), figsize=(4 * len(pairs), 7.6))
-        vmax = max(t.max() for _, t, _, _ in pairs)
-        for col, (lab, truth, holo, _) in enumerate(pairs):
-            for row, img in enumerate((truth, holo)):
-                ax = axes[row, col]
-                ax.imshow(img.reshape(grid, grid), origin="lower",
-                          extent=(0, 1, 0, 1), cmap="magma", vmin=0, vmax=vmax)
-                ax.set_xticks([]), ax.set_yticks([])
-            axes[0, col].set_title(f"{lab}: class mixture (truth)", fontsize=10)
-            axes[1, col].set_title(f'unbind(S, "{lab}") rendered', fontsize=10)
-        fig.suptitle("One vector holds 60 labeled splats — unbinding a label "
-                     "leaves a hologram of just that class", fontsize=11)
-        fig.tight_layout()
-        import os
-        os.makedirs("out", exist_ok=True)
-        path = os.path.join("out", "attribute_field.png")
-        fig.savefig(path, dpi=110)
-        plt.close(fig)
-        print(f"saved {path}")
+        _demo_plot(pairs, grid)
     print()
