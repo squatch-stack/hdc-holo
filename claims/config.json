@@ -9,6 +9,7 @@
     "bench/RECIPE.md",
     "tests/TESTING.md",
     "docs/*.md",
+    "paper/*.md",
     "examples/*.md",
     "examples/*.py",
     "holo/*.py",
