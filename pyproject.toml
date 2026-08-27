@@ -6,7 +6,12 @@ build-backend = "setuptools.build_meta"
 name = "hdc-holo"
 description = "Holographic data structures, splat fields, learning, rendering, and CRDT replication on FHRR hypervectors"
 readme = "README.md"
-license = { text = "FSL-1.1-Apache-2.0" }  # aka FSL-1.1-ALv2; see LICENSE.md
+license = { text = "Apache-2.0" }
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+]
 requires-python = ">=3.9"
 dynamic = ["version"]
 # numpy < 2.0 keeps the OpenBLAS wheels on macOS: the Accelerate-backed

@@ -64,7 +64,7 @@ Tracked as GitHub issues under the [0.3 milestone](https://github.com/squatch-st
   below, kept for the record — arXiv note on the strongest findings (codec
   split + accidental denoiser; observed-remove holographic CRDTs; the
   per-cell fit negative result and its Fourier-extension framing),
-  then PyPI release. LICENSE: FSL-1.1-Apache-2.0, chosen and in-tree.
+  then PyPI release. LICENSE: Apache-2.0, chosen and in-tree.
   Remaining blocker: flipping the repo public (user step).
 - **Package name decision** ([#7](https://github.com/squatch-stack/hdc-holo/issues/7)) — `holo` is the charter's working name;
   rename happens once, before PyPI.
