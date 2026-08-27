@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Export bridge: `save_ply` (raw Gaussian PLY, INRIA layout, SH
+  degree 0, ecosystem y-down convention on disk — lossless to float32
+  rounding) and `save_spz` (SPZ v2, 16.4x smaller at 0.04-0.07% field
+  error on Red Rock). Anything the pipeline loads, crops, or merges
+  now flows into splat-transform / SuperSplat / Spark and the rest of
+  the display chain.
+- `run_viewer.py` + `examples/viewer`: real-time splat rendering with
+  occlusion (Spark/three.js from CDN, nothing installed locally) for
+  any `.ply`/`.spz`/`.splat` — the display complement to the X-ray
+  evidence renderer. Subject-aware auto-framing (captures put a long
+  background tail at ~40x the subject, so a bounding box aims the
+  camera at empty sky).
 - Near-enough dispatch (`holo/dispatch.py`, demo `hdc-demos dispatch`,
   page `docs/dispatch.md`): a rule engine with no Boolean gates —
   conditions as trigram-profile hypervectors, dispatch as similarity,

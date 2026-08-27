@@ -302,3 +302,92 @@ def test_xray_render_matches_analytic_projection():
     rel = (np.linalg.norm(holo[:, 0] - truth[:, 0])
            / np.linalg.norm(truth[:, 0]))
     assert rel < 0.35
+
+
+def test_save_ply_roundtrip(tmp_path):
+    """save_ply -> load_ply reproduces the loader-level representation
+    to float32 rounding: the bridge out of the pipeline is lossless."""
+    from holo.capture import load_ply, quat_to_rot, save_ply
+    rng = np.random.default_rng(11)
+    n = 60
+    pos = rng.uniform(-3, 3, (n, 3))
+    scale = rng.uniform(0.01, 0.4, (n, 3))
+    rgba = np.concatenate([rng.uniform(0, 1, (n, 3)),
+                           rng.uniform(0.05, 0.95, (n, 1))], axis=1)
+    q = rng.normal(size=(n, 4))
+    q /= np.linalg.norm(q, axis=1, keepdims=True)
+    p = tmp_path / "out.ply"
+    save_ply(str(p), pos, scale, rgba, q)
+    lpos, lscale, lrgba, lquat = load_ply(str(p))
+    assert np.allclose(lpos, pos, atol=1e-5)
+    assert np.allclose(lscale, scale, atol=1e-6)
+    assert np.allclose(lrgba, rgba, atol=1e-5)
+    # double flip may negate the quaternion — same rotation
+    assert np.allclose(quat_to_rot(lquat), quat_to_rot(q), atol=1e-5)
+
+
+def test_save_ply_writes_ecosystem_convention(tmp_path):
+    """On disk the file is COLMAP y-down (what every external viewer
+    expects); the y-up flip lives only inside our loaders."""
+    from holo.capture import save_ply
+    pos = np.array([[1.0, 2.0, 3.0]])
+    save_ply(str(tmp_path / "c.ply"), pos, [[0.1, 0.1, 0.1]],
+             [[1, 1, 1, 0.5]], [[1.0, 0, 0, 0]])
+    raw = open(tmp_path / "c.ply", "rb").read()
+    body = raw.split(b"end_header\n", 1)[1]
+    x, y, z = np.frombuffer(body, "<f4", 3)
+    assert (x, y, z) == (1.0, -2.0, -3.0)
+
+
+def test_save_ply_alpha_edges_and_build_scene(tmp_path):
+    """alpha 0/1 stay finite through the logit, and the written file
+    feeds straight back into build_scene."""
+    from holo.capture import save_ply
+    rng = np.random.default_rng(12)
+    n = 40
+    pos = rng.normal(0, 0.5, (n, 3))
+    rgba = np.concatenate([rng.uniform(0, 1, (n, 3)),
+                           np.ones((n, 1))], axis=1)   # alpha exactly 1
+    rgba[0, 3] = 0.0                                   # and exactly 0
+    p = tmp_path / "s.ply"
+    save_ply(str(p), pos, np.full((n, 3), 0.05), rgba,
+             np.tile([1.0, 0, 0, 0], (n, 1)))
+    assert np.isfinite(np.frombuffer(
+        open(p, "rb").read().split(b"end_header\n", 1)[1], "<f4")).all()
+    scene, smax, box = build_scene(str(p), verbose=False)
+    # the alpha-0 splat is filtered, alpha-1 splats survive the logit
+    # round trip at ~1 (the crop may drop a few more — not under test)
+    assert scene.n >= n * 0.75
+    assert np.allclose(scene.amp[:, 0], 1.0, atol=1e-4)
+
+
+def test_save_spz_roundtrip(tmp_path):
+    """save_spz -> load_spz reproduces splats on the format's
+    quantization grid: 2^-12 positions, ~6% log-u8 scales, u8 color."""
+    from holo.capture import load_spz, quat_to_rot, save_spz
+    rng = np.random.default_rng(13)
+    n = 80
+    pos = rng.uniform(-4, 4, (n, 3))
+    scale = rng.uniform(0.01, 0.4, (n, 3))
+    rgba = np.concatenate([rng.uniform(0.1, 0.9, (n, 3)),
+                           rng.uniform(0.1, 1.0, (n, 1))], axis=1)
+    q = rng.normal(size=(n, 4))
+    q /= np.linalg.norm(q, axis=1, keepdims=True)
+    p = tmp_path / "out.spz"
+    save_spz(str(p), pos, scale, rgba, q)
+    lpos, lscale, lrgba, lquat = load_spz(str(p))
+    assert np.allclose(lpos, pos, atol=1.5 / (1 << 12))
+    assert np.allclose(lscale, scale, rtol=0.04)
+    assert np.allclose(lrgba, rgba, atol=1.5 / 255 / (0.15 / 0.2821))
+    # rotation error as the ANGLE of the relative rotation. The format
+    # stores xyz and reconstructs w = sqrt(1-|xyz|^2), which amplifies
+    # the u8 grid near w=0 (rotations within ~1 deg of 180) — a real
+    # SPZ v2 property, so assert the well-conditioned region and only
+    # sanity-bound the tail.
+    dot = np.abs(np.sum(lquat * q, axis=1))
+    ang = 2 * np.arccos(np.clip(dot, -1, 1))
+    # error grows as ~grid/w (dw = |xyz| dr / w): well-conditioned
+    # for |w| > 0.3, degrading toward w = 0
+    ok = np.abs(q[:, 0]) > 0.3
+    assert np.all(ang[ok] < 0.03)              # < ~1.7 deg
+    assert np.all(ang < 0.2)                   # w~0 tail still bounded

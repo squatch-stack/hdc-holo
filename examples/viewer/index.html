@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>holo — splat viewer</title>
+<!--
+  A real-time splat viewer for anything this pipeline loads or writes
+  (holo.capture.save_ply / save_spz). Rendering is Spark (three.js),
+  loaded from CDN — occlusion-correct alpha compositing, which the
+  X-ray renderer in holo/render.py deliberately does not do.
+
+      python run_viewer.py data/iphone/redrock.ply
+
+  Serve this directory and pass ?src=<file> to view any splat file
+  (.ply / .spz / .splat / .ksplat / .sog); ?src defaults to scene.ply.
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #0d0b09; overflow: hidden; }
+  #hud, #load {
+    color: #cfc7b8; font: 12px/1.5 ui-monospace, Menlo, monospace;
+  }
+  #hud {
+    position: fixed; left: 14px; bottom: 12px; z-index: 2;
+    background: rgba(13, 11, 9, 0.72); border: 1px solid #3a332a;
+    border-radius: 6px; padding: 8px 12px; pointer-events: none;
+  }
+  #hud b { color: #e58a5e; font-weight: 600; }
+  #load {
+    position: fixed; inset: 0; display: grid; place-items: center; z-index: 3;
+    background: #0d0b09; transition: opacity 0.4s; font-size: 14px;
+  }
+  #load.err { color: #e58a5e; padding: 2rem; text-align: center; }
+</style>
+</head>
+<body>
+<div id="load">loading <span id="name">scene</span> — <span id="pct">0</span>%</div>
+<div id="hud"><b id="title">scene</b> · <span id="stats">…</span> ·
+drag orbit / right-drag pan / scroll zoom</div>
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.1.0/spark.module.js"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { SparkRenderer, SplatLoader, SplatMesh } from "@sparkjsdev/spark";
+
+const params = new URLSearchParams(location.search);
+const src = params.get("src") || "scene.ply";
+document.getElementById("name").textContent = src;
+document.getElementById("title").textContent = src.split("/").pop();
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(
+  60, innerWidth / innerHeight, 0.01, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+const spark = new SparkRenderer({ renderer });
+scene.add(spark);
+
+let packedSplats;
+try {
+  // Load the data FIRST, then build the mesh, then await one explicit
+  // sort. A url-constructed SplatMesh added to the scene before its
+  // data arrives can sit unsorted — a black first frame until some
+  // later event pokes the pipeline.
+  packedSplats = await new SplatLoader().loadAsync(src, (e) => {
+    if (e.type === "progress" && e.lengthComputable) {
+      document.getElementById("pct").textContent =
+        Math.round(100 * e.loaded / e.total);
+    }
+  });
+} catch (err) {
+  const el = document.getElementById("load");
+  el.className = "err";
+  el.textContent = `could not load "${src}" — ${err}`;
+  throw err;
+}
+
+const splats = new SplatMesh({ packedSplats });
+// 3DGS .ply and .splat are COLMAP-style y-down (see capture._to_y_up);
+// this is the same 180-deg-about-x flip our loaders apply. .spz files
+// are already y-up, so drop the quaternion line for those.
+if (!/\.spz(\?|$)/i.test(src)) splats.quaternion.set(1, 0, 0, 0);
+scene.add(splats);
+
+// Frame the SUBJECT, not the scene: captures put a long tail of
+// background out at 100x the subject (Red Rock's 5-95% span is 46
+// units around a subject ~1 unit across), so a bounding box aims the
+// camera at empty sky. Same medicine as build_scene's mass-centered
+// crop: median center, then a low quantile of the distance to it.
+const xs = [], ys = [], zs = [];
+packedSplats.forEachSplat((i, center) => {
+  if (i % 37 === 0) { xs.push(center.x); ys.push(center.y); zs.push(center.z); }
+});
+const pct = (a, q) => {
+  const b = a.slice().sort((u, v) => u - v);
+  return b[Math.min(b.length - 1, Math.max(0, Math.floor(q * b.length)))];
+};
+const target = new THREE.Vector3(pct(xs, 0.5), pct(ys, 0.5), pct(zs, 0.5));
+const dist = xs.map((x, i) => Math.max(
+  Math.abs(x - target.x), Math.abs(ys[i] - target.y),
+  Math.abs(zs[i] - target.z)));
+const span = Math.max(2.4 * pct(dist, 0.4), 0.5);
+// .ply/.splat load y-down and the mesh is flipped above; put the
+// camera target in the same world space
+if (!/\.spz(\?|$)/i.test(src)) { target.y *= -1; target.z *= -1; }
+camera.position.set(target.x + span, target.y + span * 0.45,
+                    target.z + span);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.copy(target);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+await spark.update({ scene, camera });
+document.getElementById("stats").textContent =
+  `${packedSplats.numSplats.toLocaleString()} splats`;
+const el = document.getElementById("load");
+el.style.opacity = "0";
+setTimeout(() => el.remove(), 450);
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+renderer.setAnimationLoop(() => {
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

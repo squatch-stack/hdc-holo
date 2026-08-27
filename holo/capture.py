@@ -245,6 +245,89 @@ def load_scene_file(path):
     return load_splat(p)
 
 
+def save_ply(path, pos, scale, rgba, quat):
+    """Write splats as a raw 3DGS Gaussian PLY (INRIA layout, SH deg 0)
+    — the bridge OUT of this pipeline into the display ecosystem
+    (splat-transform, SuperSplat, Spark, engine plugins).
+
+    Takes the loader-level representation `load_scene_file` returns —
+    y-up world, linear color and alpha in [0, 1], wxyz quaternions —
+    and writes the ecosystem's conventions: COLMAP-style y-DOWN axes
+    (the inverse of `_to_y_up`, which is its own inverse; viewers
+    apply their own flip, so a y-up file would render upside down),
+    SH DC color, logit opacity, log scales. Round trip through
+    `load_ply` reproduces the inputs to float32 rounding (alpha is
+    clamped to (1e-6, 1-1e-6) so the logit stays finite; quaternion
+    sign may flip — same rotation).
+    """
+    pos = np.asarray(pos, np.float64)
+    quat = np.asarray(quat, np.float64)
+    quat = quat / np.maximum(np.linalg.norm(quat, axis=1, keepdims=True),
+                             1e-9)
+    pos, quat = _to_y_up(pos, quat)            # back to on-disk RDF
+    color = np.asarray(rgba, np.float32)[:, :3]
+    alpha = np.clip(np.asarray(rgba, np.float32)[:, 3], 1e-6, 1 - 1e-6)
+    s = np.maximum(np.asarray(scale, np.float64), 1e-12)
+    fields = ["x", "y", "z", "nx", "ny", "nz",
+              "f_dc_0", "f_dc_1", "f_dc_2", "opacity",
+              "scale_0", "scale_1", "scale_2",
+              "rot_0", "rot_1", "rot_2", "rot_3"]
+    rec = np.zeros(len(pos), dtype=np.dtype([(f, "<f4") for f in fields]))
+    for i, ax in enumerate("xyz"):
+        rec[ax] = pos[:, i]
+        rec[f"f_dc_{i}"] = (color[:, i] - 0.5) / SH_C0
+        rec[f"scale_{i}"] = np.log(s[:, i])
+    rec["opacity"] = np.log(alpha / (1.0 - alpha))
+    for i in range(4):
+        rec[f"rot_{i}"] = quat[:, i]
+    with open(path, "wb") as f:
+        f.write(b"ply\nformat binary_little_endian 1.0\n"
+                + f"element vertex {len(pos)}\n".encode()
+                + b"".join(f"property float {fl}\n".encode()
+                           for fl in fields)
+                + b"end_header\n" + rec.tobytes())
+
+
+def save_spz(path, pos, scale, rgba, quat, frac_bits=12):
+    """Write splats as SPZ v2 — the compressed delivery format
+    (~19 B/splat vs ~68 B in an SH-0 PLY; the exact inverse of
+    `parse_spz`, so round trips are quantization-only).
+
+    Quantization grid (measured on Red Rock in SDK.md's log):
+    positions to 24-bit fixed point (2^-frac_bits units), scales to a
+    log-u8 grid (~6% relative), alpha and color to u8, rotations to
+    u8 xyz with w RECOVERED — angular error < 1.7 deg where
+    |w| > 0.3 but growing as ~grid/w toward w = 0 (rotations near
+    180 deg), an intrinsic SPZ v2 property. SPZ is already y-up —
+    positions pass through unflipped. SPZ v2 carries DC color only
+    (no higher-order SH), same as `save_ply`.
+    """
+    pos = np.asarray(pos, np.float64)
+    n = len(pos)
+    fixed = np.round(pos * (1 << frac_bits)).astype(np.int64)
+    assert np.abs(fixed).max() < (1 << 23), "position exceeds 24-bit range"
+    p24 = np.zeros((n, 3, 3), np.uint8)
+    for b in range(3):
+        p24[..., b] = (fixed >> (8 * b)) & 0xFF
+    rgba = np.asarray(rgba, np.float32)
+    a_u8 = np.round(np.clip(rgba[:, 3], 0, 1) * 255).astype(np.uint8)
+    col = np.round(np.clip(
+        ((rgba[:, :3] - 0.5) * 0.15 / SH_C0 + 0.5) * 255, 0, 255)) \
+        .astype(np.uint8)
+    s_u8 = np.round(np.clip(
+        (np.log(np.maximum(np.asarray(scale, np.float64), 1e-12)) + 10.0)
+        * 16.0, 0, 255)).astype(np.uint8)
+    q = np.asarray(quat, np.float64)
+    q = q / np.maximum(np.linalg.norm(q, axis=1, keepdims=True), 1e-9)
+    q *= np.where(q[:, :1] < 0, -1.0, 1.0)     # w >= 0 (w is recovered)
+    r_u8 = np.round(np.clip(q[:, 1:] * 127.5 + 127.5, 0, 255)) \
+        .astype(np.uint8)
+    head = struct.pack("<IIIBBBB", 0x5053474E, 2, n, 0, frac_bits, 0, 0)
+    with gzip.open(path, "wb") as f:
+        f.write(head + p24.tobytes() + a_u8.tobytes() + col.tobytes()
+                + s_u8.tobytes() + r_u8.tobytes())
+
+
 def quat_to_rot(q):
     """(N, 4) quaternions (w, x, y, z) -> (N, 3, 3) rotation matrices."""
     w, x, y, z = q[:, 0], q[:, 1], q[:, 2], q[:, 3]

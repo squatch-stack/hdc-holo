@@ -36,6 +36,7 @@ or theory, (b) a deterministic test, and (c) a documented failure mode.**
 | Phase-only / quantized storage (2x/8x/16x) | `holo/phase.py` | round-trip similarity tests |
 | GPU backend (MLX/Metal, real cos/sin formulation, batched cell decode) | `holo/accel.py` | 37x encode / 106x decode kernels on M1 Max; real-scene holographic stages 13 min -> 24 s end-to-end; matches NumPy to 1e-7 |
 | Observed-remove deletion (OR-Set tombstones, epoch/stroke undo, owner compaction) | `holo/orset.py` | phantom-vs-clean demo (`out/orset_undo.png`); idempotence/add-wins/compaction tests |
+| Capture export + real-time viewing (`save_ply` / `save_spz`, Spark viewer) | `holo/capture.py`, `examples/viewer`, `run_viewer.py` | lossless PLY round trip and SPZ-grid round trip (tests); 16.4x compression at 0.04-0.07% field error vs the exact mixture (`docs/real-scenes.md`) |
 | Near-enough dispatch (similarity rule engine: matrix / one-vector bundle / banded+clustered routing, abstention as policy) | `holo/dispatch.py` | brittleness + banding-rescue + abstention tables (`hdc-demos dispatch`); capacity cliff and rescue pinned by test at N=d (`tests/test_dispatch.py`); `docs/dispatch.md` |
 
 Documented failure modes that the SDK must carry in its docs, not bury:
@@ -446,6 +447,34 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   gate at a pinned revision (0 FAIL) — and was retired the same day
   by owner decision: kb_path defaults to null and search_kb answers
   honestly when unconfigured. The tier stays for any future KB.
+- **Export, compression, and a real viewer** (capture lane; the
+  interop question settled with measurements). What a "raw" capture
+  actually is, measured on Red Rock: 681,748 splats x 62 float32 =
+  161 MB, but higher-order SH occupies 73% of the file while carrying
+  9.9% of the color energy, the normals are all zero (8 MB of
+  nothing), and the capture app had ALREADY quantized before export —
+  208 distinct scale values and 252 distinct alphas across 682k
+  splats, u8 grids inside float32 containers. So a raw 3DGS PLY is a
+  lossless CONTAINER, not a high-precision measurement, which is
+  exactly why compression is nearly free here: `save_spz` (SPZ v2)
+  writes 10.3 MB — 16.4x smaller — and the field it reconstructs
+  differs from the original mixture by 0.04-0.07% relative (exact
+  referee, 20k subsample); the two are indistinguishable side by side
+  in the viewer. Honest losses, both test-pinned: SPZ v2 is DC-only
+  (drops the 9.9% view-dependent term) and its rotation error grows
+  as ~grid/w near 180-degree rotations (storing xyz, recovering w).
+  `save_ply` round-trips losslessly to float32 rounding on the full
+  capture. `run_viewer.py` + `examples/viewer` render any of it in
+  real time via Spark (CDN, nothing installed): the display
+  complement to the X-ray evidence renderer, with occlusion. Two
+  gotchas worth the shelf: (1) a URL-constructed SplatMesh added to
+  the scene before its bytes arrive can sit UNSORTED — a black first
+  frame — so load PackedSplats first, then add, then
+  `await spark.update({scene, camera})`; (2) auto-framing must target
+  the SUBJECT, not the bounding box: Red Rock's 5-95% span is 46
+  units around a ~1-unit subject, so a box-framed camera stares at
+  empty sky (same medicine as the mass-centered crop: median center,
+  low quantile of distance).
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,

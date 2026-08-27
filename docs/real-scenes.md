@@ -38,6 +38,55 @@ COLMAP-style y-down convention and are rotated 180° about x on load
 (positions AND per-splat rotations — a covariance-congruence test
 pins it); `.spz` and LiDAR clouds are already y-up.
 
+## Interop: export, compress, view
+
+`save_ply` and `save_spz` are the bridge back OUT — anything this
+pipeline loads, crops, cleans, or merges can flow into the standard
+display chain. `run_viewer.py` renders any of it in real time
+([examples/viewer](../examples/viewer/index.html), Spark/three.js
+from CDN, occlusion-correct compositing — the display complement to
+the X-ray *evidence* renderer, which deliberately stays linear):
+
+```bash
+python run_viewer.py data/iphone/redrock.ply    # any .ply/.spz/.splat
+```
+
+**What a "raw" capture actually contains** (Red Rock, measured):
+681,748 splats x 62 float32 = 161 MB, but the precision is not
+uniform. Higher-order spherical harmonics occupy **73% of the file**
+while carrying **9.9% of the color energy** (view-dependent shine);
+the `nx/ny/nz` normals are **all zero** — 8 MB of nothing. And the
+capture app already quantized before export: only **208 distinct
+scale values** and **252 distinct alphas** across 682k splats, i.e.
+u8 grids inside float32 containers. A raw 3DGS PLY is a *lossless
+container*, not a high-precision measurement.
+
+**What compression costs.** That anatomy is why SPZ is nearly free
+here: `save_spz` writes SPZ v2 (24-bit fixed-point positions, log-u8
+scales, u8 color/alpha, u8 rotations) at **10.3 MB — 16.4x smaller**
+than the PLY, and the field it reconstructs differs from the original
+mixture by **0.04-0.07% relative error** (exact-mixture referee,
+20k-splat subsample). The quantization grid mostly lands on values
+the capture had already rounded to. The honest losses: higher-order
+SH is dropped (SPZ v2 is DC-only — the 9.9% view-dependent term), and
+rotation error grows as ~grid/w for rotations near 180 degrees (an
+intrinsic property of storing xyz and recovering w). Both are
+test-pinned; both are invisible in the viewer side by side.
+
+Beyond SPZ, the ecosystem's tools take over:
+[splat-transform](https://github.com/playcanvas/splat-transform)
+(SOG — ~95% smaller via image-coded attribute grids — plus LOD chunks
+and standalone HTML viewers), [SuperSplat](https://superspl.at) for
+hand editing, engine plugins for Unity/Unreal. Note the layering:
+those formats compress *per-splat attribute arrays*, while
+[storage.md](storage.md)'s HP/HM/HG codecs compress *holographic
+bundles* — different representations, complementary jobs.
+
+Round trips are test-pinned: `save_ply` -> `load_ply` is lossless to
+float32 rounding (verified on the full 682k-splat capture);
+`save_spz` -> `load_spz` reproduces splats on the format's
+quantization grid.
+
 The encode composes three documented techniques: the spectral encoder
 ([spectral.md](spectral.md)) so every splat keeps its own anisotropic
 covariance; a mixture-of-Gaussians codebook per band with the finest
