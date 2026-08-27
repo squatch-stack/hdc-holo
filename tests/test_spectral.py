@@ -117,3 +117,107 @@ def test_gpu_and_numpy_paths_agree():
         (env * np.exp(-1j * (scene.mu @ freqs.T))).astype(np.complex64)
     # identical math, different silicon: float32 rounding only
     assert np.max(np.abs(fast - ref)) / np.max(np.abs(ref)) < 1e-5
+
+
+# --- orthogonal frequency coupling (issue #3) ------------------------------
+#
+# The variance win is free, but it rests entirely on the coupled rows
+# keeping their Gaussian marginal: decode_weights evaluates rho at each
+# drawn frequency, so a drifted marginal makes every decode subtly wrong
+# WITHOUT raising anything. These tests exist to make that failure loud.
+
+def _ks_vs_standard_normal(x):
+    """Two-sided KS statistic against N(0,1), and the 5% critical value.
+    Hand-rolled because scipy is not a dependency here."""
+    import math
+    x = np.sort(np.asarray(x, dtype=np.float64))
+    n = x.size
+    cdf = 0.5 * (1.0 + np.vectorize(math.erf)(x / math.sqrt(2.0)))
+    d_plus = np.max(np.arange(1, n + 1) / n - cdf)
+    d_minus = np.max(cdf - np.arange(0, n) / n)
+    return max(d_plus, d_minus), 1.36 / math.sqrt(n)
+
+
+def test_orthogonal_coupling_preserves_the_gaussian_marginal():
+    from holo.spectral import sample_frequencies
+    sigma, dim = 2.5, 3
+    w = sample_frequencies(30000, dim, sigma, np.random.default_rng(0),
+                           coupling="orthogonal")
+    for axis in range(dim):
+        stat, crit = _ks_vs_standard_normal(w[:, axis] / sigma)
+        assert stat < crit, ("axis %d marginal drifted: KS %.5f >= %.5f"
+                             % (axis, stat, crit))
+
+
+def test_the_haar_sign_correction_is_what_preserves_it():
+    """The correction is one line and its absence is silent, so pin it by
+    showing the UNCORRECTED construction fails the test above. Without
+    this, a well-meaning simplification of _haar_orthogonal passes
+    everything and quietly biases every codebook."""
+    rng = np.random.default_rng(0)
+    sigma, dim, n = 2.5, 3, 30000
+    blocks = []
+    for _ in range(-(-n // dim)):
+        radii = np.sqrt(rng.chisquare(dim, size=dim))
+        q, _r = np.linalg.qr(rng.standard_normal((dim, dim)))   # no sign fix
+        blocks.append((radii[:, None] * q) * sigma)
+    uncorrected = np.vstack(blocks)[:n]
+    worst = max(_ks_vs_standard_normal(uncorrected[:, a] / sigma)[0]
+                for a in range(dim))
+    _, crit = _ks_vs_standard_normal(uncorrected[:, 0] / sigma)
+    assert worst > crit, ("plain QR should FAIL the marginal test; if this "
+                          "assertion breaks, the marginal test has stopped "
+                          "discriminating and is no longer protecting anything")
+
+
+def test_orthogonal_coupling_actually_couples():
+    from holo.spectral import sample_frequencies
+    dim = 3
+    w = sample_frequencies(300, dim, 1.0, np.random.default_rng(1),
+                           coupling="orthogonal").astype(np.float64)
+    u = w / np.linalg.norm(w, axis=1, keepdims=True)
+    # rows within a block are mutually orthogonal; across blocks they are not
+    within = [abs(float(u[i] @ u[j]))
+              for b in range(0, 300, dim)
+              for i in range(b, b + dim) for j in range(i + 1, b + dim)]
+    across = abs(u[0] @ u[dim:].T)
+    assert max(within) < 1e-5, "within-block rows are not orthogonal"
+    assert across.mean() > 0.1, "across-block rows should stay independent"
+
+
+def test_decode_weights_needs_no_change_under_coupling():
+    """Coupling changes the joint distribution, not the marginal, so the
+    importance weights keep the same distribution. Compared by quantile:
+    decode_weights is 1/density, whose MEAN is tail-dominated (mean/median
+    ~1e3) and swings by 2x between draws of either kind."""
+    from holo.spectral import decode_weights, sample_frequencies
+    sig = [10.0, 40.0, 160.0, 640.0]
+    a, b = [], []
+    for s in range(4):
+        a.append(decode_weights(sample_frequencies(
+            20000, 3, sig, np.random.default_rng(100 + s)), sig))
+        b.append(decode_weights(sample_frequencies(
+            20000, 3, sig, np.random.default_rng(200 + s),
+            coupling="orthogonal"), sig))
+    a, b = np.concatenate(a), np.concatenate(b)
+    for q in (25, 50, 75, 90, 99):
+        ratio = np.percentile(b, q) / np.percentile(a, q)
+        assert 0.85 < ratio < 1.15, ("p%d ratio %.3f — the coupled draw's "
+                                     "importance weights have shifted" % (q, ratio))
+
+
+def test_iid_remains_the_default():
+    """Every committed measurement was taken under iid; changing the
+    default silently would renumber the whole repo."""
+    from holo.spectral import sample_frequencies
+    explicit = sample_frequencies(64, 3, 1.0, np.random.default_rng(5),
+                                  coupling="iid")
+    default = sample_frequencies(64, 3, 1.0, np.random.default_rng(5))
+    assert np.array_equal(explicit, default)
+
+
+def test_unknown_coupling_is_refused():
+    from holo.spectral import sample_frequencies
+    with pytest.raises(ValueError, match=r"iid.*orthogonal"):
+        sample_frequencies(16, 3, 1.0, np.random.default_rng(0),
+                           coupling="antithetic")
