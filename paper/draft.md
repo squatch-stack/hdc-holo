@@ -7,13 +7,22 @@ claims checker drift-tests every number below against
 `claims/registry.jsonl`. Conversion is mechanical once a toolchain
 exists.*
 
-**Status.** Complete first draft, ~4,000 words: every section is prose.
-Nothing here is citation-formatted yet — references are named inline
-and collected with their bounding sentences in
-[PAPER.md §9](../PAPER.md) — and the numbers are gated by the claims
-checker, so the draft cannot drift from the measurements it rests on.
-Next passes: citation formatting, figure placement, and a read-through
-for length against the target venue.
+**Status.** Complete draft, ~4,100 words of body: every section is
+prose, ten evidence figures are placed at the claims they carry, and
+citations are formatted from [`references.bib`](references.bib) —
+machine-resolved against the arXiv and Crossref APIs, with four book
+and proceedings entries marked UNVERIFIED that still need a human
+check. The numbers are gated by the claims checker, so the draft cannot
+drift from the measurements it rests on.
+
+Before submission: conversion to the venue's format, and two things
+arXiv itself will care about. Its plain-text abstract field renders
+neither the backticks nor the non-ASCII math glyphs (`σ`, `√`, `Σ⁻¹`)
+the abstract currently uses, and at 1,333 characters against arXiv's
+1,920 limit there is room to spell them out rather than cut. Section 6
+also runs longer than any single claim section (731 words against
+387/315/337), which is defensible — it is where the law is tested —
+but is the first place to look if a venue imposes a length cap.
 
 ---
 
@@ -144,8 +153,17 @@ artifacts rather than as noise when violated: the finest mixture
 component must sit at the global scale floor, and *every* band's
 codebook must reach that floor — because bands are assigned by maximum
 axis scale, while a mid-band needle splat still has thin axes at the
-floor. Violating the second rule paints herringbone
-(`results/failure_herringbone.png`).
+floor. Violating the second rule paints herringbone (Figure 2).
+
+![Figure 1](../results/mog_penalty.png)
+
+**Figure 1.** Why the codebook is a mixture. *Left:* crosstalk noise against hypervector dimension on a multi-scale scene, encoded against a single shared frequency scale versus a four-scale mixture; the dotted guide is the i.i.d. phasor prediction. *Right:* which splats pay for it at d = 8,192 — the widest scale band contributes 3.74 with a single codebook and 0.45 with the mixture. The mixture buys back importance-sampling variance, not capacity.
+
+
+![Figure 2](../results/failure_herringbone.png)
+
+**Figure 2.** The second codebook rule, violated: a band whose codebook does not reach the global scale floor. The error is a structured herringbone rather than noise, which is what makes the rule diagnosable by eye instead of by metric.
+
 
 Real captures then require two more mechanisms. **Scale bands** group
 splats by maximum axis scale, each band with its own codebook; **spatial
@@ -171,6 +189,16 @@ a Tanks & Temples scene, from 244k to 682k splats after cropping — pass
 through one fixed pipeline, and slices decode at 19%/22% relative error
 against the *exact Gaussian mixture* evaluated cell-locally. Kernels
 agree across three compute backends to 2.5e-8.
+
+![Figure 3](../results/capacity_curve.png)
+
+**Figure 3.** The law, measured. Crosstalk noise against dimension at constant splat density for N = 100 / 1,000 / 10,000, comparing the anisotropic spectral encoder (solid) against shared-kernel phasor FHRR (dashed); dotted guides are the √(N/2d) prediction. Both families track the law's d^(-1/2) slope over six octaves. The spectral encoder sits above the guide by the importance-sampling penalty of Figure 1 — the price of per-splat covariance.
+
+
+![Figure 4](../results/real_redrock.png)
+
+**Figure 4.** Red Rock, the flagship capture: 547k splats after cropping, encoded through scale bands and spatial cells, and scored against the exact Gaussian mixture evaluated cell-locally. Three further captures — a second phone scan, an indoor LiDAR cloud, and a Tanks & Temples scene — pass through the same fixed pipeline.
+
 
 *Positioning.* VSA-OGM is the closest published relative: SSP-encoded
 occupancy fields with sparse local updates, but scalar occupancy only —
@@ -207,6 +235,16 @@ ground truth, views rendered from a single vector reach 5–7% RMSE. On
 real captures, a full turntable orbit is rendered entirely from 135 cell
 bundles with no geometry at render time. Colour rides as amplitude on
 one shared frequency basis, so RGB renders reuse the same phasors.
+
+![Figure 5](../out/ray_render.png)
+
+**Figure 5.** A view folded into the vector: the synthetic trefoil knot rendered from a single bundle against analytic line integrals as ground truth, at 5–7% RMSE. There is no ray marching, no depth sort, and no geometry present at render time — the renderer's input is a vector.
+
+
+![Figure 6](../results/real_redrock_xray.png)
+
+**Figure 6.** The same operation on real data: an X-ray view of Red Rock rendered from cell bundles, against the analytic mip as referee.
+
 
 ### 4.3 The boundary, stated as a result
 
@@ -258,6 +296,16 @@ length-prefixed deltas over TCP and includes the adversarial case: both
 painters concurrently undo the same stroke, which is tombstoned twice
 and subtracted once.
 
+![Figure 7](../out/orset_undo.png)
+
+**Figure 7.** Why deletion is set membership rather than arithmetic. *Left:* five strokes, merged. *Centre:* both peers concurrently undo the same stroke under observed-remove semantics — tombstoned twice, subtracted once, and the stroke is simply gone. *Right:* what arithmetic retraction does instead — the contribution is subtracted twice and leaves a negative phantom where the stroke was.
+
+
+![Figure 8](../out/crdt_scene.png)
+
+**Figure 8.** Two peers paint halves of a scene offline and delta-sync into one, reaching matching state and matching render digests. Merge is addition; the coordination is in the delta protocol, not in the representation.
+
+
 *Positioning, and a contrast.* Recent work wrapping neural-network model
 merging in CRDT semantics reports that all 26 merge strategies tested —
 weight averaging, SLERP, TIES, DARE, Fisher, evolutionary — fail
@@ -295,6 +343,11 @@ fitted vector beats the forward-encoded one by roughly 70× in held-out
 error, because regression finds the optimal vector in the same basis
 and corrects crosstalk that forward bundling simply carries. On real
 captures it loses (0.72/0.53 against forward encoding's 0.52/0.38).
+
+![Figure 9](../results/real_fit.png)
+
+**Figure 9.** Fitting loses at real capture density. Top-down and side slices of scan-tucson: the exact mixture (top), forward-encoded bundles (middle, 52% / 38%), and ridge-fitted bundles at identical dimension and identical bytes (bottom, 72% / 53%). On synthetic mixtures the ordering is reversed by roughly 70×; what changes is sample coverage, not the method.
+
 The diagnosis is coverage: hundreds of floor-scale splats per cell need
 samples at their own kernel width, which is tens of thousands of
 samples per cell, beyond what the dual solve can absorb. A spectral
@@ -338,6 +391,11 @@ work on quantized-phase FHRR reaches the same boundary from the
 opposite side: its bundling operation is not closed under phase
 quantization and must project back onto the unit circle, discarding
 exactly the magnitude our measurements identify as necessary.
+
+![Figure 10](../out/codec_curve.png)
+
+**Figure 10.** The rate-distortion boundary is structural, not a bit depth. *Left, field task:* phase-only codes (HP, dotted) sit on a flat error floor no matter how many bytes are spent, while magnitude-preserving codes (HM solid, HG companded dashed) fall well below it; stars mark uncompressed complex64. *Right, map task:* for codeword retrieval, where magnitude carries nothing, the same phase-only codes are competitive at a fraction of the bytes. One representation, two tasks, opposite verdicts — which is the whole of the codec split.
+
 
 Taken together these four say something more useful than any of them
 alone. The law is not a decoration: it predicts well enough that its
