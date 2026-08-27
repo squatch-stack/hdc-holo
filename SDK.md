@@ -521,6 +521,38 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   The generalizable bit: an "unused variable" is worth one minute of
   asking why it is unused, and silent data loss is the failure mode to
   hunt near index arithmetic.
+- **Scale-clamp audit across all five captures** (capture lane;
+  the follow-up to the band-assignment guard). Direct answer first:
+  **no capture contains an unbandable splat** — `band_of` returns a
+  valid index for every splat in redrock, wilsonscreek, lidar-dense,
+  scan-tucson and train, so the new guard never fires on real data and
+  nothing that shipped was losing content. Two things the audit turned
+  up anyway:
+  (1) The TOP clamp is nearly idle after cropping. Raw files carry
+  11-26% of splats above S_HI with maxima of 18-37 units in a scene
+  that normalizes to 1 — but those are background floaters, and the
+  mass-centered crop removes essentially all of them: 0.00% of encoded
+  splats sit at the cap (train, 0.05%, is the only capture where any
+  survive). The crop, not the clamp, is what handles giant splats.
+  (2) The BOTTOM clamp does enormous work: **99.4-99.7% of encoded
+  splats have a thin axis at the S_LO floor** in every Gaussian
+  capture (the LiDAR cloud, isotropic by construction, is the 0%
+  control). Real 3DGS splats are extreme needles — redrock's median
+  thin axis is ~35x below the floor. This is the quantitative backing
+  for `band_codebooks`' rule that every band must sample out to the
+  GLOBAL floor: needle-thin axes are not an edge case, they are the
+  overwhelming majority.
+  A caution recorded because it fooled two measurements before it was
+  caught: "what does the floor cost?" is ILL-POSED under point
+  sampling. Evaluating the exact mixture with raw (unclamped)
+  covariances gives a field with 1/40th the energy of the clamped one
+  and a nonsense relative difference (1155% at splat centers, 4365% on
+  a slice grid), because a 5.8e-5-thick sheet is essentially invisible
+  to point evaluation — it occupies vanishing volume. The floor is
+  what makes a point-evaluated ground truth meaningful at all. Judging
+  it honestly needs footprint/area integration (rasterization
+  semantics) rather than point samples, which is a different evaluator
+  and a real open question adjacent to the occlusion gap.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,
