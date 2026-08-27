@@ -1,6 +1,6 @@
 {
  "_comment": "Lint debt frozen at adoption. CI fails only on increases. Regenerate with `holo-quality baseline` \u2014 and only ever to record a DECREASE.",
- "total": 298,
+ "total": 293,
  "violations": {
   "assets/make_brand.py::C408": 6,
   "assets/make_brand.py::E501": 9,
@@ -93,12 +93,9 @@
   "holo/encode.py::RUF100": 3,
   "holo/facts/__init__.py::RUF022": 1,
   "holo/facts/__init__.py::RUF100": 2,
-  "holo/facts/check.py::ARG001": 7,
-  "holo/facts/check.py::C901": 2,
-  "holo/facts/check.py::E741": 1,
+  "holo/facts/check.py::ARG001": 6,
+  "holo/facts/check.py::C901": 1,
   "holo/facts/check.py::I001": 1,
-  "holo/facts/check.py::PLR0912": 1,
-  "holo/facts/check.py::PLR0915": 1,
   "holo/facts/check.py::RUF022": 1,
   "holo/facts/check.py::SIM102": 2,
   "holo/facts/chunk.py::RUF022": 1,
