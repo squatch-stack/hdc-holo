@@ -26,7 +26,8 @@ and in `docs/`, with figures. Nothing unproven enters the SDK surface.
   CPU, float64 checksums to 2.5e-8; the TF32 platform gotcha found and
   neutralized), and native capture ingestion for iPhone LiDAR point
   clouds and raw 3DGS Gaussian PLYs (Scaniverse Red Rock, 547k splats:
-  best Gaussian-capture slice numbers yet, 23%/23%).
+  best Gaussian-capture slice numbers yet, 19%/22% — raw `.ply` is now
+  the recommended interchange).
 
 ## 0.3 candidates (unclaimed unless noted)
 

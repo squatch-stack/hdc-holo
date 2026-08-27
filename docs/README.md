@@ -11,7 +11,7 @@ theory, a deterministic test, and a documented failure mode.
 ```mermaid
 flowchart LR
     subgraph capture["real captures"]
-        SPZ[".splat / .spz<br/>loaders"] --> CROP["mass-centered crop<br/>+ scale clamp"]
+        SPZ[".ply / .splat / .spz<br/>loaders"] --> CROP["mass-centered crop<br/>+ scale clamp"]
     end
     subgraph encode["encoding"]
         FPE["FPE fields<br/>(shared Σ)"]

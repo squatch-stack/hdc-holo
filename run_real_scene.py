@@ -7,7 +7,8 @@ renders slices and X-ray views against exact ground truth, and writes
 the evidence figures to results/. See docs/real-scenes.md.
 
 Usage:
-    run_real_scene.py [stats] [data/scan-tucson.spz | data/train.splat]
+    run_real_scene.py [stats] [data/iphone/redrock.ply |
+                               data/scan-tucson.spz | data/train.splat]
 """
 
 import os
@@ -24,7 +25,7 @@ from holo.capture import (BANDS, DIM, DIM_R, RENDER_BANDS, SIGMA_MIP,
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS = os.path.join(HERE, "results")
-DEFAULT_SCENE = os.path.join(HERE, "data", "scan-tucson.spz")
+DEFAULT_SCENE = os.path.join(HERE, "data", "iphone", "redrock.ply")
 
 
 def stats(path):

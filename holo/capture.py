@@ -77,6 +77,28 @@ RENDER_BANDS = [
 # Loaders
 # ---------------------------------------------------------------------------
 
+def _to_y_up(pos, quat):
+    """Normalize a right-down-front (COLMAP/3DGS) scene to the y-up
+    right-up-back world every other loader already produces: rotate
+    180 deg about x. Positions (x, y, z) -> (x, -y, -z); each splat
+    quaternion is premultiplied by that rotation, r = (0, 1, 0, 0):
+    (w, x, y, z) -> (-x, w, -z, y). Scales are rotation-invariant.
+
+    Raw 3DGS `.ply` (INRIA layout, what training pipelines and
+    Scaniverse's raw export emit) and antimatter15 `.splat` arrive
+    y-DOWN and render upside down without this; `.spz` is specified
+    y-up (the official PLY->SPZ conversion applies the same flip) and
+    ARKit LiDAR clouds are gravity-aligned y-up — verified empirically
+    on all five in-house captures (see SDK.md's 0.2 log).
+    """
+    pos = pos.copy()
+    pos[:, 1] *= -1.0
+    pos[:, 2] *= -1.0
+    w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
+    quat = np.stack([-x, w, -z, y], axis=1)
+    return pos, quat
+
+
 def load_splat(path):
     raw = np.fromfile(path, dtype=np.uint8).reshape(-1, 32)
     floats = raw[:, :24].copy().view(np.float32).reshape(-1, 6)
@@ -85,6 +107,7 @@ def load_splat(path):
     rgba = raw[:, 24:28].astype(np.float32) / 255.0
     quat = (raw[:, 28:32].astype(np.float64) - 128.0) / 128.0
     quat /= np.linalg.norm(quat, axis=1, keepdims=True)
+    pos, quat = _to_y_up(pos, quat)
     return pos, scale, rgba, quat
 
 
@@ -179,6 +202,7 @@ def load_ply(path, sigma_scale=0.75):
                              rec["rot_3"]], 1).astype(np.float64)
             quat /= np.maximum(np.linalg.norm(quat, axis=1, keepdims=True),
                                1e-9)
+            pos, quat = _to_y_up(pos, quat)
             return pos, scale, np.concatenate([color, alpha], 1), quat
         has_rgb = names[3:6] == ["red", "green", "blue"]
         if fmt == "binary_little_endian":

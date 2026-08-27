@@ -34,11 +34,18 @@ def test_splat_loader_roundtrip(tmp_path):
     path = tmp_path / "two.splat"
     _write_splat(path, pos, scale, rgba, quat)
     lpos, lscale, lrgba, lquat = load_splat(str(path))
-    assert np.allclose(lpos, pos)                 # f32 fields are exact
+    # .splat is y-down (COLMAP world); the loader normalizes to y-up
+    # by a 180-deg rotation about x — see capture._to_y_up
+    assert np.allclose(lpos, pos * [1, -1, -1])   # f32 fields are exact
     assert np.allclose(lscale, scale)
     assert np.allclose(lrgba, rgba / 255.0)
-    # quaternions survive u8 quantization to ~1/128 per component
-    assert np.allclose(np.abs(np.sum(lquat * quat, axis=1)), 1.0, atol=0.02)
+    # quaternions survive u8 quantization to ~1/128 per component:
+    # loaded rotation must equal flip . authored (proper rotation, so
+    # compare rotation matrices, not raw components)
+    from holo.capture import quat_to_rot
+    F = np.diag([1.0, -1.0, -1.0])
+    assert np.allclose(quat_to_rot(lquat), F @ quat_to_rot(quat),
+                       atol=0.05)
 
 
 def _spz_v2_bytes(pos, scale, alpha, color_u8, quat_xyz, frac_bits=12):
@@ -143,11 +150,51 @@ def test_ply_loader_gaussian_3dgs_layout(tmp_path):
                            for f_ in fields)
                 + b"end_header\n" + rec.tobytes())
     lpos, scale, rgba, quat = load_ply(str(p))
-    assert np.allclose(lpos, pos, atol=1e-6)
+    # 3DGS PLY is y-down; loader rotates 180 deg about x to y-up
+    assert np.allclose(lpos, pos * [1, -1, -1], atol=1e-6)
     assert np.allclose(rgba[:, 0], min(0.5 + SH_C0, 1.0), atol=1e-6)
     assert np.allclose(rgba[:, 3], 0.5, atol=1e-6)      # sigmoid(0)
     assert np.allclose(scale, 0.05, atol=1e-6)          # exp(log 0.05)
-    assert np.allclose(quat, [[1, 0, 0, 0]] * n, atol=1e-6)  # normalized
+    # identity, premultiplied by the x-180 rotation (0, 1, 0, 0)
+    assert np.allclose(quat, [[0, 1, 0, 0]] * n, atol=1e-6)
+
+
+def test_y_up_normalization_preserves_covariance(tmp_path):
+    """The loader's y-up flip must transform each splat's WHOLE
+    Gaussian congruently: sigma' = F sigma F for F = diag(1,-1,-1).
+    Authored via the Gaussian-PLY path (f32 quats, no quantization)."""
+    from holo.capture import load_ply, quat_to_rot
+    rng = np.random.default_rng(3)
+    n = 40
+    fields = ["x", "y", "z", "f_dc_0", "f_dc_1", "f_dc_2", "opacity",
+              "scale_0", "scale_1", "scale_2",
+              "rot_0", "rot_1", "rot_2", "rot_3"]
+    rec = np.zeros(n, dtype=np.dtype([(f, "<f4") for f in fields]))
+    pos = rng.uniform(-2, 2, (n, 3))
+    scales = rng.uniform(0.01, 0.3, (n, 3))
+    q = rng.normal(size=(n, 4))
+    q /= np.linalg.norm(q, axis=1, keepdims=True)
+    for i, ax in enumerate("xyz"):
+        rec[ax] = pos[:, i]
+        rec[f"scale_{i}"] = np.log(scales[:, i])
+    for i in range(4):
+        rec[f"rot_{i}"] = q[:, i]
+    p = tmp_path / "aniso.ply"
+    with open(p, "wb") as f:
+        f.write(b"ply\nformat binary_little_endian 1.0\n"
+                + f"element vertex {n}\n".encode()
+                + b"".join(f"property float {f_}\n".encode()
+                           for f_ in fields)
+                + b"end_header\n" + rec.tobytes())
+    lpos, lscale, _, lquat = load_ply(str(p))
+    F = np.diag([1.0, -1.0, -1.0])
+    R, Rl = quat_to_rot(q), quat_to_rot(lquat)
+    S2 = np.einsum("ni,ij->nij", scales ** 2, np.eye(3))
+    cov = np.einsum("nab,nbc,ndc->nad", R, S2, R)
+    lcov = np.einsum("nab,nbc,ndc->nad", Rl, S2, Rl)
+    assert np.allclose(lpos, pos * [1, -1, -1], atol=1e-6)
+    assert np.allclose(lscale, scales, atol=1e-6)
+    assert np.allclose(lcov, F @ cov @ F, atol=1e-5)
 
 
 def test_build_scene_crops_floaters_and_clamps_scales(tmp_path):

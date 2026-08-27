@@ -4,7 +4,7 @@ bundles: encode the mip once (blur = covariance addition), then each
 view folds a projection-slice factor into the cell bundles and reads
 out — no geometry, no rasterizer, no per-frame re-encode.
 
-    run_turntable.py [data/scan-tucson.spz | data/train.splat]
+    run_turntable.py [data/iphone/redrock.ply | data/scan-tucson.spz]
                      [--frames N] [--res R]
 
 Outputs results/real_turntable-<name>.gif and a contact-sheet PNG.
@@ -26,7 +26,7 @@ from holo.capture import (DIM_R, RENDER_BANDS, SIGMA_MIP, band_codebooks,
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("path", nargs="?", default="data/scan-tucson.spz")
+    ap.add_argument("path", nargs="?", default="data/iphone/redrock.ply")
     ap.add_argument("--frames", type=int, default=36)
     ap.add_argument("--res", type=int, default=200)
     ap.add_argument("--elev", type=float, default=1.2,
@@ -35,11 +35,16 @@ def main():
                     help="tone-map exponent: X-ray line integrals through "
                          "the ground plane dominate linear exposure, so "
                          "compress to keep the rest of the scene visible")
+    ap.add_argument("--crop", type=float, default=0.75,
+                    help="crop_quantile for build_scene: captures that "
+                         "concentrate mass in a small core (most phone "
+                         "scans of a single subject) need a tighter crop "
+                         "(~0.5) or the orbit is haze around a hot spot")
     args = ap.parse_args()
     name = os.path.splitext(os.path.basename(args.path))[0]
 
     t0 = time.time()
-    scene, smax, _ = build_scene(args.path)
+    scene, smax, _ = build_scene(args.path, crop_quantile=args.crop)
     mip = render_mip(scene, SIGMA_MIP)
     smax_r = np.sqrt(smax ** 2 + SIGMA_MIP ** 2)
     r_books = band_codebooks(np.random.default_rng(43), RENDER_BANDS, DIM_R)
