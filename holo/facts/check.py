@@ -188,38 +188,51 @@ def _semver(s):
         return None
 
 
+def _in_dated_zone(par, hist_after):
+    """Below a file's dated-record heading (SDK.md's running log), every
+    number was correct at its date and stays."""
+    cut = (hist_after or {}).get(par.file)
+    return cut is not None and par.line_start >= cut
+
+
+def _allowed_by_pragma(par, claim):
+    return any(p.startswith("allow") and claim.id in p for p in par.pragmas)
+
+
+def _allowed_by_file(par, claim):
+    """A blanket per-file allowance — except in the CHANGELOG, where
+    version scoping is the finer and correct rule."""
+    named = (os.path.basename(par.file) in claim.allow_historical_in
+             or par.file in claim.allow_historical_in)
+    return named and os.path.basename(par.file) != "CHANGELOG.md"
+
+
+def _has_marker(par, config):
+    text = par.text.lower()
+    return any(m.lower() in text for m in config.get("historical_markers", []))
+
+
+def _changelog_scoped(par, claim, changelog_sections):
+    """A released section may quote the value that was current then."""
+    if os.path.basename(par.file) != "CHANGELOG.md":
+        return False
+    as_of = _semver(claim.as_of.get("version", "")) if claim.as_of else None
+    if as_of is None:
+        return False
+    for version, first, last in changelog_sections:
+        if first <= par.line_start <= last:
+            return version is not None and version <= as_of
+    return False
+
+
 def _is_historical(par, claim, config, changelog_sections, hist_after=None):
     """May a superseded/retracted value legally appear in this paragraph?
-
-    Dated log records are first-class: config's historical_after_heading
-    marks a file's tail (e.g. SDK.md's running log) as a dated record
-    zone where superseded numbers were correct at their date and stay."""
-    if hist_after:
-        cut = hist_after.get(par.file)
-        if cut is not None and par.line_start >= cut:
-            return True
-    for pragma in par.pragmas:
-        if pragma.startswith("allow") and claim.id in pragma:
-            return True
-    if os.path.basename(par.file) in claim.allow_historical_in \
-            or par.file in claim.allow_historical_in:
-        # blanket per-file allowance still requires version scoping when
-        # the file is the CHANGELOG (below) — for any other file it's a
-        # direct allow.
-        if os.path.basename(par.file) != "CHANGELOG.md":
-            return True
-    text = par.text.lower()
-    for marker in config.get("historical_markers", []):
-        if marker.lower() in text:
-            return True
-    if os.path.basename(par.file) == "CHANGELOG.md":
-        as_of = _semver(claim.as_of.get("version", "")) if claim.as_of else None
-        for version, start, end in changelog_sections:
-            if start <= par.line_start <= end:
-                if version is not None and as_of is not None \
-                        and version <= as_of:
-                    return True
-    return False
+    Four independent mechanisms, any one of which legitimizes it."""
+    return (_in_dated_zone(par, hist_after)
+            or _allowed_by_pragma(par, claim)
+            or _allowed_by_file(par, claim)
+            or _has_marker(par, config)
+            or _changelog_scoped(par, claim, changelog_sections))
 
 
 def _match_values(claim, text):
@@ -248,6 +261,28 @@ def _value_ok(claim, got):
 _ARXIV_ID = re.compile(r"^\d{4}\.\d{4,5}(v\d+)?$")
 
 
+def _front_matter_entry_errors(fm, rel, ids):
+    """Per-file front-matter checks: registered claims, well-formed
+    arXiv ids, parseable sweep dates."""
+    findings = []
+    for cid in fm.get("claims", []) or []:
+        if cid not in ids:
+            findings.append(Finding(
+                "FAIL", "front-matter-claim", cid, rel, 1,
+                "front-matter names unregistered claim id"))
+    for aid in fm.get("arxiv", []) or []:
+        if not _ARXIV_ID.match(aid):
+            findings.append(Finding(
+                "FAIL", "front-matter-arxiv", "", rel, 1,
+                "malformed arXiv id %r" % aid))
+    swept = fm.get("swept")
+    if swept and not re.match(r"^\d{4}-\d{2}-\d{2}$", str(swept)):
+        findings.append(Finding(
+            "FAIL", "front-matter-swept", "", rel, 1,
+            "swept: %r is not YYYY-MM-DD" % swept))
+    return findings
+
+
 def _front_matter_findings(root, config, claims):
     """Knowledge-base front-matter validation, config-gated: files
     matching `front_matter_surfaces` globs must carry parseable flat
@@ -269,22 +304,7 @@ def _front_matter_findings(root, config, claims):
                     "WARN", "front-matter-missing", "", rel, 1,
                     "surface expects flat front-matter (--- block)"))
                 continue
-            for cid in fm.get("claims", []) or []:
-                if cid not in ids:
-                    findings.append(Finding(
-                        "FAIL", "front-matter-claim", cid, rel, 1,
-                        "front-matter names unregistered claim id"))
-            for aid in fm.get("arxiv", []) or []:
-                if not _ARXIV_ID.match(aid):
-                    findings.append(Finding(
-                        "FAIL", "front-matter-arxiv", "", rel, 1,
-                        "malformed arXiv id %r" % aid))
-            swept = fm.get("swept")
-            if swept and not re.match(r"^\d{4}-\d{2}-\d{2}$",
-                                      str(swept)):
-                findings.append(Finding(
-                    "FAIL", "front-matter-swept", "", rel, 1,
-                    "swept: %r is not YYYY-MM-DD" % swept))
+            findings.extend(_front_matter_entry_errors(fm, rel, ids))
     return findings
 
 

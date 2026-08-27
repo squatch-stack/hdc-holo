@@ -81,83 +81,115 @@ def _pragmas_in(text):
     return {m.group(1).strip() for m in _PRAGMA.finditer(text)}
 
 
+def _mermaid_labels(block):
+    """Node/edge label text — where a stale claim can hide in a diagram."""
+    labels = []
+    for line in block:
+        labels.extend(_MERMAID_QUOTED.findall(line))
+        if line.strip().lower().startswith("note "):
+            labels.append(line.split(":", 1)[-1])
+    return labels
+
+
+def _read_fence(lines, i, path):
+    """Consume a fenced block: (paragraph or None, index past the fence)."""
+    lang = lines[i].strip()[3:].strip().lower()
+    block, first = [], i + 2          # 1-indexed first content line
+    i += 1
+    while i < len(lines) and not lines[i].strip().startswith("```"):
+        block.append(lines[i])
+        i += 1
+    last = i                           # content ends before the close fence
+    if lang == "mermaid":
+        text = " ".join(_strip_markup(ln)
+                        for ln in _mermaid_labels(block) if ln.strip())
+        par = Paragraph(path, first, last, "mermaid", text) if text else None
+    else:
+        text = "\n".join(block).translate(_UNICODE_MAP)
+        par = (Paragraph(path, first, last, "verbatim", text)
+               if text.strip() else None)
+    return par, i + 1
+
+
+def _table_row(stripped, i, path):
+    """A `|`-delimited row, unless it is the ---|--- separator."""
+    row = _strip_markup(stripped.replace("|", " "))
+    if row and set(row) - set("- :"):
+        return Paragraph(path, i + 1, i + 1, "table", row,
+                         _pragmas_in(stripped))
+    return None
+
+
+def _starts_list_item(line, stripped):
+    """A new top-level bullet starts its own paragraph — bullet runs have
+    no blank lines between items, and merging them makes marker
+    proximity, line attribution, and chunking all coarser than the prose
+    actually is."""
+    return (bool(re.match(r"(?:[-*]|\d+\.)\s", stripped))
+            and not line.startswith((" ", "\t")))
+
+
+class _Prose:
+    """The wrapped-prose accumulator: lines join until something ends
+    the paragraph (blank line, fence, table row, or a new list item)."""
+
+    def __init__(self, path, out):
+        self.path = path
+        self.out = out
+        self.buf = []
+        self.start = None
+        self.pending_pragmas = set()
+
+    def add(self, line, lineno):
+        if self.start is None:
+            self.start = lineno + 1
+        self.buf.append(line)
+
+    def flush(self, end_line):
+        if self.buf:
+            raw = "\n".join(self.buf)
+            pragmas = _pragmas_in(raw) | self.pending_pragmas
+            self.pending_pragmas = set()
+            joined = " ".join(_strip_markup(ln) for ln in self.buf
+                              if _strip_markup(ln))
+            if joined:
+                self.out.append(Paragraph(self.path, self.start, end_line,
+                                          "prose", joined, pragmas))
+        self.buf, self.start = [], None
+
+
 def normalize_markdown(text, path):
     """Markdown -> paragraphs. Fences split out (mermaid gets label
     extraction), table rows stand alone, wrapped prose lines rejoin."""
     lines = text.split("\n")
     out = []
-    pending_pragmas = set()
-    buf, buf_start = [], None
+    prose = _Prose(path, out)
     i = 0
-
-    def flush(end_line, kind="prose"):
-        nonlocal buf, buf_start, pending_pragmas
-        if buf:
-            raw = "\n".join(buf)
-            pragmas = _pragmas_in(raw) | pending_pragmas
-            pending_pragmas = set()
-            joined = " ".join(_strip_markup(ln) for ln in buf if _strip_markup(ln))
-            if joined:
-                out.append(Paragraph(path, buf_start, end_line, kind,
-                                     joined, pragmas))
-        buf, buf_start = [], None
-
     while i < len(lines):
         line = lines[i]
         stripped = line.strip()
-        fence = stripped.startswith("```")
-        if fence:
-            flush(i)
-            lang = stripped[3:].strip().lower()
-            block, start = [], i + 2  # 1-indexed first content line
-            i += 1
-            while i < len(lines) and not lines[i].strip().startswith("```"):
-                block.append(lines[i])
-                i += 1
-            end = i  # closing fence line (1-indexed = i+1; content ends at i)
-            if lang == "mermaid":
-                labels = []
-                for bl in block:
-                    labels.extend(_MERMAID_QUOTED.findall(bl))
-                    if bl.strip().lower().startswith("note "):
-                        labels.append(bl.split(":", 1)[-1])
-                textm = " ".join(_strip_markup(ln) for ln in labels if ln.strip())
-                if textm:
-                    out.append(Paragraph(path, start, end, "mermaid", textm))
-            else:
-                textv = "\n".join(block).translate(_UNICODE_MAP)
-                if textv.strip():
-                    out.append(Paragraph(path, start, end, "verbatim", textv))
-            i += 1
+
+        if stripped.startswith("```"):
+            prose.flush(i)
+            par, i = _read_fence(lines, i, path)
+            if par:
+                out.append(par)
             continue
         if stripped.startswith("|"):
-            flush(i)
-            row = _strip_markup(stripped.replace("|", " "))
-            if row and set(row) - set("- :"):
-                out.append(Paragraph(path, i + 1, i + 1, "table", row,
-                                     _pragmas_in(stripped)))
-            i += 1
-            continue
-        if not stripped:
-            flush(i)
-            i += 1
-            continue
-        if _PRAGMA.fullmatch(stripped):
-            pending_pragmas |= _pragmas_in(stripped)
-            i += 1
-            continue
-        # a new top-level list item starts its own paragraph — bullet
-        # runs have no blank lines between items, and merging them makes
-        # marker proximity, line attribution, and chunking all coarser
-        # than the prose actually is
-        if re.match(r"(?:[-*]|\d+\.)\s", stripped) and \
-                not line.startswith((" ", "\t")) and buf:
-            flush(i)
-        if buf_start is None:
-            buf_start = i + 1
-        buf.append(line)
+            prose.flush(i)
+            par = _table_row(stripped, i, path)
+            if par:
+                out.append(par)
+        elif not stripped:
+            prose.flush(i)
+        elif _PRAGMA.fullmatch(stripped):
+            prose.pending_pragmas |= _pragmas_in(stripped)
+        else:
+            if _starts_list_item(line, stripped) and prose.buf:
+                prose.flush(i)
+            prose.add(line, i)
         i += 1
-    flush(len(lines))
+    prose.flush(len(lines))
     return out
 
 
@@ -210,21 +242,30 @@ def figure_refs(text):
     return sorted(set(_FIG_REF.findall(text)))
 
 
-def front_matter(path):
-    """Restricted flat front-matter: `key: value` and `- item` lists
-    between leading --- fences. Deliberately not YAML."""
-    out, key = {}, None
+def _front_matter_lines(path):
+    """The lines between the leading --- fences, or [] when absent."""
     try:
         with open(path, encoding="utf-8") as f:
             lines = f.read().split("\n")
     except OSError:
-        return out
+        return []
     if not lines or lines[0].strip() != "---":
-        return out
+        return []
+    out = []
     for line in lines[1:]:
-        s = line.strip()
-        if s == "---":
+        if line.strip() == "---":
             break
+        out.append(line)
+    return out
+
+
+def front_matter(path):
+    """Restricted flat front-matter: `key: value` and `- item` lists
+    between leading --- fences. Deliberately not YAML — this parses the
+    subset the knowledge-base pages use and nothing more."""
+    out, key = {}, None
+    for line in _front_matter_lines(path):
+        s = line.strip()
         if s.startswith("- ") and key:
             out.setdefault(key, [])
             if isinstance(out[key], list):

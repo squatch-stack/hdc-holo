@@ -75,29 +75,43 @@ def load_registry(path):
     return claims
 
 
+def _field_errors(claim):
+    """Errors visible from one claim alone."""
+    errors = []
+    if claim.status not in _STATUSES:
+        errors.append("%s: bad status %r" % (claim.id, claim.status))
+    if claim.kind not in _KINDS:
+        errors.append("%s: bad kind %r" % (claim.id, claim.kind))
+    if claim.status == "superseded" and "@" not in claim.id:
+        errors.append("%s: superseded claims need @version ids" % claim.id)
+    return errors
+
+
+def _link_errors(claim, ids):
+    """Errors visible only against the rest of the registry."""
+    errors = []
+    for link, name in ((claim.supersedes, "supersedes"),
+                       (claim.superseded_by, "superseded_by")):
+        if link and link not in ids:
+            errors.append("%s: %s -> unknown id %s"
+                          % (claim.id, name, link))
+    # an unlinked superseded claim implies its current generation
+    # carries the same base id; if that is missing the chain is broken
+    if claim.status == "superseded" and claim.superseded_by is None \
+            and base_id(claim.id) not in ids:
+        errors.append("%s: no current generation %s"
+                      % (claim.id, base_id(claim.id)))
+    return errors
+
+
 def validate(claims):
     """Structural errors in the registry itself (empty list = valid)."""
-    errors = []
-    ids = {}
+    errors, ids = [], {}
     for c in claims:
         if c.id in ids:
             errors.append("duplicate id: %s" % c.id)
         ids[c.id] = c
-        if c.status not in _STATUSES:
-            errors.append("%s: bad status %r" % (c.id, c.status))
-        if c.kind not in _KINDS:
-            errors.append("%s: bad kind %r" % (c.id, c.kind))
-        if c.status != "current" and "@" not in c.id and \
-                c.status != "retracted":
-            errors.append("%s: superseded claims need @version ids" % c.id)
+        errors.extend(_field_errors(c))
     for c in claims:
-        for link, name in ((c.supersedes, "supersedes"),
-                           (c.superseded_by, "superseded_by")):
-            if link and link not in ids:
-                errors.append("%s: %s -> unknown id %s" % (c.id, name, link))
-        if c.status == "superseded" and c.superseded_by is None:
-            # the current generation carries the same base id
-            if base_id(c.id) not in ids:
-                errors.append("%s: no current generation %s"
-                              % (c.id, base_id(c.id)))
+        errors.extend(_link_errors(c, ids))
     return errors

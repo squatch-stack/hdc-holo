@@ -39,19 +39,22 @@ def _render(claim, score=None):
     return out
 
 
-def search_claims(root, query, status="current", limit=8):
-    claims = _registry(root)
-    if status != "any":
-        claims = [c for c in claims if c.status == status]
+def _keyword_scores(claims, query):
+    """How many of the query's words each claim's own text contains."""
     tokens = [t for t in query.lower().split() if len(t) > 2]
-
     scores = {}
     for c in claims:
         hay = " ".join([c.id, c.statement, c.notes, c.units,
                         str(c.value), " ".join(c.cites)]).lower()
         scores[c.id] = float(sum(1 for t in tokens if t in hay))
+    return scores
 
-    fuzzy_note = None
+
+def _add_fuzzy_scores(root, claims, query, scores):
+    """Union the fuzzy corpus in: a chunk that reads like the query
+    lifts every claim that cites the file it came from. Returns a note
+    when the index or the dispatch lane's profiler is unavailable —
+    registry-only ranking still works, so this never raises."""
     try:
         from . import index as indexmod
         threshold = load_config(root).get("fuzzy_threshold", 0.18)
@@ -62,58 +65,62 @@ def search_claims(root, query, status="current", limit=8):
             for c in claims:
                 if chunk["file"] in c.cites:
                     scores[c.id] = scores.get(c.id, 0) + hit_score
-    except Exception as e:   # index or dispatch absent: registry-only
-        fuzzy_note = "fuzzy union unavailable: %s" % e
+    except Exception as e:
+        return "fuzzy union unavailable: %s" % e
+    return None
+
+
+def search_claims(root, query, status="current", limit=8):
+    claims = _registry(root)
+    if status != "any":
+        claims = [c for c in claims if c.status == status]
+
+    scores = _keyword_scores(claims, query)
+    note = _add_fuzzy_scores(root, claims, query, scores)
 
     by_id = {c.id: c for c in claims}
     ranked = sorted((s, cid) for cid, s in scores.items() if s > 0)
-    out = [_render(by_id[cid], s) for s, cid in reversed(ranked)][:limit]
-    result = {"query": query, "results": out}
-    if fuzzy_note:
-        result["note"] = fuzzy_note
+    result = {"query": query,
+              "results": [_render(by_id[cid], s)
+                          for s, cid in reversed(ranked)][:limit]}
+    if note:
+        result["note"] = note
     return result
 
 
-def get_claim(root, claim_id):
-    claims = _registry(root)
-    by_id = {c.id: c for c in claims}
-    claim = by_id.get(claim_id)
-    if claim is None:
-        near = [c.id for c in claims
-                if base_id(c.id) == base_id(claim_id)]
-        return {"error": "unknown claim id %r" % claim_id,
-                "did_you_mean": near}
-
-    chain, seen = [], set()
-    cur = claim
-    while cur and cur.id not in seen:          # newest to oldest
+def _supersession_chain(by_id, claim):
+    """Newest generation first, walking back through `supersedes`."""
+    cur, seen = claim, set()
+    while cur and cur.id not in seen:          # climb to the newest
         seen.add(cur.id)
         nxt = by_id.get(cur.superseded_by or "")
-        if nxt and nxt.id not in seen:
-            cur = nxt
-            continue
-        break
+        if not nxt or nxt.id in seen:
+            break
+        cur = nxt
+    chain = []
     while cur and cur.id not in {c["id"] for c in chain}:
         chain.append({"id": cur.id, "value": cur.value,
                       "status": cur.status, "as_of": cur.as_of})
         cur = by_id.get(cur.supersedes or base_id(cur.id) + "@_none_")
+    return chain
 
-    record = _render(claim)
-    record["chain"] = chain
-    record["evidence"] = claim.evidence
 
+def _derivation_record(claim, root):
+    """Run the claim's derivation NOW, so the answer reflects the tree
+    rather than the registry's memory of it."""
     fn = DERIVATIONS.get(claim.check.get("fn")) if claim.check else None
-    if fn:
-        try:
-            derived = fn(root)
-            record["derivation"] = {
-                "fn": claim.check["fn"], "derived": derived,
-                "matches": canon(derived) in
-                {canon(v) for v in claim.accepted_values()}}
-        except Exception as e:
-            record["derivation"] = {"fn": claim.check.get("fn"),
-                                    "error": str(e)}
+    if not fn:
+        return None
+    try:
+        derived = fn(root)
+    except Exception as e:
+        return {"fn": claim.check.get("fn"), "error": str(e)}
+    return {"fn": claim.check["fn"], "derived": derived,
+            "matches": canon(derived) in
+            {canon(v) for v in claim.accepted_values()}}
 
+
+def _cite_sites(claim, root):
     sites = []
     for cite in claim.cites:
         path = os.path.join(root, cite)
@@ -123,7 +130,25 @@ def get_claim(root, claim_id):
             par.file = cite
             if _match_values(claim, par.text):
                 sites.append({"file": cite, "line": par.line_start})
-    record["cite_sites"] = sites
+    return sites
+
+
+def get_claim(root, claim_id):
+    claims = _registry(root)
+    by_id = {c.id: c for c in claims}
+    claim = by_id.get(claim_id)
+    if claim is None:
+        return {"error": "unknown claim id %r" % claim_id,
+                "did_you_mean": [c.id for c in claims
+                                 if base_id(c.id) == base_id(claim_id)]}
+
+    record = _render(claim)
+    record["chain"] = _supersession_chain(by_id, claim)
+    record["evidence"] = claim.evidence
+    derivation = _derivation_record(claim, root)
+    if derivation is not None:
+        record["derivation"] = derivation
+    record["cite_sites"] = _cite_sites(claim, root)
     return record
 
 
