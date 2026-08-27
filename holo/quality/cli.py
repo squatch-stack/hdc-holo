@@ -4,6 +4,9 @@
   holo-quality structure   project-layout rules only
   holo-quality lint        ratchet only
   holo-quality baseline    re-record the debt (only ever to shrink it)
+  holo-quality graph build      index the code into a Kuzu database
+  holo-quality graph checks     run the canned structure questions
+  holo-quality graph query "MATCH (f:Function) ... RETURN ..."
 
 `check` exits 1 on FAIL findings or lint regressions, 0 otherwise;
 exit 2 means the tooling itself could not run.
@@ -85,6 +88,53 @@ def _cmd_check(root):
     return 1 if (fails or result[0]) else 0
 
 
+def _print_table(columns, rows):
+    if not rows:
+        print("  (no rows)")
+        return
+    widths = [max(len(str(c)), *(len(str(r[i])) for r in rows))
+              for i, c in enumerate(columns)]
+    print("  " + "  ".join(str(c).ljust(w) for c, w in zip(columns, widths)))
+    print("  " + "  ".join("-" * w for w in widths))
+    for row in rows:
+        print("  " + "  ".join(str(v).ljust(w)
+                               for v, w in zip(row, widths)))
+
+
+def _graph_build(root, _cypher):
+    from . import graph
+    counts = graph.build(root)
+    print("graph built -> %s" % graph.DB_PATH)
+    print("  %(modules)d modules, %(functions)d functions, %(classes)d "
+          "classes, %(imports)d imports, %(calls)d calls" % counts)
+    return 0
+
+
+def _graph_query(root, cypher):
+    from . import graph
+    if not cypher:
+        print('usage: holo-quality graph query "MATCH ..."',
+              file=sys.stderr)
+        return 2
+    _print_table(*graph.query(graph.connect(root), cypher))
+    return 0
+
+
+def _graph_checks(root, only):
+    from . import graph
+    conn = graph.connect(root)
+    for name, description, cypher in graph.CHECKS:
+        if only and only != name:
+            continue
+        print("\n== %s — %s" % (name, description))
+        _print_table(*graph.query(conn, cypher))
+    return 0
+
+
+GRAPH_ACTIONS = {"build": _graph_build, "query": _graph_query,
+                 "checks": _graph_checks}
+
+
 COMMANDS = {"baseline": _cmd_baseline, "structure": _cmd_structure,
             "lint": _cmd_lint, "check": _cmd_check}
 
@@ -94,6 +144,11 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd")
     for name in COMMANDS:
         sub.add_parser(name).add_argument("--root", default=".")
+    g = sub.add_parser("graph")
+    g.add_argument("action", choices=sorted(GRAPH_ACTIONS))
+    g.add_argument("cypher", nargs="?",
+                   help="Cypher for `query`; a check name for `checks`")
+    g.add_argument("--root", default=".")
     args = ap.parse_args(argv)
     if not args.cmd:
         ap.print_help()
@@ -104,6 +159,8 @@ def main(argv=None):
               file=sys.stderr)
         return 2
     try:
+        if args.cmd == "graph":
+            return GRAPH_ACTIONS[args.action](root, args.cypher)
         return COMMANDS[args.cmd](root)
     except RuntimeError as e:
         print(str(e), file=sys.stderr)

@@ -10,3 +10,4 @@ gpubench/
 gpugate-*/
 claims/index/
 .claude/settings.local.json
+quality/codegraph*
