@@ -42,7 +42,7 @@ sequenceDiagram
 
 **Wire protocol.** `version()` snapshots the vv after each exchange;
 `updates_since(vv)` exports exactly what the peer lacks — no access to
-the peer's doc. `live_sync.py` runs it for real: two OS processes
+the peer's doc. `examples/live_sync.py` runs it for real: two OS processes
 co-paint one scene over TCP with length-prefixed delta frames
 (~100KB/round, one stroke epoch), ending with identical state and
 render digests.

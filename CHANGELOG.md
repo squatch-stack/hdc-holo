@@ -14,7 +14,7 @@
   smaller than SPZ) while carrying the view-dependent SH that SPZ
   drops; `load_ply_sh` reads that term out of a 3DGS PLY, and
   `examples/export_formats.py` writes all three formats side by side.
-- `run_viewer.py` + `examples/viewer`: real-time splat rendering with
+- `examples/run_viewer.py` + `examples/viewer`: real-time splat rendering with
   occlusion (Spark/three.js from CDN, nothing installed locally) for
   any `.ply`/`.spz`/`.splat` — the display complement to the X-ray
   evidence renderer. Subject-aware auto-framing (captures put a long
@@ -33,7 +33,7 @@
 - Raw Gaussian `.ply` (INRIA 3DGS layout) promoted to the recommended
   capture interchange — full per-splat covariance, nothing quantized
   away; Red Rock is the flagship capture. README front page now shows
-  the work (turntable showcase); `run_turntable.py --crop` for
+  the work (turntable showcase); `examples/run_turntable.py --crop` for
   captures that concentrate mass in a small core.
 - Capture orientation fix: 3DGS `.ply` and `.splat` load in the
   COLMAP y-down convention and were rendering upside down; loaders
@@ -86,7 +86,7 @@ ships in it:
 - Replication on Loro: G-Counter-style writer-sharded bundles
   (`HoloReplica`, `Replicated*`), wire-protocol delta sync
   (`version()`/`updates_since()`), two-process TCP demo
-  (`live_sync.py`), and observed-remove containers (`ORStore`,
+  (`examples/live_sync.py`), and observed-remove containers (`ORStore`,
   `ORHoloMap`, `ORStrokeScene`) with idempotent tombstone deletion,
   add-wins, epoch/stroke undo, and owner compaction.
 - Storage: phase-only and 2-16x quantized codes.
