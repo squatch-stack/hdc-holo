@@ -8,7 +8,7 @@ Two deletion models, chosen per container (see SDK.md):
     owner compaction — multi-writer mutable state.
 
 Wire protocol for sockets: HoloReplica.version() / updates_since().
-See live_sync.py for two OS processes co-painting with undo over TCP.
+See examples/live_sync.py for two OS processes co-painting with undo over TCP.
 """
 
 from .crdt import (HAVE_LORO, WIRE_VERSION, HoloReplica,  # noqa: F401

@@ -52,4 +52,4 @@ structural evidence, not eye candy):
 ![saguaro capture turntable rendered from cell bundles](../results/real_turntable-scan-tucson.gif)
 
 `tests/test_render.py` (matches analytic; zero-frequency limit is `T`,
-not 0/0); `holo-demos render color`; `run_turntable.py`.
+not 0/0); `holo-demos render color`; `examples/run_turntable.py`.

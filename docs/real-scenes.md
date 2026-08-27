@@ -3,7 +3,7 @@
 *[← docs index](README.md) · fields & scenes*
 
 *(implementation: `holo/capture.py`, exported via `holo.scene`;
-example driver `run_real_scene.py`)*
+example driver `examples/run_real_scene.py`)*
 
 ```mermaid
 flowchart LR
@@ -42,13 +42,13 @@ pins it); `.spz` and LiDAR clouds are already y-up.
 
 `save_ply` and `save_spz` are the bridge back OUT — anything this
 pipeline loads, crops, cleans, or merges can flow into the standard
-display chain. `run_viewer.py` renders any of it in real time
+display chain. `examples/run_viewer.py` renders any of it in real time
 ([examples/viewer](../examples/viewer/index.html), Spark/three.js
 from CDN, occlusion-correct compositing — the display complement to
 the X-ray *evidence* renderer, which deliberately stays linear):
 
 ```bash
-python run_viewer.py data/iphone/redrock.ply    # any .ply/.spz/.splat
+python examples/run_viewer.py data/iphone/redrock.ply    # any .ply/.spz/.splat
 ```
 
 **What a "raw" capture actually contains** (Red Rock, measured):
@@ -147,7 +147,7 @@ keeps every splat exact:
 ![Red Rock X-ray views: full-detail analytic, mip analytic, rendered from bundles](../results/real_redrock_xray.png)
 
 Red Rock orbited entirely from 189 cell bundles — no geometry at
-render time (`run_turntable.py --crop 0.5 --elev 0.7`; phone scans of
+render time (`examples/run_turntable.py --crop 0.5 --elev 0.7`; phone scans of
 a single subject concentrate their mass in a small core, so the
 turntable wants a tighter crop than the slice evidence):
 
