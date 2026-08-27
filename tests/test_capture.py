@@ -4,6 +4,7 @@ import gzip
 import struct
 
 import numpy as np
+import pytest
 
 from holo.capture import (BANDS, S_HI, S_LO, band_codebooks, band_of,
                           build_scene, decode_slice, encode_bands,
@@ -391,3 +392,125 @@ def test_save_spz_roundtrip(tmp_path):
     ok = np.abs(q[:, 0]) > 0.3
     assert np.all(ang[ok] < 0.03)              # < ~1.7 deg
     assert np.all(ang < 0.2)                   # w~0 tail still bounded
+
+
+def _spz_v3_bytes(pos, scale, alpha, color_u8, quat_xyzw, sh=None,
+                  frac_bits=12):
+    """Author SPZ v3 bytes independently, from nianticlabs/spz's
+    unpackQuaternionSmallestThree: 2-bit index of the OMITTED largest
+    component in the top bits, then three (sign, 9-bit magnitude)
+    fields, component 3 in the lowest bits."""
+    n = len(pos)
+    sh_deg = 0 if sh is None else {3: 1, 8: 2, 15: 3}[sh.shape[2]]
+    head = struct.pack("<IIIBBBB", 0x5053474E, 3, n, sh_deg, frac_bits,
+                       0, 0)
+    fixed = np.round(np.asarray(pos) * (1 << frac_bits)).astype(np.int64)
+    p24 = np.zeros((n, 3, 3), np.uint8)
+    for b in range(3):
+        p24[..., b] = (fixed >> (8 * b)) & 0xFF
+    a_u8 = np.round(np.asarray(alpha) * 255).astype(np.uint8)
+    s_u8 = np.round((np.log(np.asarray(scale)) + 10.0) * 16.0) \
+        .astype(np.uint8)
+    q = np.asarray(quat_xyzw, np.float64)
+    q = q / np.linalg.norm(q, axis=1, keepdims=True)
+    rot = np.zeros((n, 4), np.uint8)
+    for k in range(n):
+        big = np.argmax(np.abs(q[k]))
+        v = q[k] * (-1.0 if q[k][big] < 0 else 1.0)
+        word = big << 30
+        rest = [i for i in range(4) if i != big]      # ascending
+        for slot, i in enumerate(rest):               # slot 0 = highest
+            m = round(abs(v[i]) / np.sqrt(0.5) * 511)
+            piece = m | ((1 << 9) if v[i] < 0 else 0)
+            word |= piece << (10 * (2 - slot))
+        rot[k] = [(word >> (8 * b)) & 0xFF for b in range(4)]
+    body = (p24.tobytes() + a_u8.tobytes() + color_u8.tobytes()
+            + s_u8.tobytes() + rot.tobytes())
+    if sh is not None:                       # (N,3,K) -> coeff-major
+        q8 = np.round(np.transpose(sh, (0, 2, 1)) * 128.0 + 128.0)
+        body += np.clip(q8, 0, 255).astype(np.uint8).tobytes()
+    return head + body
+
+
+def test_spz_v3_parser_matches_reference_packing():
+    from holo.capture import parse_spz
+    rng = np.random.default_rng(31)
+    n = 200
+    pos = rng.uniform(-4, 4, (n, 3))
+    scale = np.exp(rng.uniform(np.log(0.01), np.log(0.4), (n, 3)))
+    alpha = rng.uniform(0.1, 1.0, n)
+    color = rng.integers(0, 256, (n, 3)).astype(np.uint8)
+    q = rng.normal(size=(n, 4))
+    q /= np.linalg.norm(q, axis=1, keepdims=True)     # xyzw
+    buf = _spz_v3_bytes(pos, scale, alpha, color, q)
+    lpos, lscale, lrgba, lquat = parse_spz(buf)
+    assert np.allclose(lpos, pos, atol=1.5 / (1 << 12))
+    assert np.allclose(lscale, scale, rtol=0.04)
+    assert np.allclose(lrgba[:, 3], alpha, atol=1 / 255)
+    # our quaternions are wxyz; the file's are xyzw
+    ref = np.concatenate([q[:, 3:4], q[:, :3]], axis=1)
+    dot = np.abs((lquat * ref).sum(1))
+    assert np.degrees(2 * np.arccos(np.clip(dot, -1, 1))).max() < 0.5
+
+
+def test_spz_v3_rotations_beat_v2_near_180_degrees():
+    """Why v3 is the default writer version: v2 stores xyz and
+    recovers w, so error explodes as w -> 0; v3 drops the LARGEST
+    component instead and never hits that."""
+    import os
+    import tempfile
+
+    from holo.capture import load_spz, save_spz
+    rng = np.random.default_rng(32)
+    n = 400
+    axis = rng.normal(size=(n, 3))
+    axis /= np.linalg.norm(axis, axis=1, keepdims=True)
+    ang = np.pi - rng.uniform(0, 0.05, n)          # near 180 degrees
+    q = np.concatenate([np.cos(ang / 2)[:, None],
+                        axis * np.sin(ang / 2)[:, None]], axis=1)
+    pos = rng.uniform(-1, 1, (n, 3))
+    scale = np.full((n, 3), 0.05)
+    rgba = np.concatenate([np.full((n, 3), 0.5), np.ones((n, 1))], 1)
+    errs = {}
+    for ver in (2, 3):
+        p = os.path.join(tempfile.mkdtemp(), f"v{ver}.spz")
+        save_spz(p, pos, scale, rgba, q, version=ver)
+        _, _, _, lq = load_spz(p)
+        dot = np.abs((lq * q).sum(1))
+        errs[ver] = np.degrees(2 * np.arccos(np.clip(dot, -1, 1))).max()
+    assert errs[3] < 1.0                    # well conditioned
+    assert errs[3] < errs[2] / 5            # and far better than v2
+
+
+def test_spz_carries_sh_at_every_version():
+    """The DC-only files this pipeline writes are OUR writer's choice,
+    not a format limit: shDegree > 0 rides in v2 and v3 alike."""
+    from holo.capture import parse_spz_sh
+    rng = np.random.default_rng(33)
+    n, k = 50, 15
+    sh = rng.uniform(-0.9, 0.9, (n, 3, k))
+    buf = _spz_v3_bytes(rng.uniform(-1, 1, (n, 3)),
+                        np.full((n, 3), 0.05), np.ones(n),
+                        np.full((n, 3), 128, np.uint8),
+                        np.tile([0.0, 0, 0, 1.0], (n, 1)), sh=sh)
+    got = parse_spz_sh(buf)
+    assert got.shape == (n, 3, k)
+    assert np.allclose(got, sh, atol=1.5 / 128)      # u8 quantization
+    assert parse_spz_sh(_spz_v3_bytes(
+        rng.uniform(-1, 1, (n, 3)), np.full((n, 3), 0.05), np.ones(n),
+        np.full((n, 3), 128, np.uint8),
+        np.tile([0.0, 0, 0, 1.0], (n, 1)))) is None   # shDegree 0
+
+
+def test_spz_v4_is_identified_with_an_actionable_error():
+    """v4 moved to per-attribute ZSTD streams; we can still read its
+    plaintext header and must say why decoding is unavailable."""
+    from holo.capture import parse_spz, spz_header
+    head = struct.pack("<IIIBBBBI", 0x5053474E, 4, 1234, 3, 12, 0, 6, 64)
+    buf = head + b"\x00" * 12 + b"payload"
+    info = spz_header(buf)
+    assert info["version"] == 4 and info["count"] == 1234
+    assert info["sh_degree"] == 3 and info["streams"] == 6
+    assert info["container"] == "zstd"
+    with pytest.raises(NotImplementedError, match="zstd"):
+        parse_spz(buf)

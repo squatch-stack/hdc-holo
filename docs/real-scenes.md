@@ -67,11 +67,26 @@ scales, u8 color/alpha, u8 rotations) at **10.3 MB — 16.4x smaller**
 than the PLY, and the field it reconstructs differs from the original
 mixture by **0.04-0.07% relative error** (exact-mixture referee,
 20k-splat subsample). The quantization grid mostly lands on values
-the capture had already rounded to. The honest losses: higher-order
-SH is dropped (SPZ v2 is DC-only — the 9.9% view-dependent term), and
-rotation error grows as ~grid/w for rotations near 180 degrees (an
-intrinsic property of storing xyz and recovering w). Both are
-test-pinned; both are invisible in the viewer side by side.
+the capture had already rounded to. The honest losses, and a
+correction: our WRITER emits DC color only, so the 9.9%
+view-dependent term is dropped — but that is our choice, not the
+format's. SPZ carries higher-order SH at every version, and
+`parse_spz_sh` now reads it (the studio's own saguaro `.spz` turns
+out to hold degree-3 SH, 10.3% of its color energy, which this
+pipeline discarded until the v3 work uncovered it).
+
+Rotations are the one thing that changed across legacy versions, and
+it is why `save_spz` now writes **v3** by default: v2 stores 8-bit
+x/y/z and recovers w, so its error grows as ~grid/w and explodes near
+180-degree rotations (on Red Rock, 223 splats land >5 degrees off,
+worst case 10.1); v3 stores the smallest three components and
+recovers the LARGEST, which is never ill-conditioned — worst case
+0.23 degrees, nothing above 1, for +7% bytes (11.0 vs 10.3 MB).
+Pass `version=2` for readers that predate v3. **v4** is a different
+container — per-attribute ZSTD streams behind a 32-byte plaintext
+header — so `spz_header` identifies v4 files and reads their metadata
+without decompressing, while decoding one needs a zstd dependency
+this SDK has not taken (`parse_spz` says so, with options).
 
 **SOG: smaller than SPZ *and* it keeps the view-dependent term.**
 `save_sog` writes SOG v2 (PlayCanvas) — a zip of lossless WebP images:
