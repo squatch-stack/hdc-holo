@@ -598,3 +598,37 @@ def test_ply_and_spz_sh_agree_on_the_y_up_convention(tmp_path):
                         np.tile([0.0, 0, 0, 1.0], (n, 1)),
                         sh=sh_world)
     assert np.allclose(parse_spz_sh(buf), sh_world, atol=1.5 / 128)
+
+
+def test_encode_bands_refuses_splats_larger_than_every_band():
+    """Splats above the last band cap match NO band. Left alone they
+    are dropped silently — the scene loses content while every
+    downstream number (slice error, byte count, render) still looks
+    healthy — so the encoder refuses instead."""
+    from holo.capture import band_codebooks, encode_bands
+    rng = np.random.default_rng(51)
+    n = 40
+    mu = rng.uniform(0.2, 0.8, (n, 3)).astype(np.float32)
+    s = np.full(n, 0.003)
+    s[:5] = 0.09                                  # above the coarse cap
+    cov = np.einsum("n,ij->nij", s ** 2, np.eye(3)).astype(np.float32)
+    scene = SplatScene(mu, cov, np.ones((n, 1), np.float32))
+    books = band_codebooks(rng, dim=256)
+    with pytest.raises(ValueError, match="exceed the largest band cap"):
+        encode_bands(scene, s, books, dim=256, verbose=False)
+    # every splat inside the bands still encodes, none lost
+    s_ok = np.full(n, 0.003)
+    _bundles, members = encode_bands(scene, s_ok, books, dim=256,
+                                     verbose=False)
+    encoded = sum(len(ids) for band in members.values()
+                  for ids in band.values())
+    assert encoded == n
+
+
+def test_band_of_covers_every_clamped_scale():
+    """build_scene clamps to S_HI and the coarse cap IS S_HI, so a
+    clamped scene can never reach the out-of-range index."""
+    from holo.capture import BANDS, S_HI, S_LO, band_of
+    probe = np.array([S_LO, 0.004, 0.0041, 0.02, S_HI])
+    assert np.all(band_of(probe) < len(BANDS))
+    assert band_of(np.array([S_HI * 1.001]))[0] == len(BANDS)
