@@ -14,6 +14,20 @@ archaeology problem.
 tree appears here, every recorded path exists, and every named driver
 exists. A new figure with no entry fails the suite.
 
+**Run these as modules, not as paths.** `python -m examples.run_mog`
+and not `python examples/run_mog.py`; `python -m holo.cli color` and
+not `hdc-demos color`. From a worktree the path and console-script
+forms silently import the SHARED checkout instead of your tree — the
+editable install's meta-path finder outranks `sys.path`, and for a
+script `sys.path[0]` is the script's own directory rather than the
+repo root. Measured, both forms: run by path or via `hdc-demos` from a
+worktree, the import resolves to the shared checkout; under `-m` it
+resolves to the worktree. Since our protocol says all work happens in
+worktrees, a figure "regenerated" in a lane would otherwise be
+produced by main's code and look entirely fine. The module forms are
+correct from the repo root too, so there is no reason to write the
+other kind.
+
 Why a record rather than a grep: several drivers build their output
 names at runtime — `run_real_scene.py` writes `real_{stem}.png` from
 its argument, `run_turntable.py` writes
@@ -24,16 +38,16 @@ source and no search recovers the link.
 
 | figure | regenerate with |
 |---|---|
-| `real_redrock.png`, `real_redrock_xray.png` | `python examples/run_real_scene.py data/iphone/redrock.ply` |
-| `real_scan-tucson.png`, `real_scan-tucson_xray.png` | `python examples/run_real_scene.py data/scan-tucson.spz` |
-| `real_train.png`, `real_train_xray.png` | `python examples/run_real_scene.py data/train.splat` |
-| `real_lidar-dense.png`, `real_lidar-dense_xray.png` | `python examples/run_real_scene.py data/iphone/lidar-dense.ply` |
-| `real_turntable-redrock.gif`, `.png` | `python examples/run_turntable.py data/iphone/redrock.ply --crop 0.5 --elev 0.7` |
-| `real_turntable-scan-tucson.gif`, `.png` | `python examples/run_turntable.py data/scan-tucson.spz` |
-| `real_fit.png` | `python examples/run_fit_real.py` |
-| `capacity_curve.png`, `recon_2d.png`, `translation.png` | `python examples/run_prototype.py` |
-| `mog_penalty.png` | `python examples/run_mog.py` |
-| `baseline_table.md` (table, not image) | `python examples/run_baseline_table.py` |
+| `real_redrock.png`, `real_redrock_xray.png` | `python -m examples.run_real_scene data/iphone/redrock.ply` |
+| `real_scan-tucson.png`, `real_scan-tucson_xray.png` | `python -m examples.run_real_scene data/scan-tucson.spz` |
+| `real_train.png`, `real_train_xray.png` | `python -m examples.run_real_scene data/train.splat` |
+| `real_lidar-dense.png`, `real_lidar-dense_xray.png` | `python -m examples.run_real_scene data/iphone/lidar-dense.ply` |
+| `real_turntable-redrock.gif`, `.png` | `python -m examples.run_turntable data/iphone/redrock.ply --crop 0.5 --elev 0.7` |
+| `real_turntable-scan-tucson.gif`, `.png` | `python -m examples.run_turntable data/scan-tucson.spz` |
+| `real_fit.png` | `python -m examples.run_fit_real` |
+| `capacity_curve.png`, `recon_2d.png`, `translation.png` | `python -m examples.run_prototype` |
+| `mog_penalty.png` | `python -m examples.run_mog` |
+| `baseline_table.md` (table, not image) | `python -m examples.run_baseline_table` |
 | `failure_herringbone.png` | **not regenerable — archived exhibit** |
 
 `failure_herringbone.png` is the one entry with no command, and
@@ -51,19 +65,19 @@ checkout.
 
 | figure | regenerate with |
 |---|---|
-| `field_comparison.png` | `hdc-demos field` |
-| `attribute_field.png` | `hdc-demos attribute` |
-| `multiband.png`, `chunked3d.png` | `hdc-demos spatial` |
-| `ray_render.png`, `ray_render.gif` | `hdc-demos render` |
-| `color_knot.png`, `color_knot.gif`, `color_photo.png` | `hdc-demos color` |
-| `turntable.png`, `turntable.gif` | `hdc-demos turntable` |
-| `fit_photo.png` | `hdc-demos fit` |
-| `codec_curve.png` | `hdc-demos codec` |
-| `crdt_scene.png`, `crdt_attributes.png` | `hdc-demos crdt` |
-| `orset_undo.png` | `hdc-demos orset` |
-| `live_sync.png` | `python examples/live_sync.py` |
-| `dynamic_prototype.png` | `python examples/dynamic_prototype.py` |
-| `example_splats.png` | `python examples/splats_from_ply.py` |
+| `field_comparison.png` | `python -m holo.cli field` |
+| `attribute_field.png` | `python -m holo.cli attribute` |
+| `multiband.png`, `chunked3d.png` | `python -m holo.cli spatial` |
+| `ray_render.png`, `ray_render.gif` | `python -m holo.cli render` |
+| `color_knot.png`, `color_knot.gif`, `color_photo.png` | `python -m holo.cli color` |
+| `turntable.png`, `turntable.gif` | `python -m holo.cli turntable` |
+| `fit_photo.png` | `python -m holo.cli fit` |
+| `codec_curve.png` | `python -m holo.cli codec` |
+| `crdt_scene.png`, `crdt_attributes.png` | `python -m holo.cli crdt` |
+| `orset_undo.png` | `python -m holo.cli orset` |
+| `live_sync.png` | `python -m examples.live_sync` |
+| `dynamic_prototype.png` | `python -m examples.dynamic_prototype` |
+| `example_splats.png` | `python -m examples.splats_from_ply` |
 
 ## On the orphan-figure warning
 
@@ -80,7 +94,7 @@ misfiring — each is a real decision, not an oversight:
   X-ray number in prose; the image is held for supplementary material.
 - `turntable.png`, `turntable.gif` — the synthetic turntable demo,
   superseded as evidence by the real-capture orbits, kept because
-  `hdc-demos turntable` still produces them.
+  `python -m holo.cli turntable` still produces them.
 - `dynamic_prototype.png` — the dynamic-holograms probe. The lane is a
   roadmap candidate rather than a proven technique, so the figure has
   no docs page to live on yet, by design.
