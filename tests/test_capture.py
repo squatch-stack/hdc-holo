@@ -632,3 +632,54 @@ def test_band_of_covers_every_clamped_scale():
     probe = np.array([S_LO, 0.004, 0.0041, 0.02, S_HI])
     assert np.all(band_of(probe) < len(BANDS))
     assert band_of(np.array([S_HI * 1.001]))[0] == len(BANDS)
+
+
+def test_footprint_blur_matches_brute_force_pixel_averaging():
+    """The closed form (covariances add) must equal what a rasterizer
+    would get by averaging point samples across the pixel — verified
+    against a 3-D supersample of the pixel volume."""
+    from holo.capture import footprint_blur
+    from holo.spectral import eval_scene_exact
+    rng = np.random.default_rng(61)
+    n = 12
+    mu = rng.uniform(0.3, 0.7, (n, 3)).astype(np.float32)
+    ax = rng.uniform(0.004, 0.02, (n, 3))
+    q = rng.normal(size=(n, 4))
+    q /= np.linalg.norm(q, axis=1, keepdims=True)
+    from holo.capture import quat_to_rot
+    R = quat_to_rot(q)
+    cov = np.einsum("nab,nb,ncb->nac", R, ax ** 2, R).astype(np.float32)
+    scene = SplatScene(mu, cov, rng.uniform(0.5, 1, (n, 1)).astype(np.float32))
+
+    pix = 0.01
+    pts = rng.uniform(0.35, 0.65, (40, 3)).astype(np.float32)
+    closed = eval_scene_exact(footprint_blur(scene, pix), pts)
+
+    # brute force: average point samples over the pixel's own volume,
+    # weighted by the same box -> the supersample IS the integral
+    g = (np.arange(9) + 0.5) / 9 - 0.5                  # 9^3 samples
+    off = np.stack(np.meshgrid(g, g, g), -1).reshape(-1, 3) * pix
+    acc = np.zeros((len(pts), scene.channels), np.float64)
+    for o in off:
+        acc += eval_scene_exact(scene, (pts + o).astype(np.float32))
+    brute = acc / len(off)
+    rel = np.linalg.norm(closed[:, 0] - brute[:, 0]) / np.linalg.norm(brute[:, 0])
+    assert rel < 0.02, rel     # box vs equal-variance Gaussian, 9^3 grid
+
+
+def test_footprint_makes_sub_pixel_needles_visible():
+    """The point/footprint gap this evaluator exists to close: a splat
+    thinner than a pixel is nearly invisible to point sampling."""
+    from holo.capture import footprint_blur
+    from holo.spectral import eval_scene_exact
+    pix = 0.01
+    mu = np.array([[0.5, 0.5, 0.5]], np.float32)
+    needle = np.diag([1e-4, 0.02, 0.02]).astype(np.float32) ** 2
+    scene = SplatScene(mu, needle[None], np.ones((1, 1), np.float32))
+    # sample a row of pixel centres crossing the needle's thin axis
+    xs = 0.5 + (np.arange(-4, 5) + 0.5) * pix
+    pts = np.stack([xs, np.full(9, 0.5), np.full(9, 0.5)], 1).astype(np.float32)
+    point = eval_scene_exact(scene, pts)[:, 0]
+    fp = eval_scene_exact(footprint_blur(scene, pix), pts)[:, 0]
+    assert point.max() < 1e-3          # point samples miss it entirely
+    assert fp.max() > 10 * point.max()  # the pixel integral finds it
