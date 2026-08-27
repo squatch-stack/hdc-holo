@@ -79,9 +79,12 @@ Tracked as GitHub issues under the [0.3 milestone](https://github.com/squatch-st
   `run_viewer.py` renders any capture in real time through Spark.
   Measured: SPZ v2 is 16.4x smaller at 0.04-0.07% field error,
   because raw captures are already u8-quantized inside float32
-  containers (SDK.md log). Still open: SPZ v3/v4 parser bump (the
-  ecosystem moved two versions); SOG export (~95% smaller, the web
-  delivery format — currently reachable via splat-transform); a
+  containers (SDK.md log). SOG export landed too (`holo/sog.py`): 19x
+  smaller than the source PLY, smaller than SPZ, and the only one of
+  our formats that carries higher-order SH — through a palette that
+  keeps ~40% of it (SH is intrinsically hard to vector-quantize; 8x
+  the palette buys 8%). Still open: SPZ v3/v4 parser bump (the
+  ecosystem moved two versions); SOG's LOD/streamed variants; a
   hosted viewer link from the README.
 - **Near-enough runtime** (no issue yet) — grow `holo/dispatch.py`
   from router to runtime: order-sensitive conditions (permuted

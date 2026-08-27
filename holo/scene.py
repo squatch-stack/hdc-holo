@@ -15,9 +15,11 @@ from .color import ColorSplatField  # noqa: F401
 from .capture import (band_codebooks, build_scene,  # noqa: F401
                       decode_slice, encode_bands, exact_slice, exact_xray,
                       load_scene_file, load_splat, load_spz, render_mip,
-                      render_xray, save_ply)
+                      render_xray, save_ply, save_spz, load_ply_sh)
+from .sog import save_sog  # noqa: F401
 
 __all__ = ["AttributeSplatField", "ColorSplatField",
-           "load_splat", "load_spz", "load_scene_file", "save_ply",
+           "load_splat", "load_spz", "load_scene_file", "load_ply_sh",
+           "save_ply", "save_spz", "save_sog",
            "build_scene", "render_mip", "band_codebooks", "encode_bands",
            "decode_slice", "exact_slice", "render_xray", "exact_xray"]
