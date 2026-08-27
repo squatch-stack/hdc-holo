@@ -188,6 +188,26 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **The SH flip table now has two derivations, not one**
+  (`_SH_FLIP_X180` in `holo/capture.py`). It was derived numerically
+  from the basis functions and pinned by a test that used *the same
+  basis* — one implementation checking itself, which passes any
+  convention error the two share. It is now also derived algebraically
+  from monomial parity: a 180-degree turn about x sends
+  (x, y, z) -> (x, -y, -z), so each coefficient picks up a sign fixed
+  by how many flipped factors its monomial carries (xy and xz carry
+  one, yz two, the even terms none). Normalisation constants cancel in
+  the ratio whichever sign they have, so the second route touches
+  neither the constants nor the convention that produced the table.
+  Both agree on all 15 signs, and both fail if any one is corrupted
+  (verified by flipping the yz entry, the subtlest of them).
+  *Corroboration, not evidence:* an independent implementation in
+  another language, written against these loaders, derived the same 15
+  signs by a third route. That is worth recording and is deliberately
+  NOT cited by the claim — it lives outside this tree, where
+  `holo-facts` cannot check it, and a claim whose evidence a reader
+  cannot open only looks substantiated.
+
 - **Per-cell ridge fitting of real scenes** (`fit_cells` in
   `holo/capture.py`, `ridge_cell_fit(prior=)` in `holo/accel.py`,
   driver `examples/run_fit_real.py`, figure `results/real_fit.png`): two results.

@@ -594,6 +594,58 @@ def test_sh_flip_matches_a_real_rotation_of_the_basis():
     assert np.allclose(sh_flip_x180(sh_flip_x180(coef)), coef)
 
 
+def _sh_monomials(d):
+    """The angular parts of the same basis, degrees 1-3, in 3DGS order,
+    with every normalisation constant stripped out."""
+    x, y, z = d[:, 0], d[:, 1], d[:, 2]
+    xx, yy, zz = x * x, y * y, z * z
+    return np.stack([
+        y, z, x,
+        x * y, y * z, 2 * zz - xx - yy, x * z, xx - yy,
+        y * (3 * xx - yy), x * y * z, y * (4 * zz - xx - yy),
+        z * (2 * zz - 3 * xx - 3 * yy), x * (4 * zz - xx - yy),
+        z * (xx - yy), x * (xx - 3 * yy)], 1)
+
+
+def test_sh_flip_signs_follow_from_monomial_parity():
+    """A second derivation of _SH_FLIP_X180, from a different starting
+    point than the one that produced it.
+
+    The test above pins the sign table against `_sh_basis` — but the
+    table was itself derived numerically from that basis, so the pair
+    is one implementation checking itself: a convention error shared by
+    both would pass. This derives the signs algebraically instead. A
+    180-degree turn about x sends (x, y, z) -> (x, -y, -z), so each
+    basis function maps to a scalar multiple of itself, and that scalar
+    is fixed by how many flipped factors the MONOMIAL carries — xy and
+    xz carry one, yz carries two, the even terms carry none.
+
+    Normalisation constants cannot participate: they are nonzero
+    scalars and cancel in the ratio, whichever sign they have. (In
+    `_sh_basis` several are negative, which is exactly why the ratio,
+    rather than the value, is the thing to test.) So this route touches
+    neither the constants nor the convention that produced the table.
+    """
+    from holo.capture import _SH_FLIP_X180
+    rng = np.random.default_rng(7)
+    d = rng.normal(size=(4000, 3))
+    d /= np.linalg.norm(d, axis=1, keepdims=True)
+    before = _sh_monomials(d)
+    after = _sh_monomials(d * [1.0, -1.0, -1.0])
+    # near-zero denominators make the ratio noise, not evidence
+    usable = np.abs(before) > 1e-3
+    assert usable.sum(0).min() > 3000, "too few usable samples to conclude"
+    signs = []
+    for k in range(before.shape[1]):
+        r = after[usable[:, k], k] / before[usable[:, k], k]
+        assert np.allclose(np.abs(r), 1.0, atol=1e-9), \
+            "coefficient %d does not map to +-itself" % k
+        assert r.std() < 1e-9, \
+            "coefficient %d's ratio varies with direction" % k
+        signs.append(round(float(r.mean())))
+    assert np.array_equal(np.array(signs, np.float32), _SH_FLIP_X180)
+
+
 def test_ply_and_spz_sh_agree_on_the_y_up_convention(tmp_path):
     """load_ply_sh flips (files are y-down); load_spz_sh does not
     (SPZ is y-up). Both must hand back the SAME world."""
