@@ -398,8 +398,8 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   sqrt(N/2d) ~ 0.45 at d=2048, forbidden by our own law; fuzzy recall
   is WARN-only since trigram cosine cannot tell a corrected
   restatement from a stale one. Phases 3-4 (claimed): minimal MCP
-  server (`holo-facts mcp`; extra `[facts]`), and the `knowledge-base`
-  sibling repo indexed by the same checker.
+  server (`holo-facts mcp`; extra `[facts]`), and a sibling
+  knowledge-base repo indexed by the same checker.
 - **Fuzzy claims layer shipped** (facts lane, phase 2 complete): the
   stale-claim system now dogfoods retrieval — 274 doc chunks as
   L2-normalized trigram-profile rows (`holo.dispatch.FastNGramProfiler`
@@ -434,22 +434,18 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   (tests/test_facts_mcp.py: spawn server, initialize, list tools,
   call search_claims). Registration one-liner and .mcp.json example
   in docs/facts.md.
-- **knowledge-base bootstrapped** (facts lane, phase 4 complete; the facts
-  plan is done): squatch-stack/knowledge-base is live — seven topic pages
-  (Bochner/RFF, FHRR/VSA capacity incl. the matrix-vs-bundle
-  corollary, Fourier extension/plunge, NUFFT type-3, 3DGS binning,
-  ridge primal/dual + minimum-norm trap, CRDT semantics), the PKCE
-  loopback engineering note, and the first dated learning promoted
-  from this log (orientation-is-metadata, capture lane credited).
-  Every page carries flat front-matter (claims ids / arXiv ids /
-  swept dates) enforced by a new config-gated checker tier — the
-  cross-repo version of cite-sites — and the KB's CI installs
-  hdc-holo[facts] at a pinned revision and runs the identical gate
-  (first run: 0 FAIL 0 WARN after the 19x binning claim was
-  registered, flagged by the unregistered tier as designed).
-  search_kb through the MCP server answers from it: "plunge region"
-  returns fourier-extension-plunge with arXiv:1206.4111 attached.
-  Same fork topology as hdc-holo (local bare origin, github curated).
+- **Front-matter validation tier** (facts lane; completes the facts
+  plan): knowledge-base-style surfaces (config front_matter_surfaces
+  globs) carry a validated contract — flat front-matter must parse,
+  claims: ids must exist in the registry (cite-sites made
+  cross-repo), arxiv: ids must be well-formed, and swept: dates must
+  parse (the dated-sweep convention made structural). front_matter()
+  moved to normalize.py where parsing lives. A seeded external
+  knowledge base exercised the tier end-to-end — search_kb returned
+  topic pages with arXiv ids attached, and its CI ran the identical
+  gate at a pinned revision (0 FAIL) — and was retired the same day
+  by owner decision: kb_path defaults to null and search_kb answers
+  honestly when unconfigured. The tier stays for any future KB.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,

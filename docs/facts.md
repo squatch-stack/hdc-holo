@@ -109,7 +109,7 @@ corpus to any MCP client over stdio — three Context7-shaped tools:
 unioned with fuzzy chunk hits mapped back through cite files),
 `get_claim(id)` (record + supersession chain + LIVE derivation + cite
 sites with line numbers), and `search_kb(query, limit)` (the same
-matrix search over a `knowledge-base` checkout at `HOLO_KB_PATH` or config
+matrix search over a knowledge-base checkout at `HOLO_KB_PATH` or config
 `kb_path`; answers honestly when none is configured). The `mcp`
 dependency is the `facts` extra and needs Python >= 3.10 — the checker
 itself stays 3.9-compatible, and the tool logic lives in
