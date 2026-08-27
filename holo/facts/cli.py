@@ -70,9 +70,18 @@ def main(argv=None):
         print(json.dumps(_TEMPLATE))
         return 0
     if args.cmd == "mcp":
-        print("holo-facts mcp is not built yet (phase 3 of the facts plan)",
-              file=sys.stderr)
-        return 2
+        root = _find_root(".")
+        if root is None:
+            print("no claims/config.json found upward of cwd",
+                  file=sys.stderr)
+            return 2
+        from . import mcp_server
+        try:
+            mcp_server.serve(root)
+        except RuntimeError as e:
+            print(str(e), file=sys.stderr)
+            return 2
+        return 0
     if args.cmd not in ("check", "index", "search", "calibrate"):
         ap.print_help()
         return 2

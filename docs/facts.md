@@ -99,6 +99,32 @@ holo-facts new                 # print a registry line template
 git config core.hooksPath .githooks   # opt into the warn hook
 ```
 
+**The MCP server.** `holo-facts mcp` serves the registry and the fuzzy
+corpus to any MCP client over stdio — three Context7-shaped tools:
+`search_claims(query, status, limit)` (registry keyword ranking
+unioned with fuzzy chunk hits mapped back through cite files),
+`get_claim(id)` (record + supersession chain + LIVE derivation + cite
+sites with line numbers), and `search_kb(query, limit)` (the same
+matrix search over a `knowledge-base` checkout at `HOLO_KB_PATH` or config
+`kb_path`; answers honestly when none is configured). The `mcp`
+dependency is the `facts` extra and needs Python >= 3.10 — the checker
+itself stays 3.9-compatible, and the tool logic lives in
+`holo/facts/query.py`, stdlib-tested without the extra.
+
+Register for Claude Code (from a 3.10+ environment with
+`pip install 'hdc-holo[facts]'`):
+
+```bash
+claude mcp add holo-facts -- holo-facts mcp
+```
+
+or per-project in `.mcp.json`:
+
+```json
+{"mcpServers": {"holo-facts": {"command": "holo-facts",
+  "args": ["mcp"], "env": {"HOLO_KB_PATH": "../knowledge-base"}}}}
+```
+
 **Evidence.** `tests/test_claims.py` (registry validity, derivations
 vs tree, normalization units incl. the mermaid-label case, historical
 mechanisms, and the zero-FAIL-on-HEAD gate); the first run against
