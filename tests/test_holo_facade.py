@@ -91,15 +91,23 @@ def test_runtime_backend_patch_reaches_the_facade_and_the_shim():
 
 
 def test_shims_do_not_forward_dunders():
-    # forwarding __getstate__/__reduce__ and friends confuses pickling
-    # and introspection; a shim's dunders are its own
+    """Forwarding __getstate__/__reduce__ and friends confuses pickling
+    and introspection, so the delegation refuses dunders.
+
+    This calls the module's __getattr__ DIRECTLY rather than going
+    through getattr(): Python 3.11+ gives every object a default
+    __getstate__, so plain attribute access finds a real one before
+    __getattr__ is ever consulted — a getattr()-based test passes on
+    3.9 and fails on 3.12 while the delegation behaves identically on
+    both. Ask the function, not the language.
+    """
     import hdc.fhrr
-    for name in ("__path__", "__wrapped__", "__getstate__"):
+    for name in ("__path__", "__wrapped__", "__getstate__", "__reduce__"):
         try:
-            getattr(hdc.fhrr, name)
+            hdc.fhrr.__getattr__(name)
         except AttributeError:
             continue
-        raise AssertionError("shim forwarded dunder %r" % name)
+        raise AssertionError("delegation forwarded dunder %r" % name)
 
 
 def test_facade_rejects_unknown_names():
