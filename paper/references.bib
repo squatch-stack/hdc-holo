@@ -15,11 +15,19 @@
 % supplied publisher and ISBN). No entry in this file rests on
 % recollection.
 %
-% One detail deliberately NOT asserted: Plate (2003) is widely cited
-% with the subtitle "Distributed Representation for Cognitive
-% Structures". Open Library records the title without it and no
-% reachable index confirmed it, so the verified short title stands and
-% the ISBN disambiguates the volume.
+% Two gotchas found while doing that, worth leaving here:
+%
+% Open Library's SEARCH endpoint omits the subtitle field; its
+% /isbn/<isbn>.json endpoint carries it. Plate (2003)'s subtitle
+% "Distributed Representation for Cognitive Structures" looked
+% unconfirmable through search and is confirmed through the ISBN
+% record, across all three of the book's ISBNs. Kanerva (1988) really
+% has no subtitle, checked the same way.
+%
+% The two booktitle ordinals here were also written from memory and are
+% also now verified against DBLP's proceedings records: NIPS volume 20
+% is the Twenty-First Annual Conference, Vancouver, December 2007; and
+% CogSci 2019 is the 41st Annual Meeting (DBLP spells it "41th").
 
 
 % ---------- Foundations ----------
@@ -37,7 +45,9 @@
 
 @book{plate2003hrr,
   author    = {Tony A. Plate},
-  title     = {Holographic Reduced Representation},
+  title     = {Holographic Reduced Representation: Distributed
+               Representation for Cognitive Structures},
+  series    = {CSLI Lecture Notes},
   publisher = {CSLI Publications},
   isbn      = {9781575864303},
   year      = {2003}
