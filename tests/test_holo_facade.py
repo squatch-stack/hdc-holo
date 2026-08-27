@@ -105,7 +105,7 @@ def test_shims_do_not_forward_dunders():
 def test_facade_rejects_unknown_names():
     import holo.backend
     try:
-        getattr(holo.backend, "no_such_kernel")
+        _ = holo.backend.no_such_kernel        # assignment: not a bare expr
     except AttributeError as e:
         assert "no_such_kernel" in str(e)
     else:
