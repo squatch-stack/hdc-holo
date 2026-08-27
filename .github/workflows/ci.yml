@@ -54,6 +54,11 @@ jobs:
         run: |
           holo-facts index
           holo-facts check --strict --fuzzy
+      - name: Facts MCP server end-to-end (3.12 only; mcp needs >=3.10)
+        if: matrix.python == '3.12'
+        run: |
+          pip install -e '.[facts]'
+          python -m pytest tests/test_facts_mcp.py -q
       - name: Demo smoke test
         run: hdc-demos hashmap --dim 2048
 

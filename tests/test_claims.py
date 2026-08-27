@@ -154,6 +154,45 @@ def test_hg8_roundtrip_preserves_profile_ranking():
     assert orig_top == back_top == 0
 
 
+def test_search_claims_ranks_the_right_record():
+    # MCP tool logic, stdlib-only (the server shim is a thin binding;
+    # the wire is proven in test_facts_mcp.py under the facts extra)
+    from holo.facts.query import search_claims
+    out = search_claims(ROOT, "encode kernel speedup on the gpu")
+    ids = [r["id"] for r in out["results"]]
+    assert ids and ids[0] == "accel.encode_speedup"
+    assert "37x" in str(out["results"][0]["statement"])
+
+
+def test_get_claim_returns_chain_derivation_and_cite_sites():
+    from holo.facts.query import get_claim
+    rec = get_claim(ROOT, "capture.err_redrock")
+    assert [c["id"] for c in rec["chain"]] == \
+        ["capture.err_redrock", "capture.err_redrock@0.2.1"]
+    counted = get_claim(ROOT, "tests.count")
+    # convention: the registry value derives from the committed tree,
+    # so the live derivation must agree whatever the number is today
+    assert counted["derivation"]["matches"] is True
+    assert any(s["file"] == "CONTRIBUTING.md"
+               for s in counted["cite_sites"])
+    missing = get_claim(ROOT, "no.such.claim")
+    assert "error" in missing
+
+
+def test_search_kb_reports_unconfigured_honestly():
+    import os
+    from holo.facts.query import search_kb
+    old = os.environ.pop("HOLO_KB_PATH", None)
+    try:
+        out = search_kb(ROOT, "plunge region")
+    finally:
+        if old is not None:
+            os.environ["HOLO_KB_PATH"] = old
+    # config kb_path is null until math-kb exists (phase 4)
+    assert out["configured"] is False
+    assert "note" in out
+
+
 def test_fuzzy_retrieves_paraphrase_and_scrambled_noise_abstains():
     # the fuzzy layer's whole contract: a digit-free paraphrase of a
     # claim scores above threshold on the right chunk, while true
