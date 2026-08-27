@@ -53,7 +53,11 @@ Tracked as GitHub issues under the [0.3 milestone](https://github.com/squatch-st
 - **Occlusion research spike** ([#5](https://github.com/squatch-stack/hdc-holo/issues/5)) — alpha compositing is outside linear
   superposition (documented failure mode); scope what a hybrid
   (holographic density + classical compositing pass) would look like.
-- **Publication pass** ([#6](https://github.com/squatch-stack/hdc-holo/issues/6)) — arXiv note on the strongest findings (codec
+- **Publication pass** ([#6](https://github.com/squatch-stack/hdc-holo/issues/6)) — SKELETON WRITTEN: [PAPER.md](PAPER.md)
+  picks three claims (scene-as-vector with algebraic query; a view as a
+  bundle; superposition as an almost-CRDT) with the capacity law as
+  spine, and records what was excluded and why. Superseded framing
+  below, kept for the record — arXiv note on the strongest findings (codec
   split + accidental denoiser; observed-remove holographic CRDTs; the
   per-cell fit negative result and its Fourier-extension framing),
   then PyPI release. LICENSE: FSL-1.1-Apache-2.0, chosen and in-tree.
