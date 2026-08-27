@@ -19,15 +19,87 @@ crdt = ["loro>=1.0"]
 viz = ["matplotlib>=3.5", "pillow>=8"]
 gpu = ["mlx>=0.5"]  # Apple Metal backend (hdc/accel.py); macOS only
 dev = ["pytest>=7", "loro>=1.0", "matplotlib>=3.5", "pillow>=8"]
-facts = ["mcp>=1.0; python_version >= '3.10'"]  # holo-facts MCP server (stdio); the checker itself is stdlib+numpy and runs on 3.9
+facts = ["mcp>=1.0; python_version >= '3.10'"]
+quality = ["ruff>=0.6", "kuzu>=0.6"]  # lint ratchet + Cypher code graph  # holo-facts MCP server (stdio); the checker itself is stdlib+numpy and runs on 3.9
 
 [project.scripts]
 hdc-demos = "holo.cli:main"
 holo-demos = "holo.cli:main"
 holo-facts = "holo.facts.cli:main"
+holo-quality = "holo.quality.cli:main"
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+[tool.ruff.lint]
+# Correctness and smell rules. Deliberately NOT enabled: docstring
+# style (D) — this repo's docstrings are prose essays, not templates.
+select = [
+    "F",     # pyflakes: real bugs (undefined names, unused imports)
+    "E", "W",# pycodestyle
+    "I",     # import order
+    "UP",    # pyupgrade
+    "B",     # bugbear: mutable defaults, loop-variable capture, …
+    "C4",    # comprehension smells
+    "SIM",   # simplifiable constructs
+    "RET",   # return-path smells
+    "ARG",   # unused arguments
+    "C90",   # mccabe cyclomatic complexity
+    "PL",    # pylint subset: too many branches/args/statements/returns
+    "RUF",
+]
+ignore = [
+    # Mathematical notation is the domain language here: W is the
+    # frequency matrix, S a bundle, N/R/d the capacity symbols. Forcing
+    # snake_case on them would make the code LESS readable than the math
+    # it implements.
+    "N803", "N806",
+    # Numeric code compares against literal thresholds constantly;
+    # naming every 0.5 would be noise, not clarity.
+    "PLR2004",
+    # Lazy imports are load-bearing architecture here, not sloppiness:
+    # every optional extra (mlx, loro, matplotlib, mcp, kuzu) is imported
+    # inside the function that needs it so the core stays stdlib+numpy.
+    "PLC0415",
+    # Docstrings are prose and use typographic characters on purpose.
+    "RUF001", "RUF002", "RUF003",
+    # House style is %-formatting, applied consistently across the tree;
+    # a rule that fights the house style just trains people to ignore it.
+    "UP031", "UP032",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 8          # numeric kernels legitimately take (points, W, S, chunk, …)
+
+[tool.ruff.lint.per-file-ignores]
+# The compat shims already carry `# noqa: F401,F403` at each re-export
+# site — that annotation IS the documentation, so no blanket ignore.
+"hdc/*.py" = ["F405"]
+"hdc_splat.py" = ["F405"]
+
+# --- Language server ---------------------------------------------------
+# Two servers, one config source. `ruff server` provides diagnostics,
+# import sorting, and formatting from the [tool.ruff] rules above;
+# basedpyright provides types, hover, go-to-definition, and rename
+# (it bundles its own node, so no system dependency). Editor setup is
+# in docs/quality.md; CI does not run type checking — the codebase is
+# untyped by design and gradual typing is a separate decision.
+[tool.pyright]
+include = ["holo", "tests", "examples", "bench"]
+exclude = ["**/__pycache__", ".venv", "data", "out", "results",
+           "gpubench", "claims/index"]
+ignore = ["hdc", "hdc_splat.py"]        # compat shims: star re-exports
+pythonVersion = "3.9"
+typeCheckingMode = "basic"
+reportMissingImports = "warning"        # optional extras are absent by design
+reportMissingModuleSource = "none"
 
 [tool.setuptools]
-packages = ["hdc", "holo", "holo.facts"]
+packages = ["hdc", "holo", "holo.facts", "holo.quality"]
 
 [tool.setuptools.dynamic]
 version = { attr = "holo.__version__" }
