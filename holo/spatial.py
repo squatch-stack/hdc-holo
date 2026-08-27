@@ -146,8 +146,12 @@ def demo(dim=4096, seed=0, save_png=True):
     slice_pts = np.stack([X, Y, np.full_like(X, 0.5)], axis=-1).reshape(-1, 3)
     truth = chunked.exact(slice_pts)
     import time
-    t0 = time.time(); est_g = glob.eval(slice_pts); tg = time.time() - t0
-    t0 = time.time(); est_c = chunked.eval(slice_pts); tc = time.time() - t0
+    t0 = time.time()
+    est_g = glob.eval(slice_pts)
+    tg = time.time() - t0
+    t0 = time.time()
+    est_c = chunked.eval(slice_pts)
+    tc = time.time() - t0
     rg = np.sqrt(np.mean((est_g - truth) ** 2))
     rc = np.sqrt(np.mean((est_c - truth) ** 2))
     n_cells = len(chunked.cells)

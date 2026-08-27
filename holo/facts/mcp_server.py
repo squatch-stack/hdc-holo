@@ -28,11 +28,11 @@ def serve(root):
     except ImportError:
         try:
             from mcp.server.fastmcp import FastMCP as _Server  # mcp 1.x
-        except ImportError:
+        except ImportError as e:
             raise RuntimeError(
                 "the MCP server needs the `mcp` package (Python >= "
                 "3.10) — pip install 'hdc-holo[facts]' from a 3.10+ "
-                "environment; the checker itself stays 3.9-compatible")
+                "environment; the checker itself stays 3.9-compatible") from e
 
     from . import query as q
 

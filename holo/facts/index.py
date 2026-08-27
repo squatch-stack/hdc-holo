@@ -53,7 +53,7 @@ def profiler():
     except ImportError as e:
         raise RuntimeError(
             "the fuzzy layer needs holo.dispatch (FastNGramProfiler); "
-            "not present in this checkout: %s" % e)
+            "not present in this checkout: %s" % e) from e
     from holo import FHRR
     space = FHRR(dim=DIM, seed=SEED)
     return dispatch.FastNGramProfiler(space, n=3)
@@ -126,9 +126,9 @@ def load_index(root):
     return meta, mat
 
 
-def search(root, query, k=8, threshold=None, verify=True):
-    """Ranked [(score, chunk_meta, stale?)]; scores below threshold are
-    still returned, flagged abstain by the caller."""
+def search(root, query, k=8, verify=True):
+    """Ranked [(score, chunk_meta, stale?)] — every hit is returned;
+    the CALLER decides what falls below its abstention threshold."""
     prof = profiler()
     meta, mat = load_index(root)
     q = prof.unit_profile(query)

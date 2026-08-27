@@ -67,7 +67,8 @@ def load_registry(path):
             try:
                 obj = json.loads(s)
             except json.JSONDecodeError as e:
-                raise ValueError("%s:%d: bad JSON: %s" % (path, lineno, e))
+                raise ValueError("%s:%d: bad JSON: %s"
+                                 % (path, lineno, e)) from e
             known = {k: v for k, v in obj.items()
                      if k in Claim.__dataclass_fields__}
             claims.append(Claim(**known))

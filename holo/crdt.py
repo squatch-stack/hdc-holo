@@ -498,7 +498,7 @@ def demo(dim=4096, seed=0, save_png=True):
     A.sync(B)
     values = cfg_a.get_all("shared-key")
     print(f"  concurrent put('shared-key'): both survive superposed -> "
-          f"{[(l, round(s, 2)) for l, s in values]} "
+          f"{[(label, round(s, 2)) for label, s in values]} "
           "(multi-value register; app resolves, loser gets retracted)")
 
     # -- retraction ------------------------------------------------------

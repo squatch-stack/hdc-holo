@@ -86,6 +86,6 @@ def demo(dim=4096, seed=0):
     for u, v in [("a", "b"), ("a", "c"), ("c", "d")]:
         g.add_edge(u, v)
     print(f"undirected toy graph a-b, a-c, c-d: "
-          f"neighbors(a) = {[l for l, _ in g.neighbors('a')]}, "
-          f"neighbors(c) = {[l for l, _ in g.neighbors('c')]}")
+          f"neighbors(a) = {[label for label, _ in g.neighbors('a')]}, "
+          f"neighbors(c) = {[label for label, _ in g.neighbors('c')]}")
     print()
