@@ -8,6 +8,12 @@
   error on Red Rock). Anything the pipeline loads, crops, or merges
   now flows into splat-transform / SuperSplat / Spark and the rest of
   the display chain.
+- `save_sog` (`holo/sog.py`): SOG v2 export — Morton-ordered splats,
+  codebook-indexed attributes, and an SH palette, written as lossless
+  WebP images in a zip. Red Rock: 8.3 MB (19x smaller than source,
+  smaller than SPZ) while carrying the view-dependent SH that SPZ
+  drops; `load_ply_sh` reads that term out of a 3DGS PLY, and
+  `examples/export_formats.py` writes all three formats side by side.
 - `run_viewer.py` + `examples/viewer`: real-time splat rendering with
   occlusion (Spark/three.js from CDN, nothing installed locally) for
   any `.ply`/`.spz`/`.splat` — the display complement to the X-ray

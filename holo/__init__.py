@@ -47,7 +47,9 @@ from .dispatch import (NearEnoughDispatcher, BandedDispatcher,
 from .spectral import (SplatScene, sample_frequencies, decode_weights,
                        spectral_bundle, phasor_bundle, decode_field,
                        decode_field_phasor, translate_bundle)
-from .capture import (load_splat, load_spz, load_scene_file, save_ply,
+from .sog import save_sog
+from .capture import (load_splat, load_spz, load_scene_file, load_ply_sh,
+                      save_ply, save_spz,
                       build_scene, render_mip, band_codebooks, encode_bands,
                       decode_slice, exact_slice, render_xray, exact_xray)
 
@@ -70,7 +72,8 @@ __all__ = [
     "SplatScene", "sample_frequencies", "decode_weights", "spectral_bundle",
     "phasor_bundle", "decode_field", "decode_field_phasor",
     "translate_bundle",
-    "load_splat", "load_spz", "load_scene_file", "save_ply", "build_scene",
+    "load_splat", "load_spz", "load_scene_file", "load_ply_sh",
+    "save_ply", "save_spz", "save_sog", "build_scene",
     "render_mip", "band_codebooks", "encode_bands", "decode_slice",
     "exact_slice", "render_xray", "exact_xray",
     "core", "encode", "structures", "scene", "query", "render",

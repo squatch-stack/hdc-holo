@@ -73,12 +73,36 @@ rotation error grows as ~grid/w for rotations near 180 degrees (an
 intrinsic property of storing xyz and recovering w). Both are
 test-pinned; both are invisible in the viewer side by side.
 
-Beyond SPZ, the ecosystem's tools take over:
-[splat-transform](https://github.com/playcanvas/splat-transform)
-(SOG — ~95% smaller via image-coded attribute grids — plus LOD chunks
-and standalone HTML viewers), [SuperSplat](https://superspl.at) for
-hand editing, engine plugins for Unity/Unreal. Note the layering:
-those formats compress *per-splat attribute arrays*, while
+**SOG: smaller than SPZ *and* it keeps the view-dependent term.**
+`save_sog` writes SOG v2 (PlayCanvas) — a zip of lossless WebP images:
+16-bit log-space positions, codebook-indexed scales and DC color,
+smallest-three quaternions, and a *palette* of higher-order SH. On Red
+Rock: **8.3 MB, 19x smaller** than the source PLY (vs SPZ's 10.3 MB)
+while carrying the SH that SPZ drops entirely. Two mechanisms do the
+work, both familiar from this SDK: splats are **Morton-ordered** so
+neighbouring pixels hold nearby splats and the images become smooth
+enough for WebP to compress (locality, the same medicine as
+[spatial.md](spatial.md)'s cells — unsorted, the images are noise and
+the format buys little), and every attribute goes through a
+**codebook** (the rate-distortion trade [storage.md](storage.md) makes
+for bundles, one layer down on per-splat attributes).
+
+Measured honestly: a 1024-entry SH palette reconstructs the
+view-dependent term to 0.62 relative error — it keeps ~40% of what SPZ
+throws away, cutting the SH-attributable color error from 9.9% to
+~6.1%, not eliminating it. That is close to the format's own ceiling
+here, not a tuning failure: an 8x bigger palette only reaches 0.53, so
+this capture's SH residual is intrinsically hard to vector-quantize.
+Reader caveat: the format allows palettes to 65536, but **Spark 2.1.0
+renders 256 and 1024 and shows nothing at 2048** — the file decodes
+correctly either way under the spec's own arithmetic, so 1024 is the
+tested default.
+
+`python examples/export_formats.py` writes all three and prints the
+table. Beyond these, [splat-transform](https://github.com/playcanvas/splat-transform)
+adds LOD chunks and standalone HTML viewers, and
+[SuperSplat](https://superspl.at) does hand editing. Note the
+layering: these formats compress *per-splat attribute arrays*, while
 [storage.md](storage.md)'s HP/HM/HG codecs compress *holographic
 bundles* — different representations, complementary jobs.
 
