@@ -649,7 +649,14 @@ def band_codebooks(rng, bands=None, dim=DIM, s_floor=S_LO):
 
 
 def band_of(smax, bands=None):
-    """Index into the band list for each splat by its max axis scale."""
+    """Index into the band list for each splat by its max axis scale.
+
+    A splat larger than the LAST cap has no band: the index returned is
+    one past the end, and `encode_bands` refuses it rather than
+    dropping it. Callers reach that state by widening scales without
+    widening the bands — `build_scene` cannot, since it clamps to S_HI
+    and the coarse band's cap IS S_HI.
+    """
     caps = np.array([cap for _, cap, _ in (bands or BANDS)])
     return np.searchsorted(caps, smax, side="left")
 
@@ -658,7 +665,21 @@ def encode_bands(scene, smax, books, bands=None, dim=DIM, verbose=True):
     bands = bands or BANDS
     bundles, members = {}, {}
     bidx = band_of(smax, bands)
-    for b, (name, cap, cell) in enumerate(bands):
+    over = int(np.sum(bidx >= len(bands)))
+    if over:
+        # Silent scene loss otherwise: these splats match no band, so
+        # they would simply never be bundled and every downstream
+        # number (slice error, render, byte count) would look fine.
+        raise ValueError(
+            f"{over} splat(s) exceed the largest band cap "
+            f"{max(c for _, c, _ in bands):g} (max axis scale "
+            f"{float(np.max(smax)):g}) — clamp scales as build_scene "
+            "does, or widen the bands")
+    # `cap` is deliberately unused here: it does its work upstream, in
+    # band_of (which assigned bidx) and band_codebooks (which built the
+    # per-band mixture). The encode step needs only the codebook and
+    # the cell size; decode paths are where reach = 3 * cap reappears.
+    for b, (name, _cap, cell) in enumerate(bands):
         idx = np.where(bidx == b)[0]
         freqs = books[name][0]
         per_cell = {}

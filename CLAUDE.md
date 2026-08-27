@@ -16,12 +16,13 @@ every other session share keeps pointing at the same place.
 git fetch github
 git worktree add /tmp/wt-<lane> -b <lane>/<topic> github/main
 
-# 2. work there by PATH — git takes -C, the gates take --root,
-#    python takes PYTHONPATH. Nothing needs a cd.
+# 2. work there by PATH. git takes -C; anything that IMPORTS holo
+#    needs `env -C`, which sets the working directory of that one
+#    child process and never moves your shell.
 git -C /tmp/wt-<lane> status
-PYTHONPATH=/tmp/wt-<lane> .venv/bin/python -m pytest /tmp/wt-<lane>/tests -q
-.venv/bin/holo-facts   check --root /tmp/wt-<lane> --strict
-.venv/bin/holo-quality check --root /tmp/wt-<lane>
+env -C /tmp/wt-<lane> .venv/bin/python -m pytest tests -q
+env -C /tmp/wt-<lane> .venv/bin/holo-facts   check --strict
+env -C /tmp/wt-<lane> .venv/bin/holo-quality check
 
 # 3. commit in the worktree, as often as you like
 git -C /tmp/wt-<lane> add <paths>
@@ -39,6 +40,17 @@ git push github --delete <lane>/<topic>
 
 Rebase inside the worktree too (`git -C <wt> rebase github/main`); a
 conflict there cannot disturb anyone else's files.
+
+**`PYTHONPATH=<wt>` is not enough, and fails quietly.** The shared
+`.venv` installs `holo` as an editable package through a *meta-path
+finder*, which Python consults before `sys.path` — so a run started
+from the shared checkout imports the shared checkout's code no matter
+what `PYTHONPATH` says, and your worktree's changes are simply absent
+while the tests still pass. `env -C <wt>` is what actually works
+(`--root` flags aim the gates' *analysis* at a tree, which is not the
+same as importing from it). If a test of brand-new code passes
+suspiciously, check `python -c "import holo.capture as c;
+print(c.__file__)"` before believing it.
 
 ## Rules for the shared checkout
 
