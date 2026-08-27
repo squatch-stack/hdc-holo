@@ -9,7 +9,12 @@ mixture (fidelity to ground truth). The two metrics diverge on forward
 bundles because small components are mostly crosstalk noise — see the
 "accidental shrinkage denoiser" entry in SDK.md's 0.2 log.
 
-Usage: examples/run_codec_capture.py [data/scan-tucson.spz]
+Usage: examples/run_codec_capture.py [data/scan-tucson.spz] [--shrink]
+
+--shrink adds the deliberate denoiser (holo/denoise.py, issue #1) to the
+table: soft and hard shrinkage at magnitude percentiles, and the
+shrink-then-persist pairing. That is what the "accidental denoiser"
+above should have been all along.
 """
 
 import os
@@ -27,6 +32,7 @@ from holo.capture import (
     mass_mode,
     slice_grid,
 )
+from holo.denoise import percentile_threshold, shrink
 from holo.phase import pack_complex, pack_polar, unpack
 
 # repo root: this driver lives in examples/, its assets do not
@@ -48,7 +54,14 @@ def roundtrip(bundles, codec, bits, gamma=0.5):
     return out
 
 
-def main(path):
+def denoise_all(bundles, pct, mode):
+    """Shrink every cell bundle at its own per-channel percentile."""
+    return {band: {k: shrink(b, percentile_threshold(b, pct), mode)
+                   for k, b in cells.items()}
+            for band, cells in bundles.items()}
+
+
+def main(path, with_shrink=False):
     t0 = time.time()
     scene, smax, box = build_scene(path, verbose=False)
     books = band_codebooks(np.random.default_rng(42))
@@ -87,8 +100,34 @@ def main(path):
         dcol = "—" if codec is None else f"{drift:.4f}"
         print(f"{label:>9} {nbytes:>11,} {nbytes / raw:>6.2f}x "
               f"{errs[0]:>15.3f} {errs[1]:>11.3f} {dcol:>8}")
+    if with_shrink:
+        print()
+        print(f"{'denoiser':>14} {'bytes/cell':>11} {'of c64':>7} "
+              f"{'top-down vs GT':>15} {'side vs GT':>11}")
+        for pct in (25, 40, 60):
+            for mode in ("soft", "hard"):
+                sh = denoise_all(bundles, pct, mode)
+                errs = [float(np.linalg.norm(
+                    decode_slice(pts, sh, books)[:, 0] - truth[n][:, 0])
+                    / np.linalg.norm(truth[n][:, 0]))
+                    for n, (pts, _) in slices]
+                print(f"{mode + ' p' + str(pct):>14} {raw:>11,} {1.0:>6.2f}x "
+                      f"{errs[0]:>15.3f} {errs[1]:>11.3f}")
+        # the pairing that matters: denoise, THEN persist faithfully
+        sh = denoise_all(bundles, 25, "soft")
+        for codec, bits in (("HG", 8), ("HM", 4)):
+            rt = roundtrip(sh, codec, bits)
+            nbytes = 4 * (8 + 2 * bits * d // 8)
+            errs = [float(np.linalg.norm(
+                decode_slice(pts, rt, books)[:, 0] - truth[n][:, 0])
+                / np.linalg.norm(truth[n][:, 0]))
+                for n, (pts, _) in slices]
+            print(f"{'soft p25 -> ' + codec + '-' + str(bits):>14} "
+                  f"{nbytes:>11,} {nbytes / raw:>6.2f}x "
+                  f"{errs[0]:>15.3f} {errs[1]:>11.3f}")
     print(f"total {time.time() - t0:.0f}s")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else DEFAULT_SCENE)
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    main(args[0] if args else DEFAULT_SCENE, "--shrink" in sys.argv)

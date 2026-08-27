@@ -13,6 +13,7 @@ The charter-named modules organize the surface:
     holo.fit         ridge-fitting holograms from data, frequency bands
     holo.sync        Loro replication: G-Counter and observed-remove
     holo.storage     phase-only and quantized codecs
+    holo.denoise     shrinkage denoising for forward bundles
     holo.backend     numpy | MLX/Metal dispatch
 
 with one implementation file per concept underneath (holo/fhrr.py,
@@ -26,6 +27,7 @@ __version__ = "0.3.0"
 from . import (
                    backend,
                    core,
+                   denoise,
                    encode,
                    fit,
                    query,
@@ -61,6 +63,7 @@ from .crdt import (
                    ReplicatedRecordSpace,
                    ReplicatedSplatScene,
 )
+from .denoise import percentile_threshold, shrink
 from .dispatch import BandedDispatcher, FastNGramProfiler, NearEnoughDispatcher
 from .fhrr import FHRR, ItemMemory, Permutation
 from .field import GaussianSplatField
@@ -131,6 +134,7 @@ __all__ = [
                    "decode_field_phasor",
                    "decode_slice",
                    "decode_weights",
+                   "denoise",
                    "encode",
                    "encode_bands",
                    "exact_projection",
@@ -141,6 +145,7 @@ __all__ = [
                    "load_scene_file",
                    "load_splat",
                    "load_spz",
+                   "percentile_threshold",
                    "phasor_bundle",
                    "query",
                    "render",
@@ -152,6 +157,7 @@ __all__ = [
                    "save_sog",
                    "save_spz",
                    "scene",
+                   "shrink",
                    "spectral_bundle",
                    "storage",
                    "structures",

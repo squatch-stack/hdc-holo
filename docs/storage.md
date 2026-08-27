@@ -80,28 +80,83 @@ v0.1.0 froze HM's layout). On synthetic demo bundles the field tasks
 tie (crosstalk dominates quantization there); real capture bundles are
 where the codecs separate.
 
-**Measured on real capture bundles** (saguaro fine band: 1624 cells,
-d=8192, 4 premultiplied channels; `examples/run_codec_capture.py`, ~60s). The
-dynamic-range prediction holds: cell-bundle |S| spans p99.9/p50 =
-987x. Round-tripping every bundle and decoding the evidence slices:
+**Measured on real capture bundles** (saguaro, 4 premultiplied
+channels at d=8192; `examples/run_codec_capture.py`, ~120s).
+Round-tripping every cell bundle and decoding the evidence slices,
+against the exact mixture (top-down / side):
 
-- **HG-8 is the faithful codec**: drift vs the uncompressed decode
-  0.013, where HM-8 drifts 0.124 at identical bytes; against exact
-  ground truth HG-8 is indistinguishable from complex64.
-- **HM-4 is an accidental denoiser**: it BEATS the uncompressed decode
-  against ground truth (0.502/0.342 vs 0.522/0.379) at 0.13x the
-  bytes — max-scaling truncation zeroes small components, and on
-  forward-encoded bundles the small components are mostly crosstalk.
-  HG-4 faithfully preserves that noise (drift 0.17) and so loses on
-  GT (0.589/0.411; 4-bit phase also bites).
+| codec | bytes/cell | of c64 | vs ground truth | drift |
+|---|---:|---:|---|---:|
+| complex64 | 262,144 | 1.00x | 0.350 / 0.213 | — |
+| HM-8 | 65,568 | 0.25x | 0.345 / 0.211 | 0.094 |
+| HG-8 | 65,568 | 0.25x | 0.350 / 0.213 | 0.010 |
+| HM-4 | 32,800 | 0.13x | 0.347 / 0.223 | 0.414 |
+| HG-4 | 32,800 | 0.13x | 0.384 / 0.232 | 0.134 |
+
+**HG-8 is the faithful codec**: drift vs the uncompressed decode 0.010
+where HM-8 drifts 0.094 at identical bytes, and against ground truth it
+is indistinguishable from complex64.
+
+**HM-4's "accidental denoiser" has largely evaporated, and the reason
+is instructive.** These numbers are post-reach-split; the earlier
+measurement (pre-split: HM-4 0.502/0.342 against an uncompressed
+0.522/0.379, with a 987x dynamic range) recorded a truncation that beat
+the uncompressed decode on BOTH axes. After the split the fine band's
+dynamic range is 28x rather than 987x, and HM-4 now wins only the
+top-down slice (0.347 vs 0.350) while losing the side (0.223 vs 0.213).
+Those old figures were correct at their date — see SDK.md's log — but
+they described a band configuration that no longer exists, which is why
+this page now carries the table rather than a headline.
+
+What the effect pointed at was real, though, and taking it deliberately
+recovers far more than the accident ever did — see
+[the shrinkage denoiser](#denoising-before-you-persist) below.
 
 **The refined rules**: `HP` for codeword/symbol stores. `HG-8` when
 fidelity TO THE BUNDLE is the contract — fitted holograms, mid-edit
-sync payloads, anything still being computed with. `HM-4` when the
-bundle is a finished forward encode and ground-truth-per-byte is the
-goal. Open item (unclaimed, logged): principled component thresholding
-at the crosstalk noise level as a post-encode denoiser — if accidental
-truncation helps, deliberate shrinkage should do better.
+sync payloads, anything still being computed with, and anything already
+denoised. `HM-4` only where bytes dominate and a single-axis
+ground-truth score is the goal; on current bands it is no longer a free
+win.
+
+## Denoising before you persist
+
+A forward-encoded bundle carries crosstalk that a fitted one would not,
+and more dimension does not remove it. Shrinkage does: `holo.shrink`
+thresholds components in magnitude with phase preserved, and on the
+saguaro capture **soft shrinkage at the 25th magnitude percentile
+reaches 0.298 / 0.203 against the unshrunk 0.350 / 0.213** — a 14.8%
+improvement on the top-down slice and 4.8% on the side, better on both
+axes than anything in the table above, and better than HM-4's accident
+ever was.
+
+Soft against hard is regime-dependent, which is worth stating because
+the naive reading is that soft is simply better. Where signal is sparse
+and strong against weak noise there is a real gap to cut at and hard
+wins; where magnitudes OVERLAP — the capture case, because a mixture
+codebook weights frequencies unequally and leaves no gap — hard
+discards signal along with noise and soft wins (0.298/0.203 against
+hard's 0.344/0.209 at the same threshold). Both directions are pinned
+by test.
+
+**Denoise then persist.** The two compose without interference: shrink
+first, then HG-8, and the codec preserves the gain exactly
+(0.298/0.203 at 0.25x bytes). Shrinking into HM-4 instead gives back
+most of what shrinkage won (0.339/0.230) — 4-bit quantization
+re-introduces error of the same order that was just removed, so pair
+shrinkage with the faithful codec, not the lossy one.
+
+**Failure mode.** Past its optimum shrinkage trades the slice axes
+against each other: on this capture the top-down slice keeps improving
+out to the 60th percentile (0.320 hard / 0.237 soft) while the side
+slice degrades from the 25th onward. Sweep against your own evidence
+slices and prefer the setting that improves every axis over the one
+that improves the headline.
+
+```python
+from holo import shrink, percentile_threshold
+S = shrink(S, percentile_threshold(S, 25))     # soft is the default
+```
 
 The measured rate-distortion curve behind the HP/HM/HG split:
 
