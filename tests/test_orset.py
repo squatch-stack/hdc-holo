@@ -211,3 +211,140 @@ def test_a_store_with_no_cache_at_all_still_compacts_correctly():
         store.remove(ids[i])
     store._exact.clear()
     assert store.compact() == 6
+
+
+# -- cell-keyed epochs (capture scale) --------------------------------------
+#
+# A capture has thousands of cells and a brush stroke crosses dozens. Giving
+# each cell its own ORStore would cost one (channels, d) accumulator per cell
+# — ~690 MB on saguaro before any editing — and would make undoing one stroke
+# N tombstones instead of one. Worse, N tombstones can arrive across N syncs,
+# so a peer that saw half of them renders half an undo.
+#
+# The cell rides in the blob KEY of one flat map rather than in a child
+# container per cell, because Loro's own guidance is that two peers lazily
+# creating the same child container concurrently get conflicting container
+# ids, which "prevents automatic merging and may result in data loss".
+
+def _cell_store(dim=256, name="s"):
+    from holo.orset import ORStore
+    A = HoloReplica(FHRR(dim, seed=0))
+    vecs = {}
+
+    def encode(desc):
+        if desc not in vecs:
+            rng = np.random.default_rng(len(vecs))
+            vecs[desc] = (rng.standard_normal(dim)
+                          + 1j * rng.standard_normal(dim)).astype(np.complex64)
+        return vecs[desc]
+
+    return ORStore(A, name, encode, epoch_size=10 ** 9, channels=1), A
+
+
+def test_one_tombstone_undoes_a_stroke_across_every_cell_it_touched():
+    store, A = _cell_store()
+    for i in range(12):
+        store.add("item%d" % i, cell=(i % 4, 0))      # one stroke, four cells
+    stroke = store.seal()
+    A.flush()
+    assert len(store._blobs().keys()) == 4            # four blobs, one stroke
+
+    before = {c: store.merged(cell=(c, 0)).copy() for c in range(4)}
+    assert all(np.linalg.norm(v) > 0 for v in before.values())
+
+    store.remove_epoch(stroke)                        # ONE tombstone
+    assert len(store._tombs().keys()) == 1
+    for c in range(4):
+        assert np.allclose(store.merged(cell=(c, 0)), 0, atol=1e-6), c
+    assert np.allclose(store.merged(), 0, atol=1e-6)
+
+
+def test_merged_reads_one_cell_and_the_whole_field():
+    store, A = _cell_store()
+    store.add("a", cell="left")
+    store.add("b", cell="right")
+    store.seal()
+    A.flush()
+    left, right = store.merged(cell="left"), store.merged(cell="right")
+    assert not np.allclose(left, right)
+    assert np.allclose(store.merged(), left + right, atol=1e-6)
+
+
+def test_removing_an_item_does_not_corrupt_a_different_cell():
+    """An item lives in exactly one cell's blob. Subtracting it while
+    summing another cell would remove something never added there."""
+    store, A = _cell_store()
+    ids = [store.add("item%d" % i, cell="c%d" % (i % 2)) for i in range(6)]
+    store.seal()
+    A.flush()
+    untouched = store.merged(cell="c1").copy()
+    store.remove(ids[0])                              # lives in c0
+    assert np.allclose(store.merged(cell="c1"), untouched, atol=1e-6)
+    # c0 held items 0, 2 and 4; only 0 was removed
+    expect = store.encode("item2") + store.encode("item4")
+    assert np.allclose(store.merged(cell="c0"), np.atleast_2d(expect),
+                       atol=1e-5)
+
+
+def test_two_peers_editing_overlapping_cells_converge():
+    from holo.orset import ORStore
+    A, B = HoloReplica(FHRR(256, seed=0)), HoloReplica(FHRR(256, seed=0))
+    vecs = {}
+
+    def encode(desc):
+        if desc not in vecs:
+            rng = np.random.default_rng(len(vecs))
+            vecs[desc] = (rng.standard_normal(256)
+                          + 1j * rng.standard_normal(256)).astype(np.complex64)
+        return vecs[desc]
+
+    sa = ORStore(A, "s", encode, epoch_size=10 ** 9, channels=1)
+    sb = ORStore(B, "s", encode, epoch_size=10 ** 9, channels=1)
+    for i in range(6):
+        sa.add("a%d" % i, cell="shared" if i % 2 else "a-only")
+        sb.add("b%d" % i, cell="shared" if i % 2 else "b-only")
+    sa.seal()
+    sb.seal()
+    A.sync(B)
+    for cell in ("shared", "a-only", "b-only"):
+        assert np.allclose(sa.merged(cell=cell), sb.merged(cell=cell),
+                           atol=1e-5), cell
+    assert np.allclose(sa.merged(), sb.merged(), atol=1e-5)
+
+
+def test_the_accumulator_holds_only_the_cells_this_stroke_touched():
+    """Bounded by stroke size, not scene size — the whole reason the cell
+    is a key rather than a separate store."""
+    store, _replica = _cell_store()
+    for i in range(200):
+        store.add("item%d" % i, cell="c%d" % (i % 5))
+    assert len(store._cells) == 5
+    store.seal()
+    assert store._cells == {}                         # released on seal
+
+
+def test_an_unkeyed_epoch_still_writes_the_old_bare_list_index():
+    """Docs written before cells existed must read back unchanged."""
+    import json
+    store, A = _cell_store()
+    store.add("plain")
+    store.seal()
+    A.flush()
+    key = next(k for k in store._index().keys() if k.startswith("s/"))
+    assert isinstance(json.loads(store._index().get(key).value), list)
+    assert "@" not in next(k for k in store._blobs().keys())
+
+
+def test_compaction_folds_within_the_right_cell():
+    store, A = _cell_store()
+    ids = [store.add("item%d" % i, cell="c%d" % (i % 2)) for i in range(8)]
+    store.seal()
+    A.flush()
+    keep_c1 = store.merged(cell="c1").copy()
+    store.remove(ids[0])
+    store.remove(ids[2])                              # both in c0
+    assert store.compact() == 2
+    assert np.allclose(store.merged(cell="c1"), keep_c1, atol=1e-6)
+    expect = sum(store.encode("item%d" % i) for i in (4, 6))
+    assert np.allclose(store.merged(cell="c0"), np.atleast_2d(expect),
+                       atol=1e-5)
