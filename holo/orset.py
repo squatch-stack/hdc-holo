@@ -42,13 +42,23 @@ holographic; finer epochs, more surgical deletion.
 """
 
 import json
+from collections import OrderedDict
 
 import numpy as np
 
-from .crdt import pack_bundle, unpack_bundle
+from .crdt import LOSSLESS_CODECS, pack_bundle, unpack_bundle
 from .demokit import banner
 from .fhrr import FHRR, ItemMemory
 from .field import GaussianSplatField
+
+#: Own epochs whose EXACT (never-quantised) blob is still in hand. Under a
+#: lossy codec compact() can then subtract the doomed from the exact value
+#: and quantise ONCE — cheap like the lossless path and flat like the
+#: rebuild — instead of re-encoding every live item, which measured 158x
+#: slower on a 5,000-item epoch. Bounded, because a long editing session
+#: would otherwise hold one (channels, d) array per stroke forever; a miss
+#: simply falls back to the rebuild, which is always correct.
+EXACT_CACHE_EPOCHS = 64
 
 
 class ORStore:
@@ -68,6 +78,7 @@ class ORStore:
         self.epoch = 1 + max((int(k.rsplit(".", 1)[1]) for k in own),
                              default=-1)
         self._items = []
+        self._exact = OrderedDict()   # own epoch key -> exact blob
         self._bundle = self._zeros()
         self._pending = False
         replica.flush_hooks.append(self._publish)
@@ -103,10 +114,20 @@ class ORStore:
             self.seal()
         return add_id
 
+    def _remember_exact(self, key, blob):
+        """Keep the unquantised blob for one of our own epochs, newest
+        first, discarding the oldest past the bound."""
+        self._exact[key] = blob
+        self._exact.move_to_end(key)
+        while len(self._exact) > EXACT_CACHE_EPOCHS:
+            self._exact.popitem(last=False)
+
     def _publish(self):
         if not self._pending:
             return
-        self._blobs().insert(self._epoch_key(), pack_bundle(self._bundle))
+        self._remember_exact(self._epoch_key(), self._bundle.copy())
+        self._blobs().insert(self._epoch_key(),
+                             pack_bundle(self._bundle, self.replica.codec))
         self._index().insert(self._epoch_key(), json.dumps(self._items))
         self._pending = False
 
@@ -209,11 +230,42 @@ class ORStore:
                       if f"{key}/{i}" in tombs and f"{key}/{i}" not in folded]
             if not doomed:
                 continue
-            blob = np.atleast_2d(
-                unpack_bundle(self._blobs().get(key).value)).copy()
-            for i in doomed:
-                blob -= np.atleast_2d(self.encode(items[i]))
-            self._blobs().insert(key, pack_bundle(blob))
+            # How the doomed items leave the blob depends on whether the
+            # wire codec is lossless.
+            #
+            # Lossless ("raw"): decode, subtract, re-pack is EXACT, and it
+            # costs one encode per doomed item. That is the cheap path and
+            # it was never wrong.
+            #
+            # Lossy ("hg8"): the subtract moves values off the
+            # quantisation grid, so re-packing quantises an adjusted
+            # approximation and each compaction adds a little more error —
+            # 0.0119 rising to 0.0271 over six staged batches. Rebuilding
+            # from the descriptor index instead quantises the true value
+            # exactly once however often this runs, flat at 0.0079. It
+            # costs an encode per LIVE item — 158x the cheap path on a
+            # 5,000-item epoch, linear in epoch size against constant —
+            # so it is the last resort, taken only when the exact blob
+            # is not in hand.
+            if self.replica.codec in LOSSLESS_CODECS:
+                blob = np.atleast_2d(
+                    unpack_bundle(self._blobs().get(key).value)).copy()
+                for i in doomed:
+                    blob -= np.atleast_2d(self.encode(items[i]))
+            elif key in self._exact:
+                # the exact blob is still in hand, so subtract from THAT
+                # and quantise once: cheap and drift-free at the same time
+                blob = np.atleast_2d(self._exact[key]).copy()
+                for i in doomed:
+                    blob -= np.atleast_2d(self.encode(items[i]))
+                self._remember_exact(key, blob)
+            else:
+                blob = self._zeros()
+                for i in range(len(items)):
+                    if f"{key}/{i}" not in tombs:
+                        blob += np.atleast_2d(self.encode(items[i]))
+                self._remember_exact(key, blob)
+            self._blobs().insert(key, pack_bundle(blob, self.replica.codec))
             already = json.loads(self._folded().get(key).value) \
                 if self._folded().get(key) is not None else []
             self._folded().insert(key, json.dumps(

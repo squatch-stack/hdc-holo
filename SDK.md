@@ -188,6 +188,60 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **HG-8 on the wire, and the compaction bug it exposed** (sync lane;
+  `holo/crdt.py`, `holo/orset.py`, `docs/sync.md`; issue #4). Epoch and
+  container blobs can now ship gamma-companded: a 64-container replica
+  after 20 edit rounds at d=8192 goes **84.0 MB -> 21.0 MB, 0.25x**, for
+  2 bytes per component against 8. A new dtype code rather than a layout
+  change, so `WIRE_VERSION` does not move and an older build refuses the
+  blob with "unknown dtype code 1" instead of reading the payload as
+  complex64. Peers need not agree on the codec — what replicates is the
+  blob, so convergence is untouched and this is a local bytes/fidelity
+  trade, unlike the trim point, which genuinely needs coordination.
+
+  The interesting part is what a lossy codec exposed in `compact()`. It
+  decoded the stored blob, subtracted the newly tombstoned items and
+  re-packed — fine while blobs are exact, and accumulating once they are
+  not, because the subtract moves values off the quantisation grid and
+  the next compaction re-quantises an adjusted approximation. Six staged
+  batches on one epoch: **0.0119 -> 0.0271, 2.3x and still climbing**,
+  against a flat **0.0079** when the survivors are re-encoded from the
+  descriptor index. The index has every descriptor, so the blob rebuilds
+  from source and quantises exactly once however often compaction runs.
+  **Revisited, because the cost was real.** Rebuilding from the index
+  is per-LIVE-item where the old route was per-doomed-item: measured
+  1.53 s against 0.0097 s on a 5,000-item epoch, **158x**, linear in
+  epoch size against constant. The rule that actually matters turned out
+  to be about WHAT gets quantised, not how the doomed items leave — so
+  compaction now takes the cheapest route that still quantises a true
+  value. Lossless codecs go back to decode-subtract-repack, which was
+  never wrong there and is exact (drift 0.00000). Under a lossy codec it
+  subtracts from the EXACT running blob `_publish` already computes,
+  retained for the 64 most recent own epochs, which is per-doomed-item
+  AND flat. Only a cold process takes the O(epoch) rebuild. All three
+  quantise a true value, so all three sit at the codec's one-shot error.
+
+  The cheap and cold routes agree to float32 rounding, not byte for
+  byte: they add the same terms in different orders and about one code
+  in two thousand crosses a quantisation boundary (1 byte of 2,076, one
+  level, 1.1e-7 relative). That divides no peers — only the owner
+  compacts its own epochs, so there is a single writer.
+
+  **Two wrong measurements on the way there, both worth keeping.** First
+  I "showed" HG-8 generation loss by repacking a blob repeatedly and got
+  a flat 0.0078 — plain repacking is IDEMPOTENT, since a value already
+  on the quantisation grid maps to itself, so that measured nothing.
+  Then I "showed" catastrophic drift by re-subtracting the doomed items
+  every round, which real `compact()` never does (`folded` guards it).
+  The honest number needed staged tombstones on a single epoch. Second,
+  the first version of the regression test compared merged() before
+  against merged() after — merged() compensates for un-folded tombstones
+  at read time, so it is invariant across compaction BY DESIGN and the
+  test passed against the very bug it pinned. It has to measure against
+  an exact survivor sum, and on the ORStrokeScene shape: `ORHoloMap`
+  seals every 16 adds, so no epoch is compacted often enough for the
+  drift to appear at all.
+
 - **The storage codecs corrupted silently above 16 bits** (storage lane;
   `holo/phase.py`, `docs/storage.md`). Codes ride in uint8/int8 at or
   below 8 bits and uint16/int16 above, and nothing checked the width, so
