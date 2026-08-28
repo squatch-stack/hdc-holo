@@ -137,6 +137,17 @@ destroyed another session's uncommitted work once.
   splat trainer. A sweep shares the band Gram AND its eigendecomposition,
   so one process per setting pays N times for both — it is slower as well
   as fatter.
+- **Heavy runs leave a record.** `holo.runlog.record(label, need_gb=)`
+  wraps the headroom check and writes two lines to a gitignored
+  `out/runs/<date>.jsonl`: one when the run starts, one when it ends. A
+  start with no end is a run that was KILLED — SIGKILL runs no `atexit`
+  handler, so the evidence has to be on disk before the process dies.
+  `python -m holo.runlog` lists them and flags the killed ones with
+  whatever was holding the machine at the time; `--killed` shows only
+  those. The start record carries the commit, whether the tree was
+  dirty, the backend and the contending jobs, because a number whose
+  code and machine are unknown is not reproducible and a wall-clock
+  without them is not comparable.
 - **Memory is not the only thing you share with a GPU trainer.**
   `holo/accel.py` picks the MLX/Metal backend whenever mlx imports, so a
   heavy encode runs on the same GPU as any splat training on the box.

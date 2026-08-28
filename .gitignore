@@ -14,3 +14,5 @@ quality/codegraph*
 # generated submission bundle (paper/make_arxiv_bundle.py); the rest
 # of out/ is committed evidence figures
 out/arxiv/
+# run telemetry: local, and every heavy run writes one
+out/runs/

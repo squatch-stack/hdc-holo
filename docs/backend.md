@@ -51,6 +51,11 @@ silently stay on NumPy, results still correct and the GPU never
 engaged — and it is now pinned by
 `tests/test_holo_facade.py::test_runtime_backend_patch_reaches_the_facade_and_the_shim`.
 
+**Which backend ran is recorded.** `HDC_BACKEND=numpy` and MLX/Metal
+give different results, so `holo.runlog` captures `backend_name()` in
+every heavy run's start record — a measurement that does not say which
+one produced it cannot be compared with another.
+
 **Platform precision gotchas** — defaults that silently trade accuracy,
 each discovered by tests/bring-up rather than documentation:
 

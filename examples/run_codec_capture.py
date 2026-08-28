@@ -23,7 +23,7 @@ import time
 
 import numpy as np
 
-from holo import budget
+from holo import runlog
 from holo.capture import (
     band_codebooks,
     build_scene,
@@ -131,6 +131,6 @@ def main(path, with_shrink=False):
 
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    with budget.heavy_run(5.0, "codec capture",
-                          "--force-memory" in sys.argv):
+    with runlog.record("codec capture", need_gb=5.0,
+                       force="--force-memory" in sys.argv):
         main(args[0] if args else DEFAULT_SCENE, "--shrink" in sys.argv)
