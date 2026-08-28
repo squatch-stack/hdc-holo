@@ -130,6 +130,38 @@ What the effect pointed at was real, though, and taking it deliberately
 recovers far more than the accident ever did — see
 [the shrinkage denoiser](#denoising-before-you-persist) below.
 
+## Bits and rank are one budget, not two
+
+Every codec choice above holds `d` fixed and asks how few bytes each
+component can take. That is half the question, and the other half
+inverts a standing negative: doubling `d` bought only 2-4% for +600 MB
+([spatial.md](spatial.md)) — but that was measured at CONSTANT bits, so
+it also doubled the bytes. Spend a FIXED budget instead, and more
+dimensions at lower precision win (`bench/precision_battery.py`, D1;
+12 real xfine cells, per-cell reconstruction against the exact mixture):
+
+| configuration | bytes/cell | median rel err |
+|---|---|---|
+| d=4,096 @ 16 bit | 16,400 | 0.2223 |
+| d=8,192 @ 8 bit (shipped) | 16,400 | 0.1781 |
+| **d=16,384 @ 4 bit** | 16,400 | **0.1283** |
+| d=32,768 @ 4 bit (2x budget, control) | 32,784 | 0.0950 |
+
+**28% better at identical bytes**, monotonically, which is the
+low-precision random-features result (arXiv:1811.00155) transferring to
+projection-slice readout. It was predicted NOT to transfer — 4-bit phase
+quantisation is 0.11 rad of noise, which looked large against the
+crosstalk floor — and the prediction was wrong.
+
+Two limits before this becomes a rule. The measurement is per-cell
+reconstruction on one band, not the slice error the rest of the repo
+reports, so it argues for a full evaluation rather than a default
+change. And `pack_polar` cannot express below 4 bits: `_pack_block`
+nibble-packs anything at or under 4, so a 2-bit code occupies a 4-bit
+slot and d=32,768 @ 2 bit is not a rate point that exists. Going
+further needs a sub-nibble packer, and 2-bit round-trips at 0.50
+relative on its own, so it may not be worth writing.
+
 **The refined rules**: `HP` for codeword/symbol stores. `HG-8` when
 fidelity TO THE BUNDLE is the contract — fitted holograms, mid-edit
 sync payloads, anything still being computed with, and anything already

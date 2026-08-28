@@ -289,6 +289,81 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   cost exactly what 8 costs, and 9 through 15 cost what 16 costs. Below
   4 bits there is no rate point at all without a sub-nibble packer,
   which is what capped the rank-versus-bits sweep at 4.
+- **CLAIMED: precision lane** — `bench/precision_battery.py`,
+  `docs/backend.md`, `docs/storage.md`. Stacked on the memory-pact lane
+  because the battery uses `holo.budget` to survive a shared machine.
+- **The projection solve does not need float64, and the reason it stays
+  on NumPy is not precision.** The question came from asking why encode
+  and decode run on Metal while the solve does not. The first answer
+  given was "Metal has no float64 and our Gram is conditioned 1.6e20" —
+  and 1.6e20 describes a matrix this pipeline never inverts. The full
+  Gram's smallest eigenvalue is NEGATIVE (-3.1e-18): it is numerically
+  rank-deficient, so its condition number is measuring noise, which is
+  why quoted values wander between 6e14 and 3e20. What gets inverted is
+  the truncated operator, conditioned 3.9e3 at the shipped 25%.
+
+  Measured (B1, A1, B2): MLX refuses `eigh`/`inv`/`solve`/`cholesky`/
+  `qr`/`svd` on the GPU at EVERY dtype, so no amount of precision work
+  moves the factorisation — but `matmul` runs on GPU at float16,
+  float32 AND complex64. Applying the operator in float32 costs 1.4e-5
+  against a slice error of 0.2170, and Metal complex64 runs that apply
+  6.7x faster than the shipped float64 path, agreeing to 5.8e-7.
+  `kappa_eff * eps_f32` predicts the safe settings in advance: TSVD
+  keep-25% and Tikhonov lam=1e-1 are fine; lam=1e-6, which wins on
+  saguaro, is destroyed (0.71).
+
+  A2 then went further than expected: computing the operator IN float32
+  — `eigh` and `inv` in single precision, not a float64 result cast down
+  — lands in the same place, 1.38e-5 at the shipped truncation against
+  the cast's 1.38e-5. Factorising in float32 costs nothing beyond
+  applying in it, so the barrier to moving the WHOLE solve to a
+  low-precision device is MLX's missing GPU linear algebra and nothing
+  numerical. That also matters for any CUDA port: consumer NVIDIA parts
+  run float64 at a fraction of their float32 rate, and this says the
+  port would not need float64.
+- **float16 fails on RANGE, not precision — and block floating point is
+  39x better than complex32 for the same bytes.** The Gram spans 213-222
+  decades with 100% of nonzero entries below float16's smallest normal,
+  and the operator's largest entry (4.9e6) is past float16's ceiling, so
+  naive `complex32` underflows at one end and overflows at the other.
+  Per-block exponents fix exactly that: 1.9e-4 against complex32's
+  7.5e-3 at 4 bytes/component. Block size barely matters (64 vs 256
+  differs 3%), which is why `pack_polar`'s single whole-vector scale
+  already does most of the work — an independent re-derivation of
+  arXiv:2605.28451's result on Apple Silicon.
+
+  **A prediction that was wrong**: HG-8 was predicted to beat complex32
+  "outright, and not narrowly". It does not — complex32 edges it on
+  error (0.0075 against 0.0080) while costing twice the bytes. HG-8
+  wins per byte, which is the claim that should have been made.
+- **Bits and rank are ONE budget, and the standing d-doubling negative
+  measured the wrong axis.** "Doubling d bought 2-4% for +600 MB" held
+  bits constant, so it also doubled the bytes. At a FIXED 16,400 bytes
+  per cell, more dimensions at lower precision win monotonically:
+  d=4,096@16bit 0.2223, d=8,192@8bit (shipped) 0.1781,
+  **d=16,384@4bit 0.1283** — 28% better than shipped, at identical
+  bytes. That is arXiv:1811.00155 transferring to projection-slice
+  readout, and it was predicted NOT to transfer on the grounds that
+  4-bit phase noise (0.11 rad) would swamp the crosstalk floor. Wrong,
+  and it is the most useful thing the battery found.
+
+  Two limits before it becomes a default: the measurement is per-cell
+  reconstruction on one band rather than the slice error the repo
+  reports, and `pack_polar` cannot go below 4 bits — `_pack_block`
+  nibble-packs anything at or under 4, so a 2-bit code occupies a 4-bit
+  slot and that rate point does not exist without a sub-nibble packer.
+- **Three planned experiments were dropped once A1 landed**, recorded
+  rather than quietly omitted. End-to-end float32 (A3): decode is LINEAR
+  in the solved coefficients, so A1's 1.4e-5 bounds the slice error's
+  change at the same order — it would confirm linearity, not precision,
+  at the cost of a full pipeline run. Iterative refinement (A4) was
+  gated on float32 factorisation failing. Ozaki-style split GEMM on
+  Metal (E) was gated on float32 being INSUFFICIENT, and it is
+  sufficient for every setting the pipeline ships — emulating float64 on
+  Metal would solve a problem we do not have. The Ozaki and
+  metal-float64 literature stays recorded in case lam=1e-6 ever has to
+  run on a low-precision device, which is the one case that would need
+  it.
 - **CLAIMED: memory/sync lane** — the headroom guard
   (`holo/budget.py`, `CONTRIBUTING.md`, `examples/run_projection_pipeline.py`)
   and then `holo/crdt.py` + `docs/sync.md` for the shallow-snapshot trim

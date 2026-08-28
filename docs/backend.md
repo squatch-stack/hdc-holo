@@ -74,6 +74,72 @@ allocations) — see the determinism caveat in `SDK.md`. CI proves
 graceful degradation: the Linux job runs the entire suite with no MLX
 installed; the macOS job runs it twice, MLX and forced-NumPy.
 
+**What Metal can and cannot run** (`bench/precision_battery.py`, B1).
+The projection solve stays on NumPy, and the reason is not precision:
+
+| MLX op | GPU |
+|---|---|
+| `matmul` | ok at float16, float32 and **complex64** — float64 refused |
+| `eigh`, `inv`, `solve`, `cholesky`, `qr`, `svd` | **unsupported at every dtype** |
+
+MLX has no GPU linear algebra at all, so the factorisation cannot move
+whatever precision it is asked for. What CAN move is applying an
+already-built operator, and that is worth doing: at the shapes the
+per-cell solve uses, Metal complex64 runs it in 0.396 s against NumPy
+float64's 2.657 s — **6.7x** — agreeing to 5.8e-7.
+
+**float32 is enough to apply the operator, and which settings are safe
+is calculable in advance.** The full Gram is conditioned 6.3e14 and its
+smallest eigenvalue is *negative* (-3.1e-18): it is numerically
+rank-deficient, so that number measures noise. What the pipeline
+actually inverts is the truncated operator, and its effective
+conditioning is what decides the precision:
+
+| operator | kappa_eff | float32 application error |
+|---|---|---|
+| TSVD keep 25% (shipped) | 3.9e3 / 5.6e4 | 1.4e-5 / 5.2e-5 |
+| TSVD keep 10% | 2.3e2 | 8.8e-7 |
+| Tikhonov lam=1e-1 | 2.6e3 | 1.2e-4 |
+| Tikhonov lam=1e-3 | 2.6e5 | 8.3e-3 |
+| Tikhonov lam=1e-6 | 2.6e8 | **0.71 - destroyed** |
+
+`kappa_eff * eps_f32` predicts each row, so a setting can be screened
+for float32 safety without running it. Against a slice error of 0.2170
+the shipped truncation costs 1.4e-5; lam=1e-6, which wins on saguaro,
+cannot be applied in float32 at all.
+
+**Factorising in float32 costs no more than applying in it.** The table
+above casts a float64 operator down; computing the operator in float32
+to begin with — `eigh` and `inv` themselves in single precision — lands
+in the same place: 1.38e-5 at the shipped truncation against the
+1.38e-5 of the cast, and 4.9e-5 on the fine band. lam=1e-6 fails the
+same way (0.14 to 0.32). So the constraint on moving the whole solve to
+a low-precision device is not numerical at all — it is that MLX has no
+GPU linear algebra. Somewhere that does (cuSOLVER's `ssyevd`, or MLX on
+the CPU) could own the factorisation in float32, which matters because
+consumer NVIDIA parts run float64 at a fraction of their float32 rate.
+
+**float16 is out of RANGE here, not out of precision.** Measured spans:
+the Gram covers 213-222 decades with **100%** of its nonzero entries
+below float16's smallest normal (6.1e-5), and the operator's largest
+entry is 4.9e6 — past float16's 65504 ceiling. Naive `complex32`
+(2x float16) therefore underflows at one end and overflows at the
+other. Giving each block its own exponent fixes exactly that, and at
+identical bytes:
+
+| codec | bytes/component | median round-trip error |
+|---|---|---|
+| BFP16, block 64 | 4 | **1.9e-4** |
+| complex32 (2x float16) | 4 | 7.5e-3 |
+| HG-8 (`pack_polar`) | 2 | 8.0e-3 |
+| HG-4 | 1 | 1.3e-1 |
+
+Block floating point is **39x** more accurate than complex32 for the
+same space, and block size barely matters (64 against 256 differs by
+3%) — which is why `pack_polar`'s single whole-vector scale already
+does most of the work. float32's range covers all of it, so the small
+end underflowing is harmless: those entries are Gaussian tails.
+
 **API.**
 ```python
 from holo import backend
