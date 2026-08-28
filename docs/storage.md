@@ -28,6 +28,24 @@ before phase-projecting bundles.
 level-mapping) pair is a compatibility surface — which is why persisted
 codes go through the tagged envelope, never raw arrays.
 
+**Width is validated on both sides, because it used to wrap in silence.**
+Codes ride in uint8/int8 at <= 8 bits and uint16/int16 above, so 16 is the
+widest this layer can represent. Past that the cast wrapped with no error:
+on a 1024-component bundle, 17-bit round-tripped at 1.051 relative and
+24- and 32-bit at 1.000 — output carrying none of the input. Asking for
+MORE precision returned garbage. `bits=0` divided by zero into NaN behind
+a RuntimeWarning. All three codecs now refuse anything outside [1, 16].
+
+The decode side is checked too, and that is the half that matters for
+replication: `bits` is read back OUT of the header, so on a blob that
+arrived from a peer it is untrusted input. A forged width is refused
+rather than decoded — the whole point of the tagged envelope.
+
+Width buys bytes in three steps, not smoothly: <= 4 bits nibble-pack, 5-8
+take a byte, 9-16 take two. So 5, 6 and 7 bits cost exactly what 8 costs,
+and 9 through 15 cost what 16 costs — pick the top of each step. Below 4
+bits there is no rate point at all without a sub-nibble packer.
+
 **Format tags (storage v1).** `pack`/`unpack` wrap the codes in an
 8-byte `HP` header (version, bits, dim) and nibble-pack two codes per
 byte at <= 4 bits — a 4-bit codeword really is dim/2 bytes on disk.

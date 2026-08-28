@@ -188,6 +188,27 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **The storage codecs corrupted silently above 16 bits** (storage lane;
+  `holo/phase.py`, `docs/storage.md`). Codes ride in uint8/int8 at or
+  below 8 bits and uint16/int16 above, and nothing checked the width, so
+  the cast wrapped without error: on a 1024-component bundle, 17-bit
+  round-tripped at 1.051 relative and 24- and 32-bit at 1.000 — output
+  carrying none of the input. Asking for MORE precision returned
+  garbage. `bits=0` divided by zero into NaN behind a RuntimeWarning.
+  All three codecs (HP, HM, HG) shared it.
+
+  Found while auditing `pack_polar` before putting HG-8 on the wire, and
+  that is the reason it matters beyond tidiness: `bits` is read back OUT
+  of the header, so on a replicated blob it is peer-controlled input,
+  and a forged width decoded to silent garbage. Both sides are now
+  validated to [1, 16] — a caller mistake on encode, untrusted input on
+  decode. Twenty-five tests in `tests/test_phase.py` fail without it.
+
+  Recorded while there: width buys bytes in three steps, not smoothly.
+  <= 4 bits nibble-pack, 5-8 take a byte, 9-16 take two — so 5, 6 and 7
+  cost exactly what 8 costs, and 9 through 15 cost what 16 costs. Below
+  4 bits there is no rate point at all without a sub-nibble packer,
+  which is what capped the rank-versus-bits sweep at 4.
 - **CLAIMED: memory/sync lane** — the headroom guard
   (`holo/budget.py`, `CONTRIBUTING.md`, `examples/run_projection_pipeline.py`)
   and then `holo/crdt.py` + `docs/sync.md` for the shallow-snapshot trim
