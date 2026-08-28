@@ -17,6 +17,7 @@ import time
 
 import numpy as np
 
+from holo import budget
 from holo.capture import (
     BANDS,
     DIM,
@@ -178,10 +179,11 @@ def main(path):
 
 
 if __name__ == "__main__":
-    args = list(sys.argv[1:])
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
     do_stats = "stats" in args
     paths = [a for a in args if a != "stats"] or [DEFAULT_SCENE]
-    if do_stats:
-        stats(paths[0])
-    else:
-        main(paths[0])
+    with budget.heavy_run(6.0, "real scene", "--force-memory" in sys.argv):
+        if do_stats:
+            stats(paths[0])
+        else:
+            main(paths[0])

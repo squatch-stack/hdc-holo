@@ -188,6 +188,63 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **CLAIMED: memory/sync lane** — the headroom guard
+  (`holo/budget.py`, `CONTRIBUTING.md`, `examples/run_projection_pipeline.py`)
+  and then `holo/crdt.py` + `docs/sync.md` for the shallow-snapshot trim
+  protocol. Both areas were unclaimed and untouched on main at 7bfda1f.
+- **The >4 GB pact needed to be code, not a rule.** CONTRIBUTING.md
+  already said to check `ps` before a heavy encode, because two
+  concurrent real-scene runs had OOM-killed each other. It was then not
+  checked twice more: a Tikhonov lambda sweep was launched as parallel
+  processes next to a 15 GB splat trainer. The diagnosis is not only
+  "forgot to look" — a sweep run as N processes rebuilds the SAME 537 MB
+  band Gram N times and pays for the SAME O(d^3) eigendecomposition N
+  times, so the parallel shape was slower as well as fatter. One process
+  sharing the Gram (and one eigendecomposition across every TSVD
+  truncation) is strictly better on both axes. `holo.budget` is
+  deliberately off the public surface: it shells out to `ps` and reads
+  free memory, which is developer behaviour, not library behaviour.
+- **Measured, and the peak is not where it won.** On saguaro at d=8192:
+
+  | version | settings | peak RSS | wall |
+  |---|---|---|---|
+  | main @ 7bfda1f | 1 | 5.05 GB | 769 s |
+  | this branch | 1 | 5.28 GB | 416 s |
+  | this branch | 3 | 5.00 GB | 953 s |
+
+  The single-setting peak went UP 4.5%, not down, and releasing the Gram
+  before the last setting's solves recovered only 0.35 GB of the 0.58 GB
+  that retaining it cost. Freeing the forward bundles and halving the
+  Gram build's temporaries did not move the high-water mark, which is a
+  reminder that peak RSS is a high-water mark and freeing does not lower
+  one. **The win is consolidation, not the peak**: three settings cost
+  5.00 GB in one process where three processes cost about 15 GB, and
+  953 s against roughly 2300 s run serially. Wall-clock across versions
+  is not comparable — a 15-24 GB splat trainer had the machine for parts
+  of every run.
+
+  All three settings reproduced their registered numbers exactly
+  (0.2170/0.1367, 0.1227/0.0803, 0.1377/0.0963), which is the real
+  correctness result: Tikhonov running AFTER a TSVD setting on a shared
+  Gram still restores the diagonal correctly at d=8192, not just at the
+  d=384 the unit test pins.
+- **Three ways to lose a heavy run, and the guard covers one.** Memory
+  is the documented one. The second is self-inflicted and cost a restart
+  here: a full `pytest` launched while this lane's own 3-setting sweep
+  was still resident took the machine down — the pact is about MY other
+  jobs as much as anyone else's, and a test suite counts. The third is
+  not memory at all: `holo/accel.py` selects MLX/Metal whenever mlx
+  imports, so an encode shares the GPU with any splat training on the
+  box, and when that faults the GPU, Metal's recovery discards this
+  process's command buffer as an `InnocentVictim`. Measured here mid-run.
+  `HDC_BACKEND=numpy` sidesteps it when only the number is wanted.
+- **The guard caught a live collision on its first run**, which is the
+  only reason it is worth its lines: it named a `msplat -n 3000` trainer
+  climbing to 15 GB while a baseline pipeline held 4.8 GB, and reporting
+  jobs by `comm` was useless for exactly the process that matters — this
+  venv's interpreter is a symlink and `comm` resolves it to an Xcode
+  framework path naming no job at all. Report by argv, basename-first.
+
 - **Projection encode cost: 98% of it was one call, and the fix changed
   the accuracy too** (research lane; `examples/run_projection_pipeline.py`,
   `docs/fit.md`). Profiling put 106 s of a 108.6 s per-band fixed cost in
