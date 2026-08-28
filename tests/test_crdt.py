@@ -273,3 +273,123 @@ def test_trim_history_keeps_this_peer_writing_under_its_own_name():
     A.flush()
     # the new write lands under the SAME peer shard, not a second one
     assert {k.rsplit("::", 1)[1] for k in A._bundles().keys()} == {peer}
+# -- HG-8 on the wire -------------------------------------------------------
+
+def test_hg8_blobs_are_a_quarter_of_the_bytes_and_round_trip():
+    from holo.crdt import pack_bundle, unpack_bundle
+    rng = np.random.default_rng(0)
+    for shape in ((4096,), (4, 4096)):
+        v = (rng.standard_normal(shape)
+             + 1j * rng.standard_normal(shape)).astype(np.complex64)
+        raw, hg8 = pack_bundle(v), pack_bundle(v, codec="hg8")
+        # 2 bytes/component against complex64's 8, plus a 16-byte polar
+        # header per channel on top of the 12-byte blob header
+        assert 0.24 < len(hg8) / len(raw) < 0.27
+        out = unpack_bundle(hg8)
+        assert out.shape == v.shape
+        assert np.linalg.norm(out - v) / np.linalg.norm(v) < 0.02
+
+
+def test_raw_stays_byte_identical_so_the_default_did_not_move():
+    from holo.crdt import pack_bundle
+    v = np.arange(64, dtype=np.complex64)
+    assert pack_bundle(v) == pack_bundle(v, codec="raw")
+
+
+def test_an_unknown_codec_name_is_refused():
+    from holo.crdt import pack_bundle
+    with pytest.raises(ValueError, match="unknown wire codec"):
+        pack_bundle(np.ones(4, np.complex64), codec="nope")
+    with pytest.raises(ValueError, match="unknown wire codec"):
+        HoloReplica(FHRR(64, seed=0), codec="nope")
+
+
+def test_an_older_build_refuses_an_hg8_blob_loudly():
+    """A new dtype code, not a new layout, so WIRE_VERSION does not move.
+    The contract that makes that safe is that a build which does not know
+    the code REFUSES rather than reading the payload as complex64."""
+    from holo import crdt
+    blob = bytearray(crdt.pack_bundle(np.ones(32, np.complex64), codec="hg8"))
+    blob[3] = 99                                   # a dtype nobody speaks
+    with pytest.raises(ValueError, match="unknown dtype code"):
+        crdt.unpack_bundle(bytes(blob))
+
+
+def test_peers_may_choose_different_codecs_and_still_converge():
+    """What replicates is the BLOB, so a peer writing hg8 and a peer
+    writing raw still read identical bytes for each other's containers.
+    The codec is a local bytes/fidelity trade, not a compatibility
+    surface, and needs no coordination."""
+    A = HoloReplica(FHRR(1024, seed=0), codec="raw")
+    B = HoloReplica(FHRR(1024, seed=0), codec="hg8")
+    kv_a, kv_b = ReplicatedHoloMap(A), ReplicatedHoloMap(B)
+    kv_a.put("from-a", "x")
+    kv_b.put("from-b", "y")
+    A.sync(B)
+    assert sorted(A.containers()) == sorted(B.containers())
+    assert np.allclose(A.merged("kv"), B.merged("kv"), atol=1e-5)
+
+
+def test_compaction_under_a_lossy_codec_does_not_drift():
+    """Regression pin, on the shape where it actually bites.
+
+    compact() used to decode the stored blob, subtract the newly
+    tombstoned items and re-pack. Under a lossy codec the subtract moves
+    values OFF the quantisation grid, so every compaction re-quantises an
+    adjusted approximation and the error accumulates. Re-encoding the
+    survivors from the descriptor index quantises the true value exactly
+    once however often it runs. Measured here, six staged batches:
+
+        old (subtract + repack)  0.0119 -> 0.0271   2.3x, still climbing
+        new (re-encode)          0.0078 -> 0.0079   flat
+
+    Two things this had to get right to be worth having. It measures
+    against GROUND TRUTH, not merged() before against merged() after:
+    merged() compensates for un-folded tombstones at read time, so it is
+    invariant across compaction BY DESIGN and comparing it to itself
+    passes against the implementation being pinned. And it uses ONE epoch
+    holding everything — the ORStrokeScene shape, and the capture-scale
+    stroke case issue #4 is about. ORHoloMap seals every 16 adds, so no
+    single epoch is compacted often enough to drift and the bug hides.
+    """
+    import json
+
+    from holo.orset import ORStore
+
+    A = HoloReplica(FHRR(1024, seed=0), codec="hg8")
+    vecs = {}
+
+    def encode(desc):
+        if desc not in vecs:
+            rng = np.random.default_rng(len(vecs))
+            vecs[desc] = (rng.standard_normal(1024)
+                          + 1j * rng.standard_normal(1024)
+                          ).astype(np.complex64)
+        return vecs[desc]
+
+    store = ORStore(A, "s", encode, epoch_size=10 ** 9, channels=1)
+    ids = [store.add("item%d" % i) for i in range(40)]
+    store.seal()
+    A.flush()
+
+    def exact_live():
+        tombs = set(store._tombs().keys())
+        total = store._zeros()
+        for key in sorted(store._blobs().keys()):
+            if not key.startswith("s/") or key in tombs:
+                continue
+            for i, desc in enumerate(json.loads(store._index().get(key).value)):
+                if f"{key}/{i}" not in tombs:
+                    total += np.atleast_2d(store.encode(desc))
+        return total
+
+    errs = []
+    for stage in range(6):
+        for i in range(stage * 4, stage * 4 + 4):
+            store.remove(ids[i])
+        store.compact()
+        truth = exact_live()
+        errs.append(float(np.linalg.norm(store.merged() - truth)
+                          / np.linalg.norm(truth)))
+    assert max(errs) < 0.012, errs           # the codec's one-shot error
+    assert errs[-1] < errs[0] * 1.2, errs    # and it does not grow

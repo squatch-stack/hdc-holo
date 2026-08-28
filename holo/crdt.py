@@ -43,6 +43,7 @@ import numpy as np
 from .demokit import banner
 from .fhrr import FHRR, ItemMemory
 from .field import GaussianSplatField
+from .phase import pack_polar, unpack
 from .record import RecordSpace
 
 try:
@@ -67,14 +68,45 @@ WIRE_VERSION = 1
 _BLOB_MAGIC = b"HB"
 _BLOB_HEADER = struct.Struct("<2sBBHIH")  # magic, ver, dtype, channels, dim, reserved
 _DTYPE_COMPLEX64 = 0
+_DTYPE_HG8 = 1
+
+#: Wire codecs, by the name callers pass. "hg8" is gamma-companded polar
+#: (storage.md's HG-8): a quarter of the bytes at 0.010 drift against the
+#: uncompressed decode, which is the faithful codec that study settled on.
+#: A NEW DTYPE CODE, NOT A NEW LAYOUT — the header always had a dtype
+#: field, so WIRE_VERSION does not move and a build that predates this
+#: refuses the blob loudly with "unknown dtype code 1" rather than
+#: decoding it as complex64.
+CODECS = ("raw", "hg8")
+_CODEC_DTYPE = {"raw": _DTYPE_COMPLEX64, "hg8": _DTYPE_HG8}
+
+#: Codecs that survive a decode/re-encode round unchanged. "raw" is the
+#: complex64 bytes themselves, so adjusting a decoded blob and re-packing
+#: it is exact; a lossy codec re-quantises an adjusted approximation and
+#: drifts, which is why ORStore.compact() picks its strategy from this.
+LOSSLESS_CODECS = frozenset({"raw"})
 
 
-def pack_bundle(arr):
-    """complex64 bundle (d,) or (channels, d) -> tagged blob bytes."""
+def pack_bundle(arr, codec="raw"):
+    """complex64 bundle (d,) or (channels, d) -> tagged blob bytes.
+
+    Peers may choose different codecs without coordinating: what
+    replicates is the BLOB, so every replica decodes the same bytes to
+    the same values and convergence is untouched. The choice is a local
+    bytes/fidelity trade, not part of the compatibility surface.
+    """
+    if codec not in _CODEC_DTYPE:
+        raise ValueError("unknown wire codec %r; expected one of %s"
+                         % (codec, ", ".join(CODECS)))
     a = np.ascontiguousarray(arr, dtype=np.complex64)
     channels, dim = (1, a.shape[0]) if a.ndim == 1 else a.shape
-    return _BLOB_HEADER.pack(_BLOB_MAGIC, WIRE_VERSION, _DTYPE_COMPLEX64,
-                             channels, dim, 0) + a.tobytes()
+    head = _BLOB_HEADER.pack(_BLOB_MAGIC, WIRE_VERSION, _CODEC_DTYPE[codec],
+                             channels, dim, 0)
+    if codec == "raw":
+        return head + a.tobytes()
+    rows = a.reshape(channels, dim)
+    return head + b"".join(pack_polar(rows[c], bits=8)
+                           for c in range(channels))
 
 
 def unpack_bundle(buf):
@@ -89,22 +121,40 @@ def unpack_bundle(buf):
     if ver != WIRE_VERSION:
         raise ValueError(f"bundle blob is wire version {ver}; this build "
                          f"speaks {WIRE_VERSION}")
-    if dtype != _DTYPE_COMPLEX64:
-        raise ValueError(f"bundle blob has unknown dtype code {dtype}")
-    data = np.frombuffer(buf, np.complex64, count=channels * dim,
-                         offset=_BLOB_HEADER.size)
-    return data if channels == 1 else data.reshape(channels, dim)
+    if dtype == _DTYPE_COMPLEX64:
+        data = np.frombuffer(buf, np.complex64, count=channels * dim,
+                             offset=_BLOB_HEADER.size)
+        return data if channels == 1 else data.reshape(channels, dim)
+    if dtype == _DTYPE_HG8:
+        # every channel is a self-describing HG blob of identical length
+        # for a given (bits, dim), so the payload splits evenly
+        payload = len(buf) - _BLOB_HEADER.size
+        if channels <= 0 or payload % channels:
+            raise ValueError(
+                "hg8 bundle blob payload of %d bytes does not divide into "
+                "%d channels" % (payload, channels))
+        each = payload // channels
+        rows = [unpack(buf[_BLOB_HEADER.size + c * each:
+                           _BLOB_HEADER.size + (c + 1) * each])
+                for c in range(channels)]
+        out = np.asarray(rows, dtype=np.complex64)
+        return out[0] if channels == 1 else out
+    raise ValueError(f"bundle blob has unknown dtype code {dtype}")
 
 
 class HoloReplica:
     """One peer's handle on a replicated set of holographic containers."""
 
-    def __init__(self, space, doc=None):
+    def __init__(self, space, doc=None, codec="raw"):
         if doc is None:
             if not HAVE_LORO:
                 raise RuntimeError("pip install loro")
             doc = LoroDoc()
+        if codec not in _CODEC_DTYPE:
+            raise ValueError("unknown wire codec %r; expected one of %s"
+                             % (codec, ", ".join(CODECS)))
         self.space = space
+        self.codec = codec
         self.doc = doc
         self.peer = str(doc.peer_id)
         self.local = {}     # container -> this peer's own partial bundle
@@ -143,7 +193,8 @@ class HoloReplica:
             hook()
         m = self._bundles()
         for c in sorted(self.dirty):
-            m.insert(f"{c}::{self.peer}", pack_bundle(self.local[c]))
+            m.insert(f"{c}::{self.peer}", pack_bundle(self.local[c],
+                                                      self.codec))
         self.dirty.clear()
         if self.doc.get_pending_txn_len() > 0:
             self._check_format(writing=True)

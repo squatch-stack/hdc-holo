@@ -11,7 +11,7 @@ already bit us once.
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'        # + '.[gpu]' on Apple silicon,
                                          # + '.[crdt]' for Loro sync
-.venv/bin/python -m pytest tests/ -q     # 195+ tests, a few seconds
+.venv/bin/python -m pytest tests/ -q     # 215+ tests, a few seconds
 ```
 
 NumPy is pinned `<2.0`: the Accelerate-backed 2.0 wheels on macOS
