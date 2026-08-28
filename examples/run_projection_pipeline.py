@@ -11,6 +11,19 @@ other number in this repo is reported in. Measured:
 Biggest on the DENSE scene, which is the one more dimension could not
 help (issue #3) and where orthogonal coupling bought 1.9%.
 
+SCORED PER BAND AS WELL AS IN AGGREGATE, because the aggregate alone is
+not an acceptance test. On Red Rock at keep=0.55 the slice error
+IMPROVES while every cell of the `fine` band sits at 1030x the forward
+bundle norm: that band holds 0.7% of the splats (3,854 against xfine's
+542,122), so destroying it barely moves a number xfine dominates. The
+second referee is close to free — the bands partition the splats, so
+four single-band passes touch what one full pass does.
+
+--spectrum reports what a `keep` fraction actually CUTS AT, per band,
+and needs no capture at all: the Gram depends on (codebook, cell size,
+window width) alone. `keep` is a rank fraction, which is not the same
+thing as a regularisation level, and the two differ per band.
+
 Three things make this affordable, and the third is a trap:
 
 1. The windowed right-hand side IS `spectral_bundle` applied to a
@@ -44,7 +57,9 @@ Usage:
     python -m examples.run_projection_pipeline data/train.splat [keep_frac]
     python -m examples.run_projection_pipeline data/train.splat \
         --sweep tikhonov=1e-6,1e-3,1e-1 --sweep keep=0.25
+    python -m examples.run_projection_pipeline --spectrum
 """
+import os
 import sys
 import time
 from collections import namedtuple
@@ -54,6 +69,7 @@ import numpy as np
 from holo import runlog
 from holo.capture import (
     BANDS,
+    DIM,
     band_codebooks,
     build_scene,
     decode_slice,
@@ -135,6 +151,101 @@ def build_gram(fd, s):
     np.exp(G, out=G)
     G *= (2 * np.pi * s ** 2) ** 1.5
     return G
+
+
+#: What `--spectrum` reports. The eps grid spans the regime the
+#: pipeline actually operates in: at d=8192 the shipped keep=0.25 cuts
+#: at 2.56e-4 on `xfine` and 1.77e-5 on `fine`, so a grid of 1e-8 and
+#: below — chosen from a d=2048 rehearsal — sits entirely on the loose
+#: side of every setting ever run and answers nothing.
+SPECTRUM_KEEPS = (0.25, 0.40, 0.55, 0.70)
+SPECTRUM_EPS = (1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-8)
+
+#: Where --spectrum leaves the spectra themselves. Committed, because
+#: the eigendecompositions behind them cost 11 minutes and every later
+#: threshold question is a lookup against this file rather than a rerun.
+SPECTRUM_NPZ = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "out", "gram_spectrum_d%d.npz")
+
+
+def spectrum_table(dim=DIM, bands=None):
+    """Each band's Gram spectrum: magnitudes, descending, scaled to 1.
+
+    Needs no capture — the Gram depends on (codebook, cell size, window
+    width) alone, which is also why a sweep can share it.
+
+    Uses `eigvalsh` rather than `eigen`: the eigenvectors cost a second
+    d x d buffer and most of the runtime, and nothing here applies an
+    operator. The eigenvalues agree to machine precision, far tighter
+    than anything read off this.
+    """
+    books = band_codebooks(np.random.default_rng(42), bands, dim)
+    for name, _cap, cell in (bands or BANDS):
+        freqs, _rho, _weights = books[name]
+        a = np.abs(np.linalg.eigvalsh(build_gram(freqs.astype(np.float64),
+                                                 (cell / 2) / 2)))
+        a = np.sort(a)[::-1]
+        yield name, a / a[0]
+
+
+def at_keep(spectrum, frac):
+    """The relative eigenvalue a RANK fraction cuts at — the smallest
+    one the truncated operator will divide by, and therefore the thing
+    that actually sets the regularisation."""
+    return float(spectrum[max(1, round(frac * len(spectrum))) - 1])
+
+
+def at_eps(spectrum, eps):
+    """The rank fraction a THRESHOLD implies."""
+    return int((spectrum > eps).sum()) / len(spectrum)
+
+
+def report_spectrum(dim=DIM, run=None, save=True):
+    """Whether `keep` is the right knob, in two tables and one file.
+
+    `keep` truncates by rank, which says nothing about how SMALL the
+    smallest survivor is. Each band draws its frequencies at its own
+    scale cap, so one rank fraction lands at a different eigenvalue in
+    every band — and the band whose spectrum decays fastest is the one
+    a shared `keep` regularises LEAST.
+    """
+    spectra = {}
+    for name, spectrum in spectrum_table(dim):
+        spectra[name] = spectrum
+        if run is not None:
+            run.result(**{name: {
+                "eigenvalue_at_keep": {"%.2f" % k: float("%.3e"
+                                                         % at_keep(spectrum, k))
+                                       for k in SPECTRUM_KEEPS},
+                "keep_at_eps": {"%.0e" % e: round(at_eps(spectrum, e), 3)
+                                for e in SPECTRUM_EPS}}})
+        print("  %-7s measured" % name, flush=True)
+
+    _spectrum_tables(spectra, dim)
+    if save:
+        path = SPECTRUM_NPZ % dim
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        np.savez_compressed(path, **spectra)
+        print("\n  spectra -> %s" % os.path.relpath(path, os.getcwd()))
+    return spectra
+
+
+def _spectrum_tables(spectra, dim):
+    """The two readings of the same spectra, in both directions."""
+    print("\nRelative eigenvalue at the cut  (d=%d)" % dim)
+    print("  %-7s %s" % ("band", " ".join("%11s" % ("keep=%.2f" % k)
+                                          for k in SPECTRUM_KEEPS)))
+    for name, a in spectra.items():
+        print("  %-7s %s" % (name, " ".join("%11.2e" % at_keep(a, k)
+                                            for k in SPECTRUM_KEEPS)))
+
+    print("\nRank fraction a threshold implies")
+    print("  %-7s %s" % ("band", " ".join("%11s" % ("eps=%.0e" % e)
+                                          for e in SPECTRUM_EPS)))
+    for name, a in spectra.items():
+        print("  %-7s %s" % (name, " ".join("%11.3f" % at_eps(a, e)
+                                            for e in SPECTRUM_EPS)))
 
 
 class BandSolver:
@@ -296,6 +407,63 @@ def record_band(run, solved, forward, ident, seconds, allow):
                             allow=allow)
 
 
+def rel_err(got, want):
+    """Relative error, or None when there is nothing to be relative to.
+
+    A band with no splats near a slice gives a zero referee. That is an
+    ABSENCE of a measurement, not a score of zero, and reporting it as
+    0.0 would read as a perfect band.
+    """
+    scale = float(np.linalg.norm(want))
+    if scale == 0.0:
+        return None
+    return float(np.linalg.norm(got - want) / scale)
+
+
+#: What a setting is scored against: the two error functions and the
+#: forward-encoding baselines each is measured against. Bundled because
+#: report_setting took six positional arguments and adding per-band
+#: scoring to it would have taken eight.
+Referee = namedtuple("Referee", "err band_err base band_base")
+
+
+def band_errors(bundles, books, slices, band_truth):
+    """Each band scored against its OWN ground truth.
+
+    The aggregate is dominated by whichever band holds the splats — on
+    Red Rock `xfine` holds 542,122 of 546,638 — so a band can be
+    destroyed by three orders of magnitude while the aggregate
+    IMPROVES. That is not hypothetical: it is keep=0.55 on Red Rock, and
+    it is why slice error alone was never an acceptance test.
+
+    `decode_slice` and `exact_slice` both already restrict to a band
+    list, and the bands partition the splats, so this costs one extra
+    decode pass in total rather than one per band.
+    """
+    out = {}
+    for b in BANDS:
+        if not bundles.get(b[0]):
+            continue
+        out[b[0]] = [rel_err(decode_slice(pts, bundles, books,
+                                          bands=[b])[:, 0],
+                             band_truth[n][b[0]][:, 0])
+                     for n, (pts, _) in slices]
+    return out
+
+
+def report_band_error(name, got, base):
+    """One band's line, with the change against forward where both exist."""
+    cells = []
+    for i, v in enumerate(got):
+        if v is None:
+            cells.append("%16s" % "no signal")
+            continue
+        b = None if base is None else base[i]
+        cells.append("%16s" % ("%.4f (%+.1f%%)" % (v, 100 * (b - v) / b)
+                               if b else "%.4f" % v))
+    print("      %-8s %s" % (name, " ".join(cells)), flush=True)
+
+
 def label_of(setting):
     kind, val = setting
     return "keep=%.2f" % val if kind == "keep" else "tikhonov=%.0e" % val
@@ -320,18 +488,66 @@ def estimate_gb(n_settings):
     return 5.5 + 0.7 * (n_settings - 1)
 
 
-def report_setting(lab, cells, base, err, also_shrink, run):
-    """One setting's slice error, and optionally what shrinkage adds."""
-    a = err(cells)
+def build_referee(scene, members, books, slices, fwd_bundles):
+    """Both referees and forward encoding's score on each.
+
+    The aggregate slice error is what every projection number in this
+    repo is quoted in. The per-band one exists because the aggregate is
+    dominated by whichever band holds the splats, and is therefore not
+    an acceptance test on its own — see `band_errors`.
+
+    Per-band ground truth is not four times the work: the bands
+    PARTITION the splats, so four single-band referee passes touch the
+    same splats one full pass does. The only repeated cost is
+    `exact_slice`'s whole-scene covariance inverse, which is seconds.
+    """
+    truth = {n: exact_slice(pts, scene, members) for n, (pts, _) in slices}
+    band_truth = {n: {b[0]: exact_slice(pts, scene, members, bands=[b])
+                      for b in BANDS}
+                  for n, (pts, _) in slices}
+
+    def err(bundles):
+        return [rel_err(decode_slice(pts, bundles, books)[:, 0],
+                        truth[n][:, 0])
+                for n, (pts, _) in slices]
+
+    def band_err(bundles):
+        return band_errors(bundles, books, slices, band_truth)
+
+    return Referee(err, band_err, err(fwd_bundles), band_err(fwd_bundles))
+
+
+def band_result(per_band):
+    """Per-band errors as JSON for the run record."""
+    return {k: [None if v is None else round(v, 4) for v in got]
+            for k, got in per_band.items()}
+
+
+def report_forward(path, referee, seconds):
+    """The baseline every setting is measured against, per band too."""
+    print("%s  |  forward encoding: %.4f / %.4f  (%.0fs)"
+          % (path.split("/")[-1], referee.base[0], referee.base[1], seconds),
+          flush=True)
+    for name, got in referee.band_base.items():
+        report_band_error(name, got, None)
+
+
+def report_setting(lab, cells, ref, also_shrink, run):
+    """One setting's slice error, per band as well as in aggregate."""
+    a = ref.err(cells)
     print("  %-16s analytic (window s=h/2): %.4f / %.4f"
           "   top-down %+.1f%%  side %+.1f%%"
-          % (lab, a[0], a[1], 100 * (base[0] - a[0]) / base[0],
-             100 * (base[1] - a[1]) / base[1]))
+          % (lab, a[0], a[1], 100 * (ref.base[0] - a[0]) / ref.base[0],
+             100 * (ref.base[1] - a[1]) / ref.base[1]))
+    per = ref.band_err(cells)
+    for name, got in per.items():
+        report_band_error(name, got, ref.band_base.get(name))
     if run is not None:
         run.result(**{lab: {"top_down": round(a[0], 4),
                             "side": round(a[1], 4),
                             "vs_forward_pct": round(
-                                100 * (base[0] - a[0]) / base[0], 1)}})
+                                100 * (ref.base[0] - a[0]) / ref.base[0], 1),
+                            "bands": band_result(per)}})
     if not also_shrink:
         return
     # Does shrinkage add anything to an ALREADY-SOLVED bundle? Prediction
@@ -343,7 +559,7 @@ def report_setting(lab, cells, base, err, also_shrink, run):
     for pct in (10, 25):
         sh = {b: {k: shrink(v, percentile_threshold(v, pct))
                   for k, v in band.items()} for b, band in cells.items()}
-        e = err(sh)
+        e = ref.err(sh)
         del sh
         print("    + shrink p%-2d       : %.4f / %.4f  (%+.1f%% / %+.1f%%)"
               % (pct, e[0], e[1], 100 * (a[0] - e[0]) / a[0],
@@ -362,22 +578,14 @@ def main(path, settings, also_shrink=False, run=None,
                                       mass_mode(scene.mu[:, 1], w, box[1]))),
               ("side", slice_grid((0, box[2]), (0, box[1]), "x",
                                   mass_mode(scene.mu[:, 0], w, box[0])))]
-    truth = {n: exact_slice(pts, scene, members) for n, (pts, _) in slices}
-
-    def err(bundles):
-        return [float(np.linalg.norm(decode_slice(pts, bundles, books)[:, 0]
-                                     - truth[n][:, 0])
-                      / np.linalg.norm(truth[n][:, 0]))
-                for n, (pts, _) in slices]
-
-    base = err(fwd_bundles)
+    referee = build_referee(scene, members, books, slices, fwd_bundles)
+    base = referee.base
     if run is not None:
         run.result(forward={"top_down": round(base[0], 4),
-                            "side": round(base[1], 4)})
+                            "side": round(base[1], 4),
+                            "bands": band_result(referee.band_base)})
         run.stage("forward encode", time.time() - t0)
-    print("%s  |  forward encoding: %.4f / %.4f  (%.0fs)"
-          % (path.split("/")[-1], base[0], base[1], time.time() - t0),
-          flush=True)
+    report_forward(path, referee, time.time() - t0)
     # the forward bundles have now been scored and are never read again;
     # only their cell counts are. At capture scale they are 0.6-1.3 GB.
     counts = {n: len(c) for n, c in fwd_bundles.items()}
@@ -430,7 +638,7 @@ def main(path, settings, also_shrink=False, run=None,
         del solver
 
     for lab in labels:
-        report_setting(lab, ana[lab], base, err, also_shrink, run)
+        report_setting(lab, ana[lab], referee, also_shrink, run)
     print("  total %.0fs" % (time.time() - t0))
 
 
@@ -462,6 +670,14 @@ def parse_settings(argv):
 
 if __name__ == "__main__":
     argv = sys.argv[1:]
+    if "--spectrum" in argv:
+        # Measures the KNOB, not a scene: the Gram depends only on the
+        # codebook, the cell size and the window width, so this loads no
+        # capture and holds one d x d buffer at a time.
+        with runlog.record("spectrum", need_gb=1.5,
+                           force="--force-memory" in argv) as run:
+            report_spectrum(run=run)
+        sys.exit(0)
     path, settings = parse_settings(argv)
     with runlog.record(path.split("/")[-1],
                        need_gb=estimate_gb(len(settings)),

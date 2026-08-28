@@ -68,7 +68,14 @@ six of eight closed. Claims still go through SDK.md's log first.
   the failure is silent in the decode. **The path to promotion is
   automatic truncation selection**, and the signal it would use already
   exists — the solved/forward norm ratio separates working from broken by
-  18x, and `run_projection_pipeline.py` checks it after every band.
+  18x, and `run_projection_pipeline.py` checks it after every band —
+  now as a refusal rather than a warning. Two instruments landed since:
+  the referee scores every band separately (the aggregate is dominated
+  by whichever band holds the splats, so it could not see a destroyed
+  one), and `--spectrum` shows *why* the edge moves — `keep` is a rank
+  fraction, and at d=8192 one setting spans a factor of 7e8 in what it
+  actually regularises across the four bands. Truncating at a threshold
+  instead is the next measurement, not yet a result.
   Details in [docs/fit.md](docs/fit.md).
 - **Occlusion research spike** ([#5](https://github.com/squatch-stack/hdc-holo/issues/5)) —
   untouched, and unrelated to everything else in this milestone. Alpha

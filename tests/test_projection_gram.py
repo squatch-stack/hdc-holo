@@ -20,7 +20,14 @@ import os
 import numpy as np
 import pytest
 
-from holo.capture import BANDS, band_codebooks
+from holo.capture import (
+    BANDS,
+    band_codebooks,
+    decode_slice,
+    encode_bands,
+    exact_slice,
+)
+from holo.spectral import SplatScene
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DRIVER = os.path.join(ROOT, "examples", "run_projection_pipeline.py")
@@ -186,3 +193,103 @@ def test_a_clean_band_passes_silently(rp, capsys):
     healthy = {"a": forward["a"] * 1.2}
     assert rp.check_divergence(healthy, forward, "fine", "keep=0.25") < 2
     assert capsys.readouterr().out == ""
+
+
+
+# ---------------------------------------------------------------------------
+# Per-band scoring — the referee Red Rock showed was missing
+# ---------------------------------------------------------------------------
+
+def _lopsided_scene(rng, big=400, small=6):
+    """A scene shaped like a real capture: one band holds nearly all the
+    splats and another holds a handful (Red Rock is 542,122 against
+    3,854 — 0.7%). s = 0.003 lands in `xfine`, s = 0.006 in `fine`.
+    """
+    n = big + small
+    mu = rng.uniform(0.35, 0.65, (n, 3)).astype(np.float32)
+    s = np.concatenate([np.full(big, 0.003),
+                        np.full(small, 0.006)]).astype(np.float32)
+    cov = np.stack([np.eye(3) * si ** 2 for si in s]).astype(np.float32)
+    return SplatScene(mu=mu, cov=cov, amp=np.ones((n, 1), np.float32)), s
+
+
+@pytest.fixture(scope="module")
+def lopsided():
+    """Encoded scene, probe points, and both referees. d=1024: the
+    partition and isolation properties under test do not depend on d.
+    """
+    rng = np.random.default_rng(3)
+    scene, smax = _lopsided_scene(rng)
+    books = band_codebooks(np.random.default_rng(2), dim=1024)
+    bundles, members = encode_bands(scene, smax, books, dim=1024,
+                                    verbose=False)
+    pts = (scene.mu[rng.integers(0, scene.n, 400)]
+           + 0.004 * rng.standard_normal((400, 3))).astype(np.float32)
+    return {
+        "books": books,
+        "bundles": bundles,
+        "pts": pts,
+        "slices": [("probe", (pts, None))],
+        "band_truth": {"probe": {b[0]: exact_slice(pts, scene, members,
+                                                   bands=[b])
+                                 for b in BANDS}},
+        "truth": exact_slice(pts, scene, members),
+    }
+
+
+def _per_band(rp, bundles, sc):
+    return rp.band_errors(bundles, sc["books"], sc["slices"], sc["band_truth"])
+
+
+def _aggregate(rp, bundles, sc):
+    return rp.rel_err(decode_slice(sc["pts"], bundles, sc["books"])[:, 0],
+                      sc["truth"][:, 0])
+
+
+def test_per_band_truth_partitions_the_aggregate_exactly(lopsided):
+    """Why per-band scoring is free rather than four times the cost.
+
+    The bands partition the splats, so four single-band referee passes
+    touch the same splats one full pass does — and their sum IS the
+    aggregate referee, to the bit. If that stops holding, per-band error
+    has stopped being a decomposition of the number the repo reports.
+    """
+    per = lopsided["band_truth"]["probe"]
+    assert np.array_equal(sum(per[b[0]] for b in BANDS), lopsided["truth"])
+
+
+def test_a_destroyed_band_is_visible_per_band_and_diluted_in_the_aggregate(
+        rp, lopsided):
+    """The hole Red Rock exposed, in miniature.
+
+    Corrupting one band's bundles moves that band's own score by the
+    corruption, leaves every other band's score BIT-identical, and moves
+    the aggregate by strictly less — the aggregate is a blend weighted
+    by where the field actually is.
+
+    How much less is scene geometry, and this toy is not a model of Red
+    Rock's ratio: there, at keep=0.55, `fine` ran at 1030x the forward
+    norm while the aggregate slice error IMPROVED. What is pinned here
+    is the property the code guarantees — detection, isolation, and
+    dilution — which is why a per-band number has to be reported beside
+    the aggregate rather than instead of it.
+    """
+    clean = _per_band(rp, lopsided["bundles"], lopsided)
+    assert clean["fine"][0] < 0.5 and clean["xfine"][0] < 0.5
+
+    broken = {k: ({c: b * 1000.0 for c, b in v.items()} if k == "fine" else v)
+              for k, v in lopsided["bundles"].items()}
+    got = _per_band(rp, broken, lopsided)
+
+    assert got["fine"][0] > 100                    # detected, in proportion
+    assert got["xfine"] == clean["xfine"]          # and it did not smear
+    assert _aggregate(rp, broken, lopsided) < got["fine"][0] / 2
+
+
+def test_a_band_with_no_signal_scores_none_rather_than_zero(rp):
+    """A band with no splats near a slice has an ABSENT measurement, not
+    a perfect one. Reporting 0.0 there would read as the best band in
+    the table."""
+    want = np.zeros(8, dtype=np.float32)
+    assert rp.rel_err(np.ones(8, np.float32), want) is None
+    assert rp.rel_err(want, np.ones(8, np.float32)) == 1.0

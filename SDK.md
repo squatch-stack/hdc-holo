@@ -1207,6 +1207,41 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   for the draft: lead with the algebra, introduce splats as the stress
   test, keep every graphics figure, and answer "why not 3DGS+SOG?"
   with the capability list rather than a metric.
+- **The projection referee was blind to a band, and `keep` is why**
+  (research lane; `examples/run_projection_pipeline.py`, `docs/fit.md`;
+  issue #2). Two instruments and one mechanism.
+  (1) **Per-band scoring.** Every band is now scored against its OWN
+  exact-mixture ground truth beside the aggregate, because the
+  aggregate is dominated by whichever band holds the splats — Red Rock
+  is 542,122 in `xfine` against 3,854 in `fine` — and a band can be
+  destroyed while it IMPROVES. It is nearly free: `decode_slice` and
+  `exact_slice` both already took a band list, the bands partition the
+  splats, and their per-band truths sum to the aggregate truth to the
+  bit, which is what the test pins.
+  (2) **`keep` is a rank fraction, which is not a regularisation
+  level** (`--spectrum`, no capture needed — the Gram depends on
+  codebook, cell size and window width alone). At d=8192, keep=0.55
+  cuts `fine` at a relative eigenvalue of 2.47e-12 and `coarse` at
+  1.79e-03: one nominal setting spanning 7e8 in what it actually
+  regularises, with the operator dividing by those numbers. `fine` is
+  the band a shared rank fraction regularises least and `fine` is the
+  band that ran at 1030x on Red Rock — a mechanism, not a coincidence.
+  The Fourier-extension literature truncates at a THRESHOLD instead
+  (accuracy ~ sqrt(eps)), which adapts per band by construction;
+  whether one threshold beats one `keep` is the next measurement.
+  Two corrections to my own work, both cheap to record and expensive to
+  rediscover. **The toy scene built to reproduce "the aggregate barely
+  moves" did not reproduce it** — corrupting `fine` x1000 took the
+  aggregate from 0.124 to 202. Rather than move splats until it did,
+  the test pins what the CODE guarantees (detection, isolation — other
+  bands bit-identical — and dilution) and its docstring says the Red
+  Rock ratio is a property of that capture, not of the code. And **the
+  first `--spectrum` run answered nothing**: its eps grid (1e-6 down to
+  1e-14) came from a d=2048 rehearsal and sits looser than every
+  setting the pipeline has ever run, because spectra decay much further
+  at production d. Regridded to 1e-2..1e-8, and the spectra themselves
+  are now a committed artifact (`out/gram_spectrum_d8192.npz`) so no
+  later threshold question costs another 11 minutes.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,
