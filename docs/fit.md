@@ -214,10 +214,64 @@ Against the shipped uniform keep=0.25, `eps=1e-4` truncates `fine`
 *harder* — 0.195, and `fine` is the band that needs it — while letting
 the well-conditioned `mid` and `coarse` keep about two and a half times
 more of their spectrum than a flat quarter allows. That is the shape a
-fix would have. **Whether it also scores better is a measurement, and it
-has not been run.** The spectra themselves are committed
+fix would have. The spectra themselves are committed
 (`out/gram_spectrum_d8192.npz`), so the next threshold question is a
 lookup rather than another eleven minutes of eigendecomposition.
+
+## What the threshold actually scores, and what it says about the gate
+
+Red Rock, one process, four settings sharing one eigendecomposition per
+band (2,927 s, 7.19 GB peak), scored per band. `keep=0.25` reproduces
+the published +17.8% / +27.8% exactly:
+
+| setting | aggregate | xfine | fine | mid | coarse |
+|---|---|---|---|---|---|
+| forward | 0.1945 / 0.2160 | 0.1944 / 0.2160 | 0.4350 / 0.5580 | 0.9277 / 0.5301 | 1.4294 / 1.0726 |
+| keep=0.25 | **+17.8% / +27.8%** | +17.7% / +27.8% | **-24.6% / -33.1%** | +52.8% / +7.7% | +29.8% / +14.8% |
+| eps=1e-3 | +8.7% / +23.7% | +8.7% / +23.7% | **-1.0% / +10.6%** | +48.9% / +31.2% | +21.8% / +19.9% |
+| eps=1e-4 | +13.5% / +24.8% | +13.5% / +24.8% | -2.1% / -5.8% | +40.0% / +33.1% | +4.5% / +7.2% |
+| eps=1e-5 | +14.6% / +25.7% | +14.6% / +25.8% | -36.0% / -44.9% | +31.0% / +24.8% | -15.6% / -20.0% |
+
+**The aggregate IS xfine.** The two columns agree to the digit at every
+setting, because xfine holds 542,122 of 546,638 splats. Every
+projection number this repo has published is an xfine number wearing a
+scene's name.
+
+**The shipped setting damages a band.** At keep=0.25 — the setting Red
+Rock validated, with 0.0% of cells over the divergence limit — `fine`
+decodes 24.6% / 33.1% WORSE than not projecting at all. The aggregate
+improves regardless.
+
+**And the gate could not see that, because its limit is far too loose.**
+All sixteen (band, setting) norm ratios in this run are at or below
+4.34, against a `DIVERGENCE_RATIO` of 20, so the gate passed every one.
+The ratio is not a bad signal though — it is a badly calibrated one.
+Inside each sparse band it tracks the per-band error monotonically:
+
+| band | norm ratio -> per-band change, top-down |
+|---|---|
+| fine | 1.04 -> -1.0%, 1.10 -> -2.1%, 1.32 -> -24.6%, 1.39 -> -36.0% |
+| mid | 1.14 -> +52.8%, 1.18 -> +48.9%, 1.57 -> +40.0%, 2.23 -> +31.0% |
+| coarse | 1.21 -> +29.8%, 1.28 -> +21.8%, 2.00 -> +4.5%, 4.34 -> -15.6% |
+
+20 was calibrated against catastrophe — saguaro's 5.3-versus-97 gap —
+and catastrophe is not the failure that happens at a working setting.
+**A limit near 1.3 would have refused `fine` at keep=0.25.** It is not
+being changed here: one capture is what made 20 wrong, and one capture
+is not enough to make 1.3 right. Confirming the relationship on a
+second capture is cheap and is the next thing.
+
+**The reparameterisation did what it was designed to do.** `eps=1e-3` is
+the only setting where no band is meaningfully degraded — its worst is
+`fine` at -1.0% — and it holds every band's ratio at or below 1.28,
+because it truncates `fine` hardest (846 of 8,192) exactly where a flat
+quarter truncates it least. It pays for that in aggregate: +8.7%
+against keep=0.25's +17.8% on the top-down slice.
+
+So the choice is not between a good default and a bad one. It is
+between **+17.8% with one band a quarter worse** and **+8.7% with no
+band worse** — measured on a metric that, until this run, only ever
+reported the first number.
 
 **The divergence is silent in the decode and loud in the norm.** The
 last column above is the median solved-bundle norm over the forward
