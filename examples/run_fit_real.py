@@ -100,6 +100,6 @@ def main(path):
 
 
 if __name__ == "__main__":
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
     with budget.heavy_run(6.0, "fit real", "--force-memory" in sys.argv):
-        main(sys.argv[1] if len(sys.argv) > 1 and
-             not sys.argv[1].startswith("--") else DEFAULT_SCENE)
+        main(args[0] if args else DEFAULT_SCENE)

@@ -204,6 +204,30 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   truncation) is strictly better on both axes. `holo.budget` is
   deliberately off the public surface: it shells out to `ps` and reads
   free memory, which is developer behaviour, not library behaviour.
+- **Measured, and the peak is not where it won.** On saguaro at d=8192:
+
+  | version | settings | peak RSS | wall |
+  |---|---|---|---|
+  | main @ 7bfda1f | 1 | 5.05 GB | 769 s |
+  | this branch | 1 | 5.28 GB | 416 s |
+  | this branch | 3 | 5.00 GB | 953 s |
+
+  The single-setting peak went UP 4.5%, not down, and releasing the Gram
+  before the last setting's solves recovered only 0.35 GB of the 0.58 GB
+  that retaining it cost. Freeing the forward bundles and halving the
+  Gram build's temporaries did not move the high-water mark, which is a
+  reminder that peak RSS is a high-water mark and freeing does not lower
+  one. **The win is consolidation, not the peak**: three settings cost
+  5.00 GB in one process where three processes cost about 15 GB, and
+  953 s against roughly 2300 s run serially. Wall-clock across versions
+  is not comparable — a 15-24 GB splat trainer had the machine for parts
+  of every run.
+
+  All three settings reproduced their registered numbers exactly
+  (0.2170/0.1367, 0.1227/0.0803, 0.1377/0.0963), which is the real
+  correctness result: Tikhonov running AFTER a TSVD setting on a shared
+  Gram still restores the diagonal correctly at d=8192, not just at the
+  d=384 the unit test pins.
 - **Three ways to lose a heavy run, and the guard covers one.** Memory
   is the documented one. The second is self-inflicted and cost a restart
   here: a full `pytest` launched while this lane's own 3-setting sweep

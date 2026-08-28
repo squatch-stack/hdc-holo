@@ -54,7 +54,6 @@ import numpy as np
 from holo import budget
 from holo.capture import (
     BANDS,
-    DIM,
     band_codebooks,
     build_scene,
     decode_slice,
@@ -226,13 +225,20 @@ def label_of(setting):
 def estimate_gb(n_settings):
     """What this run will need, for the headroom guard.
 
-    Calibrated against a measured peak, not derived: the Gram, its
-    eigenvectors and LAPACK's workspace are ~3 d^2 doubles, and each
-    setting keeps a full set of solved cell bundles alongside the
-    forward ones until the last error is scored.
+    Deliberately a loose UPPER bound. The guard's failure direction is
+    under-protecting — an estimate that is too low reads as a check
+    while providing none — and report_peak prints the real peak against
+    this on every run, so being wrong is visible and cheap.
+
+    Measured on saguaro at d=8192: 5.28 GB for one setting, 5.00 GB for
+    a three-setting sweep. The peak is the eigendecomposition (the Gram,
+    its eigenvectors and LAPACK's workspace), which the setting count
+    does not move, because it lands on the first band before any solved
+    bundles have accumulated. Settings still earn a term: on a denser
+    capture each one's bundles are larger (train holds 1.3 GB against
+    saguaro's 0.65 GB) and eventually outgrow the eigendecomposition.
     """
-    gram = 3.0 * DIM * DIM * 8 / (1 << 30)
-    return gram + (1 + n_settings) * 0.8 + 1.2
+    return 5.5 + 0.7 * (n_settings - 1)
 
 
 def main(path, settings, also_shrink=False):
@@ -283,9 +289,12 @@ def main(path, settings, also_shrink=False):
                 # BandSolver retains them so a sweep can share them, which
                 # is the whole point — but on the last setting that is
                 # 537 MB per retained array held through every per-cell
-                # solve for nothing. Measured: keeping it raised peak RSS
-                # from 5.05 GB to 5.63 GB on a single-setting run, almost
-                # exactly one d x d float64.
+                # solve for nothing. Measured on saguaro: retaining them
+                # cost 5.63 GB peak against main's 5.05 GB, and releasing
+                # here recovers 0.35 of that 0.58 — landing at 5.28 GB,
+                # still 4.5% above main. The per-process peak is NOT where
+                # this file wins; a 3-setting sweep peaks at 5.00 GB in one
+                # process where three processes cost about 15 GB.
                 solver.close()
             print("  %-7s %d cells, d=%d, %s, chunk=%d  (%.0fs)"
                   % (name, counts[name], freqs.shape[0], how, chunk,

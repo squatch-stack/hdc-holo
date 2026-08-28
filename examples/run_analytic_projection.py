@@ -198,9 +198,10 @@ def main(path):
 
 
 if __name__ == "__main__":
+    # filter flags FIRST: `--force-memory data.spz` must still see the path
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
     with budget.heavy_run(6.0, "analytic projection",
                           "--force-memory" in sys.argv):
-        main(sys.argv[1] if len(sys.argv) > 1 and
-             not sys.argv[1].startswith("--")
-             else os.path.join(os.path.dirname(os.path.dirname(
-                 os.path.abspath(__file__))), "data", "scan-tucson.spz"))
+        main(args[0] if args else os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "data", "scan-tucson.spz"))
