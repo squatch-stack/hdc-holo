@@ -26,23 +26,38 @@ import os
 
 import numpy as np
 
-try:
-    if os.environ.get("HDC_BACKEND", "").lower() == "numpy":
-        raise ImportError("forced off via HDC_BACKEND=numpy")
-    import mlx.core as mx
-    _HAVE_MLX = True
-except ImportError:
-    mx = None
-    _HAVE_MLX = False
+#: None until something asks. Probing on IMPORT meant that
+#: `from holo import HoloMap` initialised MLX and selected the GPU,
+#: because most of the package imports this module — so a caller who
+#: wanted a hypervector map got GPU exposure they never asked for. That
+#: is not hypothetical: a Metal fault raised by an unrelated process on
+#: a shared machine killed a run here, as an innocent victim. The
+#: backend is still chosen once and cached; it is chosen on first ASK.
+_HAVE_MLX = None
+mx = None
+
+
+def _probe():
+    """Import MLX on first use and remember the answer."""
+    global _HAVE_MLX, mx
+    if _HAVE_MLX is None:
+        try:
+            if os.environ.get("HDC_BACKEND", "").lower() == "numpy":
+                raise ImportError("forced off via HDC_BACKEND=numpy")
+            import mlx.core as _mx
+            mx, _HAVE_MLX = _mx, True
+        except ImportError:
+            mx, _HAVE_MLX = None, False
+    return _HAVE_MLX
 
 
 def active():
     """True when the MLX/Metal backend will be used."""
-    return _HAVE_MLX
+    return _probe()
 
 
 def backend_name():
-    return "mlx-gpu" if _HAVE_MLX else "numpy"
+    return "mlx-gpu" if _probe() else "numpy"
 
 
 def _cov_pairs(dim):
@@ -52,6 +67,7 @@ def _cov_pairs(dim):
 def spectral_bundle(scene, freqs, chunk=16384):
     """GPU drop-in for hdc_splat.spectral_bundle: identical semantics,
     real-formulation kernels, returns (C, d) complex64 on the host."""
+    _probe()
     d, dim = freqs.shape
     pairs = _cov_pairs(dim)
     wq = np.stack([freqs[:, i] * freqs[:, j] * (1.0 if i == j else 2.0)
@@ -97,6 +113,7 @@ def ridge_cell_fit(freqs, points, targets, lam, prior=None):
     decode convention: out(p) = Re(e^{i F p} @ x^T) — i.e. the WEIGHTED
     bundle; importance-weighted decoders divide by their weights.
     """
+    _probe()
     Y = np.asarray(targets, dtype=np.float64)
     if prior is None:
         prior = np.ones(freqs.shape[0], dtype=np.float32)
@@ -137,6 +154,7 @@ def cell_decode(freqs, points, cells, chunk=8192):
     contributes two masked real GEMMs, queued and evaluated as one batch
     per chunk so kernel-launch overhead amortizes. Returns (P, C) float32.
     """
+    _probe()
     cells = list(cells)
     if not cells:
         return np.zeros((len(points), 0), dtype=np.float32)
@@ -167,6 +185,7 @@ def cell_decode(freqs, points, cells, chunk=8192):
 
 def decode(bundle, freqs, weights, points, chunk=8192):
     """GPU drop-in for hdc_splat._decode: out[p, c] = Re(E @ (S w)^T)."""
+    _probe()
     wr = mx.array((bundle.real * weights[None, :]).T.astype(np.float32))
     wi = mx.array((bundle.imag * weights[None, :]).T.astype(np.float32))
     m_freqs = mx.array(freqs)
@@ -192,6 +211,7 @@ def readout(points, W, S, chunk=8192):
     bundles) funnels through here, so the MLX/Metal speedup applies
     uniformly; the NumPy fallback computes the identical real
     formulation. Both paths agree to float32 rounding (~1e-6)."""
+    _probe()
     points = np.ascontiguousarray(points, dtype=np.float32)
     S2 = np.atleast_2d(S)
     d = W.shape[0]

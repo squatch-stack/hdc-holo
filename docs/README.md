@@ -1,5 +1,13 @@
 # holo documentation
 
+**Start with [core.md](core.md) and [structures.md](structures.md)** —
+the FHRR algebra and the data structures built on it (map, sketch,
+record, sequence, ngram, graph, FSM, SDM, dispatch). They need no
+captures, no GPU and no CRDT, and they are what most readers came for.
+The splat-scene chain below is the flagship demonstration that the same
+algebra carries real 3-D data; see the trade-off table in the
+[README](../README.md#what-this-is-not) before treating it as a format.
+
 One page per proven technique, per the SDK charter ([`../SDK.md`](../SDK.md)):
 each page carries the math, the API, the capacity budget, the failure
 modes, and the evidence (figures + tests) inline. A technique gets a
