@@ -129,3 +129,60 @@ def test_divergence_is_detectable_in_the_norm_before_anything_decodes(rp):
 def test_divergence_ratio_is_none_when_there_is_nothing_to_compare(rp):
     assert rp.divergence_ratio({}, {}) is None
     assert rp.divergence_ratio({"a": np.ones((1, 4), np.complex64)}, {}) is None
+
+
+def test_a_diverged_band_is_refused_not_warned_about(rp):
+    """The gate, and the reason it is a gate.
+
+    It used to print and carry on. On Red Rock at keep=0.55 every cell of
+    the `fine` band sits at 1030x the forward bundle norm while the SLICE
+    ERROR IMPROVES — that band holds 0.7% of the splats, so destroying it
+    barely moves the metric. A caller reading those bundles for a render
+    or a `what_is_at` query gets garbage, and the number they were shown
+    said it was the best of four settings. A warning on stdout is not a
+    defence against that.
+    """
+    rng = np.random.default_rng(0)
+    forward = {k: (rng.standard_normal((1, 32))
+                   + 1j * rng.standard_normal((1, 32))).astype(np.complex64)
+               for k in ("a", "b", "c")}
+    diverged = {k: v * 500.0 for k, v in forward.items()}
+
+    with pytest.raises(rp.Diverged, match="past the cliff"):
+        rp.check_divergence(diverged, forward, "fine", "keep=0.55")
+
+
+def test_the_gate_names_the_way_out(rp):
+    """A refusal the caller cannot act on is only half a gate."""
+    rng = np.random.default_rng(1)
+    forward = {"a": (rng.standard_normal((1, 32))
+                     + 1j * rng.standard_normal((1, 32))).astype(np.complex64)}
+    diverged = {"a": forward["a"] * 500.0}
+    with pytest.raises(rp.Diverged) as exc:
+        rp.check_divergence(diverged, forward, "fine", "keep=0.55")
+    message = str(exc.value)
+    assert "--allow-divergence" in message      # the deliberate-sweep escape
+    assert "smaller keep" in message            # and the actual fix
+    assert "0.7%" in message or "small share" in message   # why the metric lies
+
+
+def test_a_deliberate_sweep_can_open_the_gate(rp, capsys):
+    """Sweeping past the cliff is how the cliff was found; the gate must
+    not make that impossible, only deliberate."""
+    rng = np.random.default_rng(2)
+    forward = {"a": (rng.standard_normal((1, 32))
+                     + 1j * rng.standard_normal((1, 32))).astype(np.complex64)}
+    diverged = {"a": forward["a"] * 500.0}
+    ratio = rp.check_divergence(diverged, forward, "fine", "keep=0.70",
+                                allow=True)
+    assert ratio > rp.DIVERGENCE_RATIO
+    assert "diverged" in capsys.readouterr().out.lower()
+
+
+def test_a_clean_band_passes_silently(rp, capsys):
+    rng = np.random.default_rng(3)
+    forward = {"a": (rng.standard_normal((1, 32))
+                     + 1j * rng.standard_normal((1, 32))).astype(np.complex64)}
+    healthy = {"a": forward["a"] * 1.2}
+    assert rp.check_divergence(healthy, forward, "fine", "keep=0.25") < 2
+    assert capsys.readouterr().out == ""

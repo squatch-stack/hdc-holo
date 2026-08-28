@@ -242,18 +242,58 @@ def divergence_ratio(solved, forward):
     return float(num / den) if den else None
 
 
-def check_divergence(solved, forward, run, name, lab, how, cells, seconds):
-    """Warn when a truncation has gone past the cliff, and record the
-    ratio either way so a future selector has the signal."""
+class Diverged(ValueError):
+    """A band's solved bundles are past the truncation cliff."""
+
+
+def check_divergence(solved, forward, band, label, allow=False):
+    """GATE, not a warning: refuse a band whose solve has diverged.
+
+    This used to print and carry on, and that is exactly how a corrupted
+    band reaches a caller unnoticed. On Red Rock at keep=0.55 every cell
+    of the `fine` band sits at 1030x the forward bundle norm while the
+    SLICE ERROR IMPROVES — because that band holds 0.7% of the splats,
+    so destroying it barely moves the metric. Whoever reads those
+    bundles for a render, a `what_is_at` query or storage gets garbage,
+    and the number they were shown said the run was the best of four.
+
+    `allow=True` (the --allow-divergence flag) is for sweeps that
+    deliberately explore past the cliff, which is the only reason to
+    want a diverged band at all.
+    """
     ratio = divergence_ratio(solved, forward)
-    if ratio is not None and ratio > DIVERGENCE_RATIO:
-        print("    !! DIVERGED: solved bundles are %.0fx the forward norm "
-              "(limit %.0f). This truncation is past the cliff; the decode "
-              "below is garbage." % (ratio, DIVERGENCE_RATIO), flush=True)
-    if run is not None:
-        run.stage("%s/%s" % (name, lab), seconds, cells=cells, operator=how,
-                  norm_ratio=None if ratio is None else round(ratio, 2))
+    if ratio is None or ratio <= DIVERGENCE_RATIO:
+        return ratio
+    message = (
+        "%s band diverged at %s: solved bundles are %.0fx the forward norm "
+        "(limit %.0f). This truncation is past the cliff and the band is "
+        "garbage — the slice error will NOT necessarily show it, because a "
+        "band holding a small share of the splats can be destroyed without "
+        "moving it. Use a smaller keep, or --allow-divergence if you are "
+        "sweeping past the cliff on purpose."
+        % (band, label, ratio, DIVERGENCE_RATIO))
+    if not allow:
+        raise Diverged(message)
+    print("    !! %s" % message, flush=True)
     return ratio
+
+
+#: Which band, at which setting — carried together so the gate and the
+#: run record do not each need four loose arguments.
+BandRun = namedtuple("BandRun", "band label how cells")
+
+
+def record_band(run, solved, forward, ident, seconds, allow):
+    """Gate the band, then log it. Order matters: the ratio is recorded
+    whether or not it passes, so a refused run still says how far past
+    the cliff it went."""
+    ratio = divergence_ratio(solved, forward)
+    if run is not None:
+        run.stage("%s/%s" % (ident.band, ident.label), seconds,
+                  cells=ident.cells, operator=ident.how,
+                  norm_ratio=None if ratio is None else round(ratio, 2))
+    return check_divergence(solved, forward, ident.band, ident.label,
+                            allow=allow)
 
 
 def label_of(setting):
@@ -310,7 +350,8 @@ def report_setting(lab, cells, base, err, also_shrink, run):
                  100 * (a[1] - e[1]) / a[1]))
 
 
-def main(path, settings, also_shrink=False, run=None):
+def main(path, settings, also_shrink=False, run=None,
+         allow_divergence=False):
     t0 = time.time()
     scene, smax, box = build_scene(path, verbose=False)
     books = band_codebooks(np.random.default_rng(42))
@@ -377,9 +418,9 @@ def main(path, settings, also_shrink=False, run=None):
                      time.time() - t0), flush=True)
             t_band = time.time()
             ana[lab][name] = solve_band(M, scene, members[name], geom, chunk)
-            check_divergence(ana[lab][name], fwd_ref.get(name, {}),
-                             run, name, lab, how, counts[name],
-                             time.time() - t_band)
+            record_band(run, ana[lab][name], fwd_ref.get(name, {}),
+                        BandRun(name, lab, how, counts[name]),
+                        time.time() - t_band, allow_divergence)
             if run is not None:
                 # recorded per band per setting, so a killed run's last
                 # stage says exactly how far it got
@@ -426,4 +467,5 @@ if __name__ == "__main__":
                        need_gb=estimate_gb(len(settings)),
                        force="--force-memory" in argv) as run:
         run.result(forward=None)          # replaced once the baseline lands
-        main(path, settings, also_shrink="--shrink" in argv, run=run)
+        main(path, settings, also_shrink="--shrink" in argv, run=run,
+             allow_divergence="--allow-divergence" in argv)
