@@ -149,11 +149,75 @@ exploring past the cliff, which is how the cliff was found in the first
 place. The ratio is recorded either way, so a refused run still says how
 far past it went.
 
+**And the referee reports per band now, not just in aggregate.** The
+norm ratio is a proxy: it reads the bundles, not the field they decode
+to. So the pipeline also scores every band against *its own*
+exact-mixture ground truth, which is what turns "1030x the forward
+bundle norm" into a statement about the decoded field, in the quantity
+every other result here is quoted in. It is close to free —
+`decode_slice` and `exact_slice` both already took a band list, and the
+bands partition the splats, so four single-band passes touch what one
+full pass does. The aggregate stays the headline number; it is simply
+not the acceptance test on its own.
+
 Nor is the edge in the same place on every capture. On the LiDAR
 `lidar-dense` capture the top-down slice peaks near 0.40 (+26.9%) and
 has already turned over by 0.55 (+18.7%), while its side slice is still
 climbing at 0.55 (+10.9%) — the two slices of one capture do not agree
 on a best truncation, let alone two captures.
+
+**`keep` is not a regularisation level, and that is most of why the
+edge moves.** Truncation here keeps the largest `keep*d` eigenvalues — a
+RANK fraction, which says nothing about how small the smallest survivor
+is, and the operator divides by that survivor. Each band draws its
+frequencies at its own scale cap, so its Gram decays at its own rate and
+one `keep` lands somewhere different in every band. The relative
+eigenvalue each setting actually cuts at, at the shipped d=8192
+(`run_projection_pipeline.py --spectrum`, which needs no capture because
+the Gram is scene-independent):
+
+| band | keep=0.25 | keep=0.40 | keep=0.55 | keep=0.70 |
+|---|---:|---:|---:|---:|
+| xfine | 2.56e-04 | 5.77e-06 | 5.09e-08 | 1.20e-10 |
+| **fine** | 1.77e-05 | 2.57e-08 | **2.47e-12** | 2.19e-17 |
+| mid | 4.67e-03 | 3.03e-03 | 5.13e-04 | 8.66e-06 |
+| coarse | 4.01e-03 | 3.96e-03 | 1.79e-03 | 6.82e-05 |
+
+At keep=0.55 the `fine` band is cut at 2.47e-12 where `coarse` is cut at
+1.79e-03 — the same nominal setting spanning a factor of 7e8 in what it
+actually regularises, with the operator dividing by those numbers.
+`fine` is the band a shared rank fraction regularises least, and `fine`
+is the band that ran at 1030x on Red Rock. That is a mechanism, not a
+coincidence.
+
+Two things follow. The spread widens with `d`: a rehearsal at d=2048 put
+`fine` at keep=0.55 at 4.7e-6, six orders of magnitude short of the
+2.47e-12 above — the same trap that made an early per-cell study
+conclude no truncation was needed. And the classical form of this solve
+does not use a rank fraction at all. The Fourier-extension literature
+truncates at a THRESHOLD on the singular values, with accuracy going as
+the square root of it ([related-work.md](related-work.md)); a threshold
+adapts to each band's spectrum by construction, where a rank fraction
+cannot.
+
+Read the other way round, one threshold does that adaptation by itself.
+The rank fraction each implies at d=8192:
+
+| band | eps=1e-3 | eps=1e-4 | eps=1e-5 | eps=1e-6 |
+|---|---:|---:|---:|---:|
+| xfine | 0.186 | 0.290 | 0.380 | 0.459 |
+| **fine** | 0.103 | **0.195** | 0.266 | 0.324 |
+| mid | 0.509 | 0.625 | 0.696 | 0.747 |
+| coarse | 0.593 | 0.689 | 0.744 | 0.783 |
+
+Against the shipped uniform keep=0.25, `eps=1e-4` truncates `fine`
+*harder* — 0.195, and `fine` is the band that needs it — while letting
+the well-conditioned `mid` and `coarse` keep about two and a half times
+more of their spectrum than a flat quarter allows. That is the shape a
+fix would have. **Whether it also scores better is a measurement, and it
+has not been run.** The spectra themselves are committed
+(`out/gram_spectrum_d8192.npz`), so the next threshold question is a
+lookup rather than another eleven minutes of eigendecomposition.
 
 **The divergence is silent in the decode and loud in the norm.** The
 last column above is the median solved-bundle norm over the forward
