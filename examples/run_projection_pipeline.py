@@ -32,7 +32,18 @@ Cost: encoding is ~15x slower than forward (770 s against 51 s on
 train). Decode and storage are unchanged — the output is an ordinary
 bundle.
 
-Usage: python -m examples.run_projection_pipeline data/train.splat [keep_frac]
+SWEEP IN ONE PROCESS, NOT ONE PROCESS PER SETTING. The Gram depends
+only on (codebook, cell size, window width) — not on the regulariser
+and not on the scene — so every setting in a sweep can share it, and
+every TSVD truncation can share one eigendecomposition. Running the
+settings as concurrent processes instead pays N times for the same
+537 MB matrix AND N times for the same O(d^3), which is how this
+pipeline OOM-killed the machine twice.
+
+Usage:
+    python -m examples.run_projection_pipeline data/train.splat [keep_frac]
+    python -m examples.run_projection_pipeline data/train.splat \
+        --sweep tikhonov=1e-6,1e-3,1e-1 --sweep keep=0.25
 """
 import sys
 import time
@@ -41,6 +52,7 @@ import numpy as np
 
 from holo.capture import (
     BANDS,
+    DIM,
     band_codebooks,
     build_scene,
     decode_slice,
@@ -50,8 +62,19 @@ from holo.capture import (
     slice_grid,
 )
 from holo.spectral import SplatScene, spectral_bundle
+from holo import budget
 
-CELL_CHUNK = 256          # cells per batched solve; ~0.13 GB peak
+#: Bytes a batched solve may hold in its right-hand side and solution.
+#: Cells per chunk falls out of this and the actual (channels, d) shape,
+#: so a wider capture takes smaller chunks instead of more memory.
+CHUNK_BUDGET = 0.25 * (1 << 30)
+
+
+def cell_chunk(channels, dim):
+    """How many cells fit CHUNK_BUDGET. rhs and sol are both
+    (chunk*channels, dim) complex128 — 16 bytes each, twice over."""
+    per_cell = 2 * channels * dim * 16
+    return max(1, int(CHUNK_BUDGET // per_cell))
 
 
 def eigen(G):
@@ -74,24 +97,130 @@ def window_bundle(scene, ids, centre, s, freqs):
                      amp=(scene.amp[ids] * scale[:, None]).astype(np.float32))
     return spectral_bundle(mod, freqs)          # (C, d)
 
-def band_operator(gram, keep_frac, tikhonov):
-    """The per-band solve operator, and a label for it.
+def build_gram(fd, s):
+    """The band's Gaussian-window Gram, in ONE d x d buffer.
 
-    TSVD needs the eigendecomposition (O(d^3), 106 s at d=8192 and 98%
-    of the fixed cost). Tikhonov needs none: an explicit inverse is ~6x
-    cheaper and leaves the per-cell cost a matvec either way.
+    G_jk = (2 pi s^2)^{3/2} exp(-s^2 |w_j - w_k|^2 / 2), real symmetric.
+    The readable form — sq[:,None] + sq[None,:] - 2*(fd @ fd.T), then an
+    exp of a scaled copy — materialises four 537 MB temporaries at
+    d=8192 to produce a result that needs one. This chains in place on
+    the gemm's own output instead. Arithmetic is identical; only the
+    allocation count changes.
     """
-    if tikhonov is None:
-        ev, vec = eigen(gram)
-        keep = max(1, round(keep_frac * len(ev)))
-        op = (vec[:, :keep] / ev[:keep][None, :]) @ vec[:, :keep].T
-        return op, "keep=%d" % keep
-    lam = tikhonov * float(np.abs(gram).max())
-    op = np.linalg.inv(gram + lam * np.eye(gram.shape[0]))
-    return op, "tikhonov lam=%.0e" % tikhonov
+    sq = (fd ** 2).sum(1)
+    G = fd @ fd.T                         # the only d x d allocation
+    G *= -2.0
+    G += sq[:, None]
+    G += sq[None, :]
+    np.maximum(G, 0.0, out=G)             # |w_j - w_k|^2, clipped
+    G *= -0.5 * s ** 2
+    np.exp(G, out=G)
+    G *= (2 * np.pi * s ** 2) ** 1.5
+    return G
 
 
-def main(path, keep_frac=1.0, tikhonov=None, also_shrink=False):
+class BandSolver:
+    """One band's Gram, reused across every setting in a sweep.
+
+    The Gram depends on (codebook, cell size, window width) alone — not
+    on the regulariser, not on the scene — so a sweep builds it once.
+    TSVD additionally shares ONE eigendecomposition across every
+    truncation, because truncating is just taking fewer columns of a
+    spectrum already computed. That is the whole reason a sweep belongs
+    in one process: N processes pay N times for both.
+    """
+
+    def __init__(self, G):
+        self.G = G
+        self.n = G.shape[0]
+        # G is exp(negative) times a positive constant, so it is strictly
+        # positive and max() is abs().max() without the 537 MB abs copy.
+        self.scale = float(G.max())
+        self.diag0 = G.diagonal().copy()
+        self._eig = None
+
+    def _restore(self):
+        """Tikhonov writes lambda into the diagonal in place; every
+        other use needs the original back. Restoring on entry rather
+        than on exit means a sweep can interleave the two in any order."""
+        self.G.flat[::self.n + 1] = self.diag0
+
+    def eigen(self):
+        if self._eig is None:
+            self._restore()
+            self._eig = eigen(self.G)
+        return self._eig
+
+    def operator(self, setting):
+        """The per-band solve operator for one setting, and a label.
+
+        TSVD needs the eigendecomposition (O(d^3), 106 s at d=8192 and
+        98% of the fixed cost). Tikhonov needs none: an explicit inverse
+        is ~6x cheaper and leaves the per-cell cost a matvec either way.
+        """
+        kind, val = setting
+        if kind == "keep":
+            ev, vec = self.eigen()
+            keep = max(1, round(val * len(ev)))
+            op = (vec[:, :keep] / ev[:keep][None, :]) @ vec[:, :keep].T
+            return op, "keep=%d" % keep
+        self._restore()
+        # in place: `G + lam * np.eye(d)` allocates a 537 MB identity AND
+        # a 537 MB sum for a change that touches d of d*d entries
+        self.G.flat[::self.n + 1] = self.diag0 + val * self.scale
+        return np.linalg.inv(self.G), "tikhonov lam=%.0e" % val
+
+    def close(self):
+        self._eig = None
+        self.G = None
+
+
+def solve_band(M, scene, members_band, cell, s, freqs, fd, weights, chunk):
+    """Every cell of one band through one operator, in batches.
+
+    Identical arithmetic to solving cells one at a time — the same M
+    against the same right-hand sides — but one BLAS-3 matmul instead of
+    hundreds of BLAS-2 matvecs, measured 7.1x on this shape and verified
+    bit-identical including an uneven final chunk.
+    """
+    out = {}
+    keys = list(members_band.keys())
+    for lo in range(0, len(keys), chunk):
+        batch = keys[lo:lo + chunk]
+        centres = [(np.array(k, dtype=np.float64) + 0.5) * cell for k in batch]
+        rhs = np.concatenate(
+            [window_bundle(scene, members_band[k], c0, s, freqs)
+             for k, c0 in zip(batch, centres)], axis=0)          # (B*C, d)
+        sol = (M @ rhs.astype(np.complex128).T).T                # (B*C, d)
+        nch = rhs.shape[0] // len(batch)
+        for i, (k, c0) in enumerate(zip(batch, centres)):
+            c = sol[i * nch:(i + 1) * nch]
+            # cell-local -> world phase, then pre-divide so decode_slice's
+            # weight multiply cancels exactly
+            c = c * np.exp(-1j * (fd @ c0))[None, :]
+            out[k] = (c / weights[None, :]).astype(np.complex64)
+    return out
+
+
+def label_of(setting):
+    kind, val = setting
+    return "keep=%.2f" % val if kind == "keep" else "tikhonov=%.0e" % val
+
+
+def estimate_gb(n_settings):
+    """What this run will need, for the headroom guard.
+
+    Calibrated against a measured peak, not derived: the Gram, its
+    eigenvectors and LAPACK's workspace are ~3 d^2 doubles, and each
+    setting keeps a full set of solved cell bundles alongside the
+    forward ones until the last error is scored.
+    """
+    gram = 3.0 * DIM * DIM * 8 / (1 << 30)
+    return gram + (1 + n_settings) * 0.8 + 1.2
+
+
+def main(path, settings, force=False, also_shrink=False):
+    budget.require_headroom(estimate_gb(len(settings)), force=force)
     t0 = time.time()
     scene, smax, box = build_scene(path, verbose=False)
     books = band_codebooks(np.random.default_rng(42))
@@ -112,81 +241,91 @@ def main(path, keep_frac=1.0, tikhonov=None, also_shrink=False):
 
     base = err(fwd_bundles)
     print("%s  |  forward encoding: %.4f / %.4f  (%.0fs)"
-          % (path.split("/")[-1], base[0], base[1], time.time() - t0))
+          % (path.split("/")[-1], base[0], base[1], time.time() - t0),
+          flush=True)
+    # the forward bundles have now been scored and are never read again;
+    # only their cell counts are. At capture scale they are 0.6-1.3 GB.
+    counts = {n: len(c) for n, c in fwd_bundles.items()}
+    del fwd_bundles
 
-    ana = {}
+    labels = [label_of(st) for st in settings]
+    ana = {lab: {} for lab in labels}
     for name, _cap, cell in BANDS:
-        if not fwd_bundles.get(name):
-            ana[name] = {}
+        if not counts.get(name):
+            for lab in labels:
+                ana[lab][name] = {}
             continue
         freqs, _rho, weights = books[name]
         fd = freqs.astype(np.float64)
-        half = cell / 2
-        s = half / 2                              # the width that won per-cell
-        # |w_j - w_k|^2 via one gemm instead of materialising a
-        # (d, d, 3) array — 1.6 GB at d=8192, which was the wall.
-        sq = (fd**2).sum(1)
-        d2 = sq[:, None] + sq[None, :] - 2.0 * (fd @ fd.T)
-        np.maximum(d2, 0.0, out=d2)
-        # the Gaussian Gram is REAL symmetric: no complex storage, and
-        # the real symmetric eigensolver rather than the Hermitian one
-        G = (2*np.pi*s**2)**1.5 * np.exp(-0.5*(s**2)*d2)
-        del d2
-        M, how = band_operator(G, keep_frac, tikhonov)
-        del G
-        print("  %-7s %d cells, d=%d, %s  (%.0fs)"
-              % (name, len(fwd_bundles[name]), freqs.shape[0], how,
-                 time.time() - t0))
-        # Solve the cells in CHUNKS rather than one at a time. Identical
-        # arithmetic — the same M applied to the same right-hand sides —
-        # but one BLAS-3 matmul instead of hundreds of BLAS-2 matvecs,
-        # measured 7.1x on this shape. Peak extra memory at 256 cells is
-        # ~0.13 GB, which is why it is chunked rather than done at once.
-        out = {}
-        keys = list(members[name].keys())
-        for lo in range(0, len(keys), CELL_CHUNK):
-            batch = keys[lo:lo + CELL_CHUNK]
-            centres = [(np.array(k, dtype=np.float64) + 0.5) * cell
-                       for k in batch]
-            rhs = np.concatenate(
-                [window_bundle(scene, members[name][k], c0, s, freqs)
-                 for k, c0 in zip(batch, centres)], axis=0)      # (B*C, d)
-            sol = (M @ rhs.astype(np.complex128).T).T            # (B*C, d)
-            nch = rhs.shape[0] // len(batch)
-            for i, (k, c0) in enumerate(zip(batch, centres)):
-                c = sol[i * nch:(i + 1) * nch]
-                # cell-local -> world phase, then pre-divide so
-                # decode_slice's weight multiply cancels exactly
-                c = c * np.exp(-1j * (fd @ c0))[None, :]
-                out[k] = (c / weights[None, :]).astype(np.complex64)
-        ana[name] = out
-        del M
-    a = err(ana)
-    print("  analytic (window s=h/2): %.4f / %.4f" % (a[0], a[1]))
-    if also_shrink:
-        # Does shrinkage add anything to an ALREADY-SOLVED bundle?
-        # Prediction: little or negative — the solve is L2-optimal on the
-        # window and already regularised, so shrinkage moves away from
-        # the optimum rather than removing crosstalk it left behind.
-        from holo.denoise import percentile_threshold, shrink
-        for pct in (10, 25):
-            sh = {b: {k: shrink(v, percentile_threshold(v, pct))
-                      for k, v in cells.items()} for b, cells in ana.items()}
-            e = err(sh)
-            print("    + shrink p%-2d          : %.4f / %.4f  (%+.1f%% / %+.1f%%)"
-                  % (pct, e[0], e[1], 100*(a[0]-e[0])/a[0],
-                     100*(a[1]-e[1])/a[1]))
-    print("  change: top-down %+.1f%%   side %+.1f%%   (%.0fs total)"
-          % (100*(base[0]-a[0])/base[0], 100*(base[1]-a[1])/base[1],
-             time.time() - t0))
+        s = (cell / 2) / 2                       # the width that won per-cell
+        solver = BandSolver(build_gram(fd, s))
+        chunk = cell_chunk(scene.channels, freqs.shape[0])
+        for st, lab in zip(settings, labels):
+            M, how = solver.operator(st)
+            print("  %-7s %d cells, d=%d, %s, chunk=%d  (%.0fs)"
+                  % (name, counts[name], freqs.shape[0], how, chunk,
+                     time.time() - t0), flush=True)
+            ana[lab][name] = solve_band(M, scene, members[name], cell, s,
+                                        freqs, fd, weights, chunk)
+            del M
+        solver.close()
+        del solver
+
+    for lab in labels:
+        a = err(ana[lab])
+        print("  %-16s analytic (window s=h/2): %.4f / %.4f"
+              "   top-down %+.1f%%  side %+.1f%%"
+              % (lab, a[0], a[1], 100 * (base[0] - a[0]) / base[0],
+                 100 * (base[1] - a[1]) / base[1]))
+        if also_shrink:
+            # Does shrinkage add anything to an ALREADY-SOLVED bundle?
+            # Prediction was "little or negative" — the solve is
+            # L2-optimal on the window and already regularised. Measured
+            # +6.4% / +3.6%: the objective (windowed L2 per cell) is not
+            # the evaluation (slice error with cross-cell contributions).
+            from holo.denoise import percentile_threshold, shrink
+            for pct in (10, 25):
+                sh = {b: {k: shrink(v, percentile_threshold(v, pct))
+                          for k, v in cells.items()}
+                      for b, cells in ana[lab].items()}
+                e = err(sh)
+                del sh
+                print("    + shrink p%-2d       : %.4f / %.4f  "
+                      "(%+.1f%% / %+.1f%%)"
+                      % (pct, e[0], e[1], 100 * (a[0] - e[0]) / a[0],
+                         100 * (a[1] - e[1]) / a[1]))
+    print("  total %.0fs" % (time.time() - t0))
+    budget.report_peak(path.split("/")[-1])
+
+
+def parse_settings(argv):
+    """Back-compatible: a positional keep_frac and --tikhonov still work.
+    --sweep keep=a,b / --sweep tikhonov=a,b add settings that SHARE the
+    band Gram instead of each needing its own process."""
+    settings, rest = [], []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--tikhonov":
+            settings.append(("tikhonov", float(argv[i + 1])))
+            i += 2
+        elif argv[i] == "--sweep":
+            kind, _, vals = argv[i + 1].partition("=")
+            if kind not in ("keep", "tikhonov"):
+                raise SystemExit("--sweep takes keep=... or tikhonov=...")
+            settings += [(kind, float(v)) for v in vals.split(",")]
+            i += 2
+        elif not argv[i].startswith("--"):
+            rest.append(argv[i])
+            i += 1
+        else:
+            i += 1
+    if not settings:
+        settings = [("keep", float(rest[1]) if len(rest) > 1 else 1.0)]
+    return rest[0], settings
+
 
 if __name__ == "__main__":
     argv = sys.argv[1:]
-    tik = None
-    if "--tikhonov" in argv:
-        i = argv.index("--tikhonov")
-        tik = float(argv[i + 1])
-        del argv[i:i + 2]
-    shr = "--shrink" in argv
-    argv = [a for a in argv if not a.startswith("--")]
-    main(argv[0], float(argv[1]) if len(argv) > 1 else 1.0, tik, shr)
+    path, settings = parse_settings(argv)
+    main(path, settings, force="--force-memory" in argv,
+         also_shrink="--shrink" in argv)

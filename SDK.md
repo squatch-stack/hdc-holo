@@ -188,6 +188,29 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **CLAIMED: memory/sync lane** — the headroom guard
+  (`holo/budget.py`, `CONTRIBUTING.md`, `examples/run_projection_pipeline.py`)
+  and then `holo/crdt.py` + `docs/sync.md` for the shallow-snapshot trim
+  protocol. Both areas were unclaimed and untouched on main at 7bfda1f.
+- **The >4 GB pact needed to be code, not a rule.** CONTRIBUTING.md
+  already said to check `ps` before a heavy encode, because two
+  concurrent real-scene runs had OOM-killed each other. It was then not
+  checked twice more: a Tikhonov lambda sweep was launched as parallel
+  processes next to a 15 GB splat trainer. The diagnosis is not only
+  "forgot to look" — a sweep run as N processes rebuilds the SAME 537 MB
+  band Gram N times and pays for the SAME O(d^3) eigendecomposition N
+  times, so the parallel shape was slower as well as fatter. One process
+  sharing the Gram (and one eigendecomposition across every TSVD
+  truncation) is strictly better on both axes. `holo.budget` is
+  deliberately off the public surface: it shells out to `ps` and reads
+  free memory, which is developer behaviour, not library behaviour.
+- **The guard caught a live collision on its first run**, which is the
+  only reason it is worth its lines: it named a `msplat -n 3000` trainer
+  climbing to 15 GB while a baseline pipeline held 4.8 GB, and reporting
+  jobs by `comm` was useless for exactly the process that matters — this
+  venv's interpreter is a symlink and `comm` resolves it to an Xcode
+  framework path naming no job at all. Report by argv, basename-first.
+
 - **Projection encode cost: 98% of it was one call, and the fix changed
   the accuracy too** (research lane; `examples/run_projection_pipeline.py`,
   `docs/fit.md`). Profiling put 106 s of a 108.6 s per-band fixed cost in

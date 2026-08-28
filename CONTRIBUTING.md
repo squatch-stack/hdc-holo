@@ -126,8 +126,17 @@ destroyed another session's uncommitted work once.
 
 - Announce file claims before starting multi-file work; hold clear of
   claimed paths until the owner's completion note lands in SDK.md.
-- Check `ps` for running >4GB pipeline jobs before launching heavy
-  encodes (two concurrent real-scene runs have OOM-killed each other).
+- **Check headroom before a heavy encode, and sweep in ONE process.**
+  `holo.budget.require_headroom(gb)` is the mechanical form of this rule
+  — it reads actual free memory, lists every job over 4 GB by argv, and
+  refuses with the pids named (`--force-memory` on the examples overrides
+  it); the heavy examples call it on entry and report peak RSS on the way
+  out. The rule used to be "check `ps` yourself", and twice it was not
+  checked: two concurrent real-scene runs OOM-killed each other, then a
+  lambda sweep launched as parallel processes did it again beside a 15 GB
+  splat trainer. A sweep shares the band Gram AND its eigendecomposition,
+  so one process per setting pays N times for both — it is slower as well
+  as fatter.
 - Replicated bundle blobs MUST go through `pack_bundle`/`unpack_bundle`
   (wire v1) — readers refuse raw complex64 bytes.
 - **Never `pip install -e .` from a clone or worktree.** The shared
