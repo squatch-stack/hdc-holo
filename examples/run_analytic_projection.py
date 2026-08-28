@@ -47,6 +47,7 @@ import sys
 
 import numpy as np
 
+from holo import budget
 from holo.capture import BANDS, S_LO, band_of, build_scene
 from holo.spectral import (
     SplatScene,
@@ -197,6 +198,9 @@ def main(path):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1
-         else os.path.join(os.path.dirname(os.path.dirname(
-             os.path.abspath(__file__))), "data", "scan-tucson.spz"))
+    with budget.heavy_run(6.0, "analytic projection",
+                          "--force-memory" in sys.argv):
+        main(sys.argv[1] if len(sys.argv) > 1 and
+             not sys.argv[1].startswith("--")
+             else os.path.join(os.path.dirname(os.path.dirname(
+                 os.path.abspath(__file__))), "data", "scan-tucson.spz"))

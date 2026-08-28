@@ -17,13 +17,14 @@ cannot read the platform, and `require_headroom` says so out loud — a
 guard that silently passes is worse than no guard, because it is
 mistaken for a check.
 """
+import contextlib
 import os
 import resource
 import subprocess
 import sys
 
-__all__ = ["peak_rss_gb", "available_gb", "heavy_processes",
-           "require_headroom", "report_peak"]
+__all__ = ["available_gb", "heavy_processes", "heavy_run", "peak_rss_gb",
+           "report_peak", "require_headroom"]
 
 GB = 1 << 30
 
@@ -62,7 +63,7 @@ def available_gb():
 def _available_darwin():
     try:
         out = subprocess.run(["vm_stat"], capture_output=True, text=True,
-                             timeout=10).stdout
+                             timeout=10, check=False).stdout
     except (OSError, subprocess.SubprocessError):
         return None
     page, pages = 4096, {}
@@ -97,7 +98,7 @@ def _ancestors():
     veto its own child."""
     try:
         out = subprocess.run(["ps", "-Ao", "pid=,ppid="], capture_output=True,
-                             text=True, timeout=10).stdout
+                             text=True, timeout=10, check=False).stdout
     except (OSError, subprocess.SubprocessError):
         return {os.getpid()}
     parent = {}
@@ -123,7 +124,8 @@ def heavy_processes(threshold_gb=HEAVY_GB):
     """
     try:
         out = subprocess.run(["ps", "-Ao", "rss=,pid=,command="],
-                             capture_output=True, text=True, timeout=10).stdout
+                             capture_output=True, text=True, timeout=10,
+                             check=False).stdout
     except (OSError, subprocess.SubprocessError):
         return None
     mine, found = _ancestors(), []
@@ -184,8 +186,39 @@ def require_headroom(need_gb, force=False, reserve_gb=RESERVE_GB):
         "each other.")
 
 
-def report_peak(label=""):
-    """One line, for the end of a heavy run."""
+def report_peak(label="", declared_gb=None):
+    """One line, for the end of a heavy run.
+
+    Pass what the run declared to `require_headroom` and the estimate
+    corrects itself in public: a guard whose numbers nobody ever checks
+    drifts into either refusing valid runs or protecting nothing.
+    """
     gb = peak_rss_gb()
-    print("  peak RSS%s: %.2f GB" % (" (%s)" % label if label else "", gb))
+    note = ""
+    if declared_gb:
+        if gb > declared_gb:
+            note = ("  OVER the %.1f GB declared — raise it, the guard is "
+                    "under-protecting" % declared_gb)
+        elif gb < 0.4 * declared_gb:
+            note = ("  well under the %.1f GB declared — lower it, the guard "
+                    "is refusing runs that would fit" % declared_gb)
+    print("  peak RSS%s: %.2f GB%s"
+          % (" (%s)" % label if label else "", gb, note))
     return gb
+
+
+@contextlib.contextmanager
+def heavy_run(need_gb, label="", force=False):
+    """Guard on the way in, report on the way out.
+
+    Wrapped around the ENTRYPOINT rather than a function body, because
+    peak RSS is a property of the process and the guard belongs where
+    the process decides to start. The report fires on the way out of a
+    crash too — a run that died holding 40 GB is exactly the one whose
+    number you want.
+    """
+    require_headroom(need_gb, force=force)
+    try:
+        yield
+    finally:
+        report_peak(label, need_gb)

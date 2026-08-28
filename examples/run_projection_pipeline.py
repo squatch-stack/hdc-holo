@@ -47,9 +47,11 @@ Usage:
 """
 import sys
 import time
+from collections import namedtuple
 
 import numpy as np
 
+from holo import budget
 from holo.capture import (
     BANDS,
     DIM,
@@ -62,7 +64,6 @@ from holo.capture import (
     slice_grid,
 )
 from holo.spectral import SplatScene, spectral_bundle
-from holo import budget
 
 #: Bytes a batched solve may hold in its right-hand side and solution.
 #: Cells per chunk falls out of this and the actual (channels, d) shape,
@@ -101,17 +102,26 @@ def build_gram(fd, s):
     """The band's Gaussian-window Gram, in ONE d x d buffer.
 
     G_jk = (2 pi s^2)^{3/2} exp(-s^2 |w_j - w_k|^2 / 2), real symmetric.
-    The readable form — sq[:,None] + sq[None,:] - 2*(fd @ fd.T), then an
-    exp of a scaled copy — materialises four 537 MB temporaries at
-    d=8192 to produce a result that needs one. This chains in place on
-    the gemm's own output instead. Arithmetic is identical; only the
-    allocation count changes.
+    The readable form holds three 537 MB arrays at once at d=8192 and
+    allocates six in all; this holds two and allocates two, by doing
+    every step after the two products in place.
+
+    BIT-IDENTICAL, and that is a requirement rather than a bonus. The
+    tempting version folds the gemm into one buffer — G = fd @ fd.T,
+    then *= -2, += sq[:,None], += sq[None,:] — which reassociates
+    (a + b) - 2c into (-2c + a) + b and moves the Gram by one ulp. That
+    is 5e-15 relative on G, and harmless-looking, but this solve is
+    ill-conditioned by construction (1.6e20 at d=8192, which is why
+    truncation is mandatory) and the truncated pseudo-inverse amplified
+    that ulp to 2.8e-8 on the operator at d=1024 alone. Identical
+    arithmetic is what lets every downstream number stand unre-derived.
     """
     sq = (fd ** 2).sum(1)
-    G = fd @ fd.T                         # the only d x d allocation
-    G *= -2.0
-    G += sq[:, None]
-    G += sq[None, :]
+    G = sq[:, None] + sq[None, :]         # buffer 1
+    prod = fd @ fd.T                      # buffer 2
+    prod *= 2.0                           # exact: a power of two
+    G -= prod                             # (a + b) - 2c, in that order
+    del prod
     np.maximum(G, 0.0, out=G)             # |w_j - w_k|^2, clipped
     G *= -0.5 * s ** 2
     np.exp(G, out=G)
@@ -175,7 +185,12 @@ class BandSolver:
         self.G = None
 
 
-def solve_band(M, scene, members_band, cell, s, freqs, fd, weights, chunk):
+#: Everything about a band that the per-cell solve needs, so the solve
+#: takes a geometry rather than eight loose positional arguments.
+BandGeom = namedtuple("BandGeom", "cell s freqs fd weights")
+
+
+def solve_band(M, scene, members_band, geom, chunk):
     """Every cell of one band through one operator, in batches.
 
     Identical arithmetic to solving cells one at a time — the same M
@@ -187,9 +202,10 @@ def solve_band(M, scene, members_band, cell, s, freqs, fd, weights, chunk):
     keys = list(members_band.keys())
     for lo in range(0, len(keys), chunk):
         batch = keys[lo:lo + chunk]
-        centres = [(np.array(k, dtype=np.float64) + 0.5) * cell for k in batch]
+        centres = [(np.array(k, dtype=np.float64) + 0.5) * geom.cell
+                   for k in batch]
         rhs = np.concatenate(
-            [window_bundle(scene, members_band[k], c0, s, freqs)
+            [window_bundle(scene, members_band[k], c0, geom.s, geom.freqs)
              for k, c0 in zip(batch, centres)], axis=0)          # (B*C, d)
         sol = (M @ rhs.astype(np.complex128).T).T                # (B*C, d)
         nch = rhs.shape[0] // len(batch)
@@ -197,8 +213,8 @@ def solve_band(M, scene, members_band, cell, s, freqs, fd, weights, chunk):
             c = sol[i * nch:(i + 1) * nch]
             # cell-local -> world phase, then pre-divide so decode_slice's
             # weight multiply cancels exactly
-            c = c * np.exp(-1j * (fd @ c0))[None, :]
-            out[k] = (c / weights[None, :]).astype(np.complex64)
+            c = c * np.exp(-1j * (geom.fd @ c0))[None, :]
+            out[k] = (c / geom.weights[None, :]).astype(np.complex64)
     return out
 
 
@@ -219,8 +235,7 @@ def estimate_gb(n_settings):
     return gram + (1 + n_settings) * 0.8 + 1.2
 
 
-def main(path, settings, force=False, also_shrink=False):
-    budget.require_headroom(estimate_gb(len(settings)), force=force)
+def main(path, settings, also_shrink=False):
     t0 = time.time()
     scene, smax, box = build_scene(path, verbose=False)
     books = band_codebooks(np.random.default_rng(42))
@@ -258,17 +273,25 @@ def main(path, settings, force=False, also_shrink=False):
         freqs, _rho, weights = books[name]
         fd = freqs.astype(np.float64)
         s = (cell / 2) / 2                       # the width that won per-cell
+        geom = BandGeom(cell, s, freqs, fd, weights)
         solver = BandSolver(build_gram(fd, s))
         chunk = cell_chunk(scene.channels, freqs.shape[0])
-        for st, lab in zip(settings, labels):
+        for i, (st, lab) in enumerate(zip(settings, labels)):
             M, how = solver.operator(st)
+            if i == len(settings) - 1:
+                # Release the Gram and its eigenvectors BEFORE the solves.
+                # BandSolver retains them so a sweep can share them, which
+                # is the whole point — but on the last setting that is
+                # 537 MB per retained array held through every per-cell
+                # solve for nothing. Measured: keeping it raised peak RSS
+                # from 5.05 GB to 5.63 GB on a single-setting run, almost
+                # exactly one d x d float64.
+                solver.close()
             print("  %-7s %d cells, d=%d, %s, chunk=%d  (%.0fs)"
                   % (name, counts[name], freqs.shape[0], how, chunk,
                      time.time() - t0), flush=True)
-            ana[lab][name] = solve_band(M, scene, members[name], cell, s,
-                                        freqs, fd, weights, chunk)
+            ana[lab][name] = solve_band(M, scene, members[name], geom, chunk)
             del M
-        solver.close()
         del solver
 
     for lab in labels:
@@ -295,7 +318,6 @@ def main(path, settings, force=False, also_shrink=False):
                       % (pct, e[0], e[1], 100 * (a[0] - e[0]) / a[0],
                          100 * (a[1] - e[1]) / a[1]))
     print("  total %.0fs" % (time.time() - t0))
-    budget.report_peak(path.split("/")[-1])
 
 
 def parse_settings(argv):
@@ -327,5 +349,6 @@ def parse_settings(argv):
 if __name__ == "__main__":
     argv = sys.argv[1:]
     path, settings = parse_settings(argv)
-    main(path, settings, force="--force-memory" in argv,
-         also_shrink="--shrink" in argv)
+    with budget.heavy_run(estimate_gb(len(settings)), path.split("/")[-1],
+                          "--force-memory" in argv):
+        main(path, settings, also_shrink="--shrink" in argv)

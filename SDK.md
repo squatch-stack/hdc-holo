@@ -204,6 +204,16 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   truncation) is strictly better on both axes. `holo.budget` is
   deliberately off the public surface: it shells out to `ps` and reads
   free memory, which is developer behaviour, not library behaviour.
+- **Three ways to lose a heavy run, and the guard covers one.** Memory
+  is the documented one. The second is self-inflicted and cost a restart
+  here: a full `pytest` launched while this lane's own 3-setting sweep
+  was still resident took the machine down — the pact is about MY other
+  jobs as much as anyone else's, and a test suite counts. The third is
+  not memory at all: `holo/accel.py` selects MLX/Metal whenever mlx
+  imports, so an encode shares the GPU with any splat training on the
+  box, and when that faults the GPU, Metal's recovery discards this
+  process's command buffer as an `InnocentVictim`. Measured here mid-run.
+  `HDC_BACKEND=numpy` sidesteps it when only the number is wanted.
 - **The guard caught a live collision on its first run**, which is the
   only reason it is worth its lines: it named a `msplat -n 3000` trainer
   climbing to 15 GB while a baseline pipeline held 4.8 GB, and reporting

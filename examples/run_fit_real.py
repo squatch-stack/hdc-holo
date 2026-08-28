@@ -17,6 +17,7 @@ import time
 
 import numpy as np
 
+from holo import budget
 from holo.capture import (
     band_codebooks,
     build_scene,
@@ -99,4 +100,6 @@ def main(path):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else DEFAULT_SCENE)
+    with budget.heavy_run(6.0, "fit real", "--force-memory" in sys.argv):
+        main(sys.argv[1] if len(sys.argv) > 1 and
+             not sys.argv[1].startswith("--") else DEFAULT_SCENE)

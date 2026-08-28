@@ -137,6 +137,15 @@ destroyed another session's uncommitted work once.
   splat trainer. A sweep shares the band Gram AND its eigendecomposition,
   so one process per setting pays N times for both — it is slower as well
   as fatter.
+- **Memory is not the only thing you share with a GPU trainer.**
+  `holo/accel.py` picks the MLX/Metal backend whenever mlx imports, so a
+  heavy encode runs on the same GPU as any splat training on the box.
+  When another process faults the GPU, Metal's recovery discards *your*
+  command buffer too and the run dies with
+  `kIOGPUCommandBufferCallbackErrorInnocentVictim` — nothing to do with
+  your code, and the headroom check cannot see it coming. If a trainer
+  is running and you only need a number, force `HDC_BACKEND=numpy`;
+  otherwise wait for it.
 - Replicated bundle blobs MUST go through `pack_bundle`/`unpack_bundle`
   (wire v1) — readers refuse raw complex64 bytes.
 - **Never `pip install -e .` from a clone or worktree.** The shared
