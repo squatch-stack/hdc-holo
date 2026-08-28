@@ -11,7 +11,7 @@ already bit us once.
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'        # + '.[gpu]' on Apple silicon,
                                          # + '.[crdt]' for Loro sync
-.venv/bin/python -m pytest tests/ -q     # 150+ tests, a few seconds
+.venv/bin/python -m pytest tests/ -q     # 195+ tests, a few seconds
 ```
 
 NumPy is pinned `<2.0`: the Accelerate-backed 2.0 wheels on macOS
@@ -126,8 +126,26 @@ destroyed another session's uncommitted work once.
 
 - Announce file claims before starting multi-file work; hold clear of
   claimed paths until the owner's completion note lands in SDK.md.
-- Check `ps` for running >4GB pipeline jobs before launching heavy
-  encodes (two concurrent real-scene runs have OOM-killed each other).
+- **Check headroom before a heavy encode, and sweep in ONE process.**
+  `holo.budget.require_headroom(gb)` is the mechanical form of this rule
+  — it reads actual free memory, lists every job over 4 GB by argv, and
+  refuses with the pids named (`--force-memory` on the examples overrides
+  it); the heavy examples call it on entry and report peak RSS on the way
+  out. The rule used to be "check `ps` yourself", and twice it was not
+  checked: two concurrent real-scene runs OOM-killed each other, then a
+  lambda sweep launched as parallel processes did it again beside a 15 GB
+  splat trainer. A sweep shares the band Gram AND its eigendecomposition,
+  so one process per setting pays N times for both — it is slower as well
+  as fatter.
+- **Memory is not the only thing you share with a GPU trainer.**
+  `holo/accel.py` picks the MLX/Metal backend whenever mlx imports, so a
+  heavy encode runs on the same GPU as any splat training on the box.
+  When another process faults the GPU, Metal's recovery discards *your*
+  command buffer too and the run dies with
+  `kIOGPUCommandBufferCallbackErrorInnocentVictim` — nothing to do with
+  your code, and the headroom check cannot see it coming. If a trainer
+  is running and you only need a number, force `HDC_BACKEND=numpy`;
+  otherwise wait for it.
 - Replicated bundle blobs MUST go through `pack_bundle`/`unpack_bundle`
   (wire v1) — readers refuse raw complex64 bytes.
 - **Never `pip install -e .` from a clone or worktree.** The shared
