@@ -90,3 +90,63 @@ def test_pack_polar_roundtrip_and_dispatch(space):
     hg4 = err(phase.unpack(phase.pack_polar(bundle, 4)))
     hm4 = err(phase.unpack(phase.pack_complex(bundle, 4)))
     assert hg4 < hm4
+
+
+# -- bit-width validation ---------------------------------------------------
+#
+# Codes ride in uint8/int8 at <= 8 bits and uint16/int16 above, so 16 is the
+# widest this layer represents. Above it the cast wrapped SILENTLY: 24-bit
+# round-tripped to values unrelated to the input, with no error and no
+# warning. Measured before the fix, on a 1024-component bundle:
+#
+#     bits=17 -> 1.051 relative    bits=24 -> 1.000    bits=32 -> 1.000
+#
+# 1.0 means the output carries none of the input. Asking for MORE precision
+# returned garbage, which is the worst shape a failure can take.
+
+BAD_BITS = [0, 17, 24, 32, 64]
+
+
+@pytest.mark.parametrize("bits", BAD_BITS)
+@pytest.mark.parametrize("packer", ["pack", "pack_complex", "pack_polar"])
+def test_encoding_refuses_a_width_it_cannot_represent(packer, bits):
+    fn = getattr(phase, packer)
+    v = np.exp(1j * np.linspace(0, 6.0, 64)).astype(np.complex64)
+    with pytest.raises(ValueError, match=r"\[1, 16\]"):
+        fn(v, bits=bits)
+
+
+def test_encoding_refuses_a_non_integer_width():
+    v = np.ones(8, dtype=np.complex64)
+    with pytest.raises(ValueError, match=r"\[1, 16\]"):
+        phase.pack_polar(v, bits=8.5)
+
+
+@pytest.mark.parametrize("bits", [1, 2, 4, 5, 8, 12, 16])
+def test_every_representable_width_still_round_trips(bits):
+    rng = np.random.default_rng(0)
+    v = (rng.standard_normal(64) + 1j * rng.standard_normal(64)
+         ).astype(np.complex64)
+    out = phase.unpack(phase.pack_polar(v, bits=bits))
+    assert out.shape == v.shape and np.all(np.isfinite(out))
+
+
+@pytest.mark.parametrize("packer", ["pack", "pack_complex", "pack_polar"])
+@pytest.mark.parametrize("forged", [0, 24, 255])
+def test_a_forged_header_width_is_refused_not_decoded(packer, forged):
+    """`bits` is read back OUT of the header, so on a replicated blob it is
+    peer-controlled input. Before this check a forged width decoded to
+    silent garbage; CONTRIBUTING.md requires blobs to go through the tagged
+    envelope precisely so that malformed bytes are refused loudly."""
+    v = np.exp(1j * np.linspace(0, 6.0, 32)).astype(np.complex64)
+    good = bytearray(getattr(phase, packer)(v, bits=8))
+    good[3] = forged                       # magic(2) + version(1) then bits
+    with pytest.raises(ValueError, match="header bits"):
+        phase.unpack(bytes(good))
+
+
+def test_a_valid_blob_still_decodes_after_the_header_check():
+    v = np.exp(1j * np.linspace(0, 6.0, 32)).astype(np.complex64)
+    for packer in ("pack", "pack_complex", "pack_polar"):
+        out = phase.unpack(getattr(phase, packer)(v, bits=8))
+        assert out.shape == v.shape
