@@ -38,6 +38,7 @@ Reading them back:
     python -m holo.runlog --killed     # only the ones with no end record
 """
 import contextlib
+import functools
 import json
 import os
 import subprocess
@@ -47,16 +48,51 @@ from datetime import datetime, timezone
 
 from . import budget
 
-__all__ = ["RUN_DIR", "record", "runs", "summarize"]
-
-#: Gitignored: out/ otherwise holds committed evidence figures, and a
-#: heavy run should not dirty the tree just by being observed.
-RUN_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "out", "runs")
+__all__ = ["record", "run_dir", "runs", "summarize"]
 
 
 def _repo_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+@functools.lru_cache(maxsize=1)
+def run_dir():
+    """Where run records go: `out/runs` in the SHARED checkout.
+
+    Gitignored — out/ otherwise holds committed evidence figures, and a
+    heavy run should not dirty the tree just by being observed.
+
+    Not package-relative, which is what this used to be, because of
+    where these runs actually happen. Every lane here works in its own
+    git worktree, so a package-relative path writes the record INTO the
+    worktree and `git worktree remove` then deletes it along with the
+    lane. Every record written between this module landing and
+    2026-08-28 went that way, and nobody noticed, because a missing file
+    looks exactly like a run that was never launched.
+
+    `git rev-parse --git-common-dir` names the main repository's .git
+    from inside any worktree, so its parent is the shared checkout; in
+    an ordinary clone it names `.git` and this resolves to the same
+    place it always did. `HDC_RUN_DIR` overrides both, and the
+    package-relative path remains the fallback for a tree git cannot
+    read.
+
+    Cached: resolved on first write, not at import, because finding it
+    costs a `git` call and importing a module should not shell out.
+    `run_dir.cache_clear()` re-reads the environment.
+    """
+    return os.environ.get("HDC_RUN_DIR") or os.path.join(
+        _shared_root(), "out", "runs")
+
+
+def _shared_root():
+    common = _git("rev-parse", "--git-common-dir")
+    if not common:
+        return _repo_root()
+    # a relative answer is relative to the -C git ran under, not to cwd
+    if not os.path.isabs(common):
+        common = os.path.join(_repo_root(), common)
+    return os.path.dirname(os.path.normpath(common))
 
 
 def _git(*args):
@@ -101,9 +137,10 @@ def _now():
 
 
 def _path(when=None):
-    os.makedirs(RUN_DIR, exist_ok=True)
+    directory = run_dir()
+    os.makedirs(directory, exist_ok=True)
     day = (when or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
-    return os.path.join(RUN_DIR, "%s.jsonl" % day)
+    return os.path.join(directory, "%s.jsonl" % day)
 
 
 def _append(row, path=None):
@@ -202,7 +239,7 @@ def runs(directory=None, days=None):
     """[(started, ended-or-None)] newest last. A None end is a run that
     was KILLED: nothing else can remove the end record, because it is
     written in a finally block that even an exception reaches."""
-    directory = directory or RUN_DIR
+    directory = directory or run_dir()
     if not os.path.isdir(directory):
         return []
     files = sorted(f for f in os.listdir(directory) if f.endswith(".jsonl"))
@@ -235,7 +272,7 @@ def summarize(directory=None, killed_only=False, limit=25):
         rows = [(s, e) for s, e in rows if e is None]
     rows = rows[-limit:]
     if not rows:
-        print("no runs recorded in %s" % (directory or RUN_DIR))
+        print("no runs recorded in %s" % (directory or run_dir()))
         return rows
     print("%-24s %-22s %-9s %8s %8s  %s"
           % ("run", "label", "status", "wall_s", "peak_gb", "sha"))
