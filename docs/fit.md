@@ -85,6 +85,45 @@ degraded answer. Keeping **25%** of the spectrum is safe on every band
 and sits near the ~3,300 space-bandwidth degrees of freedom a cell of
 this size actually supports.
 
+**But 25% was chosen for safety, not accuracy, and it costs a lot.**
+That figure came from a stability argument — full rank detonates, 25%
+does not — and nothing in between was ever measured. Sweeping it on
+saguaro, one eigendecomposition shared across every truncation:
+
+| keep | top-down | side | \|solved\| / \|forward\| |
+|---|---|---|---|
+| 0.10 | +24.0% | +21.8% | 1.1 |
+| 0.25 | +38.0% | +35.9% | 1.1 |
+| 0.40 | +54.1% | +46.1% | 1.3 |
+| **0.55** | **+59.3%** | **+58.8%** | 5.3 |
+| 0.70 | **-1417.0%** | -838.2% | 97.4 |
+| 0.85 | -5256.2% | -3188.9% | 148,911 |
+| 1.00 | -71836511.5% | -73842301.8% | 5.2e11 |
+
+The shipped setting gives up more than twenty points of accuracy, and
+the optimum sits **immediately** next to a precipice: 0.55 is the best
+truncation measured and 0.70 is 37x worse than not projecting at all.
+There is no broad plateau to sit in the middle of.
+
+Nor is the edge in the same place on every capture. On the LiDAR
+`lidar-dense` capture the top-down slice peaks near 0.40 (+26.9%) and
+has already turned over by 0.55 (+18.7%), while its side slice is still
+climbing at 0.55 (+10.9%) — the two slices of one capture do not agree
+on a best truncation, let alone two captures.
+
+**The divergence is silent in the decode and loud in the norm.** The
+last column above is the median solved-bundle norm over the forward
+one: everything that works sits at or below 5.3 and everything broken
+at or above 97, an 18x gap. `run_projection_pipeline.py` checks it after
+every band and says so, because a bundle that decodes to garbage without
+raising is the failure this technique most needs caught.
+
+That combination — a large gain, a sharp cliff, a scene-dependent edge,
+and a catastrophic rather than graceful failure — is why the projection
+stays a measured spike and does not become an SDK default. Automatic
+truncation selection is the path, and the norm ratio is the signal it
+would use; neither is done.
+
 ## Through the whole pipeline
 
 The per-cell numbers above are a different quantity from the slice
