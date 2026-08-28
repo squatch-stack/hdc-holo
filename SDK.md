@@ -1242,6 +1242,43 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   at production d. Regridded to 1e-2..1e-8, and the spectra themselves
   are now a committed artifact (`out/gram_spectrum_d8192.npz`) so no
   later threshold question costs another 11 minutes.
+- **The threshold scores worse and reveals more** (research lane;
+  `examples/run_projection_pipeline.py --sweep eps=`, `docs/fit.md`;
+  issue #2). Red Rock, four settings, one process, 2,927 s / 7.19 GB
+  peak. `keep=0.25` reproduced the published +17.8% / +27.8% exactly,
+  which is the refactor in #81 verifying itself.
+  **Three findings, and the third was not the one being looked for.**
+  (a) The aggregate IS `xfine` — its column and the aggregate agree to
+  the digit at every setting, because it holds 542,122 of 546,638
+  splats. Every projection number this repo has published is an xfine
+  number wearing a scene's name. (b) The SHIPPED setting damages a
+  band: at keep=0.25, with 0.0% of cells over the divergence limit,
+  `fine` decodes 24.6% / 33.1% WORSE than not projecting. (c) **The
+  gate could not see that, and its limit is the reason.** All sixteen
+  (band, setting) norm ratios are at or below 4.34 against a
+  DIVERGENCE_RATIO of 20, so every one passed — yet within each sparse
+  band the ratio tracks per-band error MONOTONICALLY (fine: 1.04 ->
+  -1.0%, 1.10 -> -2.1%, 1.32 -> -24.6%, 1.39 -> -36.0%). The signal was
+  always good; 20 was calibrated against catastrophe (saguaro's
+  5.3-vs-97) and catastrophe is not the failure that happens at a
+  working setting. A limit near 1.3 would have refused `fine` at
+  keep=0.25. NOT changed here: one capture is what made 20 wrong and
+  one capture cannot make 1.3 right, so confirming the relationship on
+  saguaro is the next thing and it is cheap.
+  On its own terms the reparameterisation worked — `eps=1e-3` is the
+  only setting where no band is meaningfully degraded (worst: `fine` at
+  -1.0%) and it holds every ratio at or below 1.28, because it
+  truncates `fine` hardest (846 of 8,192) exactly where a flat quarter
+  truncates it least. It pays +8.7% against keep=0.25's +17.8%. So the
+  choice is between a large aggregate gain with one band a quarter
+  worse and a smaller one with no band worse, which is a decision about
+  what the library should promise rather than a number to maximise —
+  and it is not one to make from a single capture.
+  Process: this run's telemetry showed every stage recorded TWICE. #80
+  extracted `record_band` (which calls `run.stage`) and left the
+  original call behind; nothing surfaced it until a run record was read
+  end to end for the first time, which is itself the argument for
+  reading them.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,
