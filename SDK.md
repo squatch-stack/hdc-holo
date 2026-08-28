@@ -188,6 +188,33 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **Trimming CRDT history is safe in one direction and silently
+  destructive in the other** (sync lane; `holo/crdt.py`, `docs/sync.md`).
+  Loro can discard history before a chosen version, and the win is not a
+  constant: a 64-container replica is 31.0 MB as a full snapshot after
+  30 edit rounds and 1.0 MB trimmed, 84.0 MB against 4.1 MB after 20
+  rounds at d=8192 — **the ratio IS the round count**, because a trimmed
+  doc costs its state and an untrimmed one costs its state once per
+  round. An earlier note read a 40x measurement off a 40-round replica
+  and took it for a property of the format.
+
+  The failure mode is the finding. A peer BEHIND the trim point cannot
+  be caught up by a delta, and asking for one does not raise: Loro
+  returns a plausible non-empty frame, the peer imports it cleanly, and
+  the peer then holds nothing. Only the write-back direction is loud
+  ("the dependencies of the importing updates are not included in the
+  shallow history"), by which time the peer has been stranded. So
+  `updates_for`/`updates_since` now refuse, naming `snapshot()` as the
+  recovery — and `tests/test_crdt.py` pins the silent zero-container
+  import as a regression the way the arithmetic-retraction phantom is
+  pinned, because a guard whose failure nobody has reproduced is a guard
+  someone deletes. `docs/sync.md` previously recommended
+  `ExportMode.ShallowSnapshot` **without** its precondition.
+
+  `trim_history()` restores the peer id when it rebuilds: a fresh id
+  would strand every `<container>::<peer>` blob the peer had written
+  under a name it no longer writes to. The shallow snapshot carries the
+  op counter, so writing resumes at the next sequence number.
 - **The storage codecs corrupted silently above 16 bits** (storage lane;
   `holo/phase.py`, `docs/storage.md`). Codes ride in uint8/int8 at or
   below 8 bits and uint16/int16 above, and nothing checked the width, so

@@ -195,6 +195,8 @@ class HoloReplica:
     def updates_for(self, other):
         """Delta: every op this doc has that `other` has not seen."""
         self.flush()
+        if not self._reachable_by_delta(other.doc.oplog_vv):
+            self._refuse_stale(other.doc.oplog_vv)
         return self.doc.export(ExportMode.Updates(from_=other.doc.oplog_vv))
 
     def version(self):
@@ -206,8 +208,14 @@ class HoloReplica:
 
     def updates_since(self, vv):
         """Delta of every op not covered by version vector vv — the
-        socket-transportable form of updates_for (see examples/live_sync.py)."""
+        socket-transportable form of updates_for (see examples/live_sync.py).
+
+        Refuses when this doc's history has been trimmed past `vv`;
+        without that check Loro hands back a plausible-looking frame the
+        peer imports successfully and reads NOTHING from."""
         self.flush()
+        if not self._reachable_by_delta(vv):
+            self._refuse_stale(vv)
         return self.doc.export(ExportMode.Updates(from_=vv))
 
     def apply(self, update_bytes):
@@ -226,6 +234,61 @@ class HoloReplica:
     def snapshot(self):
         self.flush()
         return self.doc.export(ExportMode.Snapshot())
+
+    # -- history trimming -----------------------------------------------
+
+    def _reachable_by_delta(self, vv):
+        """Can a peer at `vv` be brought up to date by a DELTA?
+
+        Only if it already holds everything before the trim point. On a
+        doc that was never trimmed `shallow_since_vv` is empty and this
+        is vacuously true, so ordinary replicas never touch this path.
+        """
+        return (not self.doc.is_shallow()
+                or vv.includes_vv(self.doc.shallow_since_vv))
+
+    def _refuse_stale(self, vv):
+        raise ValueError(
+            "this replica's history was trimmed at %s, past the "
+            "requesting peer's version %s: a delta cannot carry it "
+            "forward and Loro " % (self.doc.shallow_since_vv, vv) +
+            "will import one WITHOUT error while leaving the peer with "
+            "nothing. Re-onboard that peer from snapshot() instead — a "
+            "snapshot of a trimmed doc is complete and the peer can "
+            "write back normally. See docs/sync.md, 'Trimming history'.")
+
+    def checkpoint(self, at=None):
+        """A snapshot with history before `at` discarded — what you hand
+        a newcomer or archive to cold storage. `at` defaults to this
+        doc's current frontiers (trim everything).
+
+        Trim only past a version EVERY peer already holds: see
+        docs/sync.md for what happens to one that is behind."""
+        self.flush()
+        if at is None:
+            at = self.doc.vv_to_frontiers(self.doc.oplog_vv)
+        return self.doc.export(ExportMode.ShallowSnapshot(at))
+
+    def trim_history(self, at=None):
+        """Discard this replica's own history before `at`, in place.
+        Returns (bytes_before, bytes_after) of a full snapshot.
+
+        Rebuilding the doc gives it a FRESH peer id, which would strand
+        every `<container>::<peer>` blob this peer has already written
+        under a name it no longer writes to — so the id is restored.
+        The shallow snapshot carries the op counter with it, so writing
+        resumes at the next sequence number rather than colliding with
+        the trimmed history.
+        """
+        before = len(self.snapshot())
+        shallow = self.checkpoint(at)
+        doc = LoroDoc()
+        doc.import_(shallow)
+        doc.peer_id = int(self.peer)
+        self.doc = doc
+        self.local, self.dirty = {}, set()
+        self._check_format(writing=False)
+        return before, len(shallow)
 
     def _bundles(self):
         return self.doc.get_map("bundles")

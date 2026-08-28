@@ -173,3 +173,103 @@ def test_mismatched_universe_is_refused():
     update = A.updates_since(B.version())    # B's own flush wrote ITS record
     with pytest.raises(ValueError, match="wire-format mismatch"):
         B.apply(update)
+
+
+# -- trimming history -------------------------------------------------------
+#
+# Loro can discard history before a chosen version (ExportMode.
+# ShallowSnapshot), which is the difference between a capture-scale doc
+# that grows without bound and one that does not. The catch is that a
+# peer BEHIND the trim point cannot be caught up by a delta — and the
+# way it fails is silent. These tests pin both halves.
+
+def _seeded(n=6, dim=1024):
+    A = HoloReplica(FHRR(dim, seed=0))
+    kv = ReplicatedHoloMap(A)
+    for i in range(n):
+        kv.put("k%d" % i, "v%d" % i)
+    A.flush()
+    return A
+
+
+def test_untrimmed_replicas_never_meet_the_guard():
+    # the empty shallow_since_vv case: ordinary replicas are untouched
+    A, B = _seeded(), HoloReplica(FHRR(1024, seed=0))
+    assert not A.doc.is_shallow()
+    A.sync(B)
+    assert len(B.containers()) == len(A.containers())
+
+
+def test_a_peer_behind_the_trim_point_is_refused_by_name():
+    A = _seeded()
+    stale = HoloReplica(FHRR(1024, seed=0))     # never synced
+    A.trim_history()
+    with pytest.raises(ValueError, match="trimmed"):
+        A.updates_for(stale)
+    with pytest.raises(ValueError) as exc:
+        A.updates_since(stale.doc.oplog_vv)
+    # the recovery has to be IN the message: the caller cannot work it
+    # out from "refused", and retrying the delta is the wrong move
+    assert "snapshot()" in str(exc.value)
+
+
+def test_the_silent_loss_the_guard_exists_to_prevent():
+    """Regression pin, in the style of the arithmetic-retraction phantom.
+
+    Bypassing the guard reproduces Loro's raw behaviour: the stale peer
+    receives a plausible, non-empty frame, imports it WITHOUT raising,
+    and ends up holding nothing at all. If this ever stops reproducing,
+    the guard has become unnecessary — but until then it is the whole
+    justification for refusing, and a silent zero is far worse than a
+    loud refusal.
+    """
+    from loro import ExportMode
+
+    A = _seeded()
+    stale = HoloReplica(FHRR(1024, seed=0))
+    A.trim_history()
+
+    raw = A.doc.export(ExportMode.Updates(from_=stale.doc.oplog_vv))
+    assert raw, "the frame is not even empty — it just carries nothing"
+    stale.doc.import_(raw)                      # no exception, no error
+    assert stale.containers() == []             # and no data either
+    assert A.containers() != []                 # while A still has all of it
+
+
+def test_a_peer_at_the_trim_point_still_syncs():
+    A = _seeded()
+    B = HoloReplica(FHRR(1024, seed=0))
+    A.sync(B)                                   # B is current...
+    cut = A.doc.vv_to_frontiers(A.doc.oplog_vv)
+    kv = ReplicatedHoloMap(A)
+    kv.put("after", "the cut")
+    A.flush()
+    A.trim_history(cut)                         # ...so the cut is safe for it
+    A.sync(B)
+    assert sorted(B.containers()) == sorted(A.containers())
+    assert np.allclose(B.merged("kv"), A.merged("kv"), atol=1e-5)
+
+
+def test_a_newcomer_onboards_from_a_trimmed_doc_and_can_write_back():
+    A = _seeded()
+    A.trim_history()
+    C = HoloReplica(FHRR(1024, seed=0))
+    C.apply(A.snapshot())                       # snapshot, NOT a delta
+    assert sorted(C.containers()) == sorted(A.containers())
+    ReplicatedHoloMap(C).put("fresh", "value")
+    C.flush()
+    A.apply(C.updates_for(A))
+    assert np.allclose(A.merged("kv"), C.merged("kv"), atol=1e-5)
+
+
+def test_trim_history_keeps_this_peer_writing_under_its_own_name():
+    A = _seeded()
+    peer, keys = A.peer, sorted(A._bundles().keys())
+    before, after = A.trim_history()
+    assert A.peer == peer                       # a fresh id strands the blobs
+    assert sorted(A._bundles().keys()) == keys
+    assert after < before
+    ReplicatedHoloMap(A).put("post", "trim")
+    A.flush()
+    # the new write lands under the SAME peer shard, not a second one
+    assert {k.rsplit("::", 1)[1] for k in A._bundles().keys()} == {peer}
