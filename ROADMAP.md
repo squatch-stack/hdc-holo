@@ -32,40 +32,54 @@ and in `docs/`, with figures. Nothing unproven enters the SDK surface.
   similarity, abstention as policy, banded rulebooks; the capacity
   law and the banding medicine transfer from scenes to rule tables).
 
-## 0.3 candidates (unclaimed unless noted)
+## 0.3 — what landed, and what is left
 
-Tracked as GitHub issues under the [0.3 milestone](https://github.com/squatch-stack/hdc-holo/milestone/1); claims still go through SDK.md's log first.
+Tracked under the [0.3 milestone](https://github.com/squatch-stack/hdc-holo/milestone/1);
+six of eight closed. Claims still go through SDK.md's log first.
 
-- **Principled shrinkage denoiser** ([#1](https://github.com/squatch-stack/hdc-holo/issues/1)) — HM-4's accidental truncation
-  beat uncompressed decode on ground truth; deliberate soft/hard
-  thresholding at the crosstalk noise level should do better, and
-  composes with HG-8 for a denoise-then-persist pair.
-- **Analytic L2 projection for per-cell fits** ([#2](https://github.com/squatch-stack/hdc-holo/issues/2)) — the Fourier-extension
-  route: closed-form region Gram, Tikhonov/TSVD from day one, spectral
-  prior as frame regularizer. (CLAIMED: capture/spectral lane — "peer"
-  is ambiguous in a shared doc; lanes are named by module ownership.)
-- **Dense-scene coherent error** ([#3](https://github.com/squatch-stack/hdc-holo/issues/3)) — what remains of train's top-down
-  figure after the reach split (1.04 -> 0.98): not Monte-Carlo (d-boost
-  measured ineffective), so it needs a different idea — connects to the
-  shrinkage-denoiser item above.
-- **Real-scene collaborative editing** ([#4](https://github.com/squatch-stack/hdc-holo/issues/4)) — live_sync's OR strokes over
-  capture-scale scenes; magnitude codecs for epoch blobs on the wire.
-- **Occlusion research spike** ([#5](https://github.com/squatch-stack/hdc-holo/issues/5)) — alpha compositing is outside linear
-  superposition (documented failure mode); scope what a hybrid
-  (holographic density + classical compositing pass) would look like.
-- **Publication pass** ([#6](https://github.com/squatch-stack/hdc-holo/issues/6)) — SKELETON WRITTEN: [PAPER.md](PAPER.md)
-  picks three claims (scene-as-vector with algebraic query; a view as a
-  bundle; superposition as an almost-CRDT) with the capacity law as
-  spine, records what was excluded and why, carries the adopted
-  citations, and names the venue: the HDC/VSA community (arXiv
-  cs.NE first), NOT graphics — we do not do novel-view synthesis,
-  the baseline table is a loss on the axis graphics weighs, and all
-  three claims are algebraic. Only a draft-freeze re-sweep remains. Superseded framing
-  below, kept for the record — arXiv note on the strongest findings (codec
-  split + accidental denoiser; observed-remove holographic CRDTs; the
-  per-cell fit negative result and its Fourier-extension framing),
-  then PyPI release. LICENSE: Apache-2.0, chosen and in-tree.
-  Remaining blocker: flipping the repo public (user step).
+**Closed.**
+
+- **Principled shrinkage denoiser** ([#1](https://github.com/squatch-stack/hdc-holo/issues/1)) —
+  soft shrinkage at the 25th magnitude percentile, 0.298/0.203 against an
+  unshrunk 0.350/0.213, composing with HG-8 at 0.25x bytes.
+- **Dense-scene coherent error** ([#3](https://github.com/squatch-stack/hdc-holo/issues/3)) —
+  answered: the dense residual is NOT variance. Orthogonal coupling
+  reduces variance and nothing else, and removes +18.4% on sparse saguaro
+  against +1.9% on dense train — that split is the proof. Shrinkage takes
+  +40.1% there and the analytic projection +60.7%.
+- **Real-scene collaborative editing** ([#4](https://github.com/squatch-stack/hdc-holo/issues/4)) —
+  cell-keyed epochs (one stroke, one tombstone; 10.0 MB of accumulator
+  against 655.2 MB), HG-8 epoch blobs on the wire (84.0 MB -> 21.0 MB),
+  and the memory pact as code. Found three silent failures on the way:
+  a trimmed-history delta that leaves a peer holding nothing, generation
+  loss in `compact()`, and codecs corrupting above 16 bits.
+- **Publication pass** ([#6](https://github.com/squatch-stack/hdc-holo/issues/6)) —
+  arXiv note written and 0.3.0 on PyPI. Submission is
+  [#59](https://github.com/squatch-stack/hdc-holo/issues/59), owner action.
+
+**Open.**
+
+- **Analytic L2 projection for per-cell fits** ([#2](https://github.com/squatch-stack/hdc-holo/issues/2)) —
+  works, and deliberately unpromoted. It is the largest lever measured
+  (+59.3% on saguaro at keep=0.55, against the shipped keep=0.25's
+  +38.0%), but the truncation is a knife edge: one step further, at 0.70,
+  it is 37x WORSE than not projecting at all, and the edge moves with the
+  capture. A fixed default is either conservative or catastrophic, and
+  the failure is silent in the decode. **The path to promotion is
+  automatic truncation selection**, and the signal it would use already
+  exists — the solved/forward norm ratio separates working from broken by
+  18x, and `run_projection_pipeline.py` checks it after every band.
+  Details in [docs/fit.md](docs/fit.md).
+- **Occlusion research spike** ([#5](https://github.com/squatch-stack/hdc-holo/issues/5)) —
+  untouched, and unrelated to everything else in this milestone. Alpha
+  compositing is outside linear superposition (a documented failure
+  mode); the spike is to scope what a hybrid holographic-density plus
+  classical-compositing pass would look like. The order-independent
+  transparency literature is the right family: arXiv:2605.13855
+  (SparseOIT), arXiv:2605.25345 (depth peeling for Gaussian surfels),
+  arXiv:2305.10197 (learned OIT). **Consider moving to 0.4** so 0.3 can
+  close on #2 alone.
+
 - **Package name decision** ([#7](https://github.com/squatch-stack/hdc-holo/issues/7)) — `holo` is the charter's working name;
   rename happens once, before PyPI.
 - **Dynamic holograms** (no issue yet; prototype
