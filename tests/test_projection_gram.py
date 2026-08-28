@@ -64,7 +64,12 @@ def test_operators_are_bit_identical_and_survive_a_mixed_sweep(rp):
     """Tikhonov writes lambda into the Gram's diagonal in place. A sweep
     that interleaves it with TSVD must therefore restore the diagonal,
     or the second setting silently solves a different problem — so the
-    order below deliberately goes Tikhonov, TSVD, Tikhonov.
+    order below deliberately alternates.
+
+    It also pins that adding `eps` did not move `keep`. The two share
+    one eigendecomposition and one operator expression and differ only
+    in how many columns they take, which is what lets every keep=
+    number already in docs/fit.md stand without re-deriving it.
     """
     name, _cap, cell = BANDS[0]
     fd = band_codebooks(np.random.default_rng(42))[name][0][:D].astype(
@@ -72,12 +77,14 @@ def test_operators_are_bit_identical_and_survive_a_mixed_sweep(rp):
     s = (cell / 2) / 2
     G0 = _readable_gram(fd, s)
     solver = rp.BandSolver(rp.build_gram(fd, s))
-    for kind, val in (("tikhonov", 1e-3), ("keep", 0.25), ("tikhonov", 1e-1)):
-        if kind == "keep":
+    for kind, val in (("tikhonov", 1e-3), ("keep", 0.25), ("eps", 1e-3),
+                      ("tikhonov", 1e-1), ("keep", 0.55)):
+        if kind in ("keep", "eps"):
             ev, vec = np.linalg.eigh(G0)
             order = np.argsort(np.abs(ev))[::-1]
             ev, vec = ev[order], vec[:, order]
-            k = max(1, round(val * len(ev)))
+            k = (max(1, round(val * len(ev))) if kind == "keep"
+                 else max(1, int((np.abs(ev) > val * np.abs(ev[0])).sum())))
             want = (vec[:, :k] / ev[:k][None, :]) @ vec[:, :k].T
         else:
             lam = val * float(np.abs(G0).max())
@@ -98,6 +105,10 @@ def test_sweep_parsing_keeps_the_old_forms_working(rp):
     assert rp.parse_settings(["s.spz", "0.25"]) == ("s.spz", [("keep", 0.25)])
     assert rp.parse_settings(["s.spz", "--tikhonov", "1e-6"]) == (
         "s.spz", [("tikhonov", 1e-6)])
+    assert rp.parse_settings(["s.ply", "--sweep", "eps=1e-4,1e-5"]) == (
+        "s.ply", [("eps", 1e-4), ("eps", 1e-5)])
+    assert rp.label_of(("eps", 1e-4)) == "eps=1e-04"
+    assert rp.label_of(("tikhonov", 1e-6)) == "tikhonov=1e-06"
     path, settings = rp.parse_settings(
         ["s.spz", "--sweep", "tikhonov=1e-6,1e-3", "--sweep", "keep=0.25"])
     assert path == "s.spz"
@@ -293,3 +304,32 @@ def test_a_band_with_no_signal_scores_none_rather_than_zero(rp):
     want = np.zeros(8, dtype=np.float32)
     assert rp.rel_err(np.ones(8, np.float32), want) is None
     assert rp.rel_err(want, np.ones(8, np.float32)) == 1.0
+
+
+def test_eps_truncates_the_ill_conditioned_band_harder(rp):
+    """The reason to change the knob at all.
+
+    One `keep` is one rank for every band, whatever their spectra do.
+    One `eps` is one regularisation LEVEL, so the band whose Gram decays
+    fastest keeps fewer of its eigenvalues — automatically, and without
+    a per-band constant to tune. `fine` is that band, and `fine` is the
+    one that ran at 1030x on Red Rock.
+
+    Pinned as an ordering rather than a value: the ranks themselves move
+    with d (at d=8192 the shipped keep=0.25 corresponds to 2.56e-04 on
+    `xfine` and 1.77e-05 on `fine`), but which band needs more damping
+    is a property of the band, not of d.
+    """
+    books = band_codebooks(np.random.default_rng(42))
+    ranks = {}
+    for name, _cap, cell in BANDS:
+        fd = books[name][0][:D].astype(np.float64)
+        ev, _ = rp.eigen(rp.build_gram(fd, (cell / 2) / 2))
+        ranks[name] = {
+            "eps": rp.BandSolver.rank(ev, "eps", 1e-2),
+            "keep": rp.BandSolver.rank(ev, "keep", 0.25),
+        }
+    assert ranks["fine"]["eps"] < ranks["xfine"]["eps"]
+    assert ranks["fine"]["eps"] < ranks["coarse"]["eps"]
+    # ...where a rank fraction is by construction blind to all of that
+    assert len({r["keep"] for r in ranks.values()}) == 1

@@ -57,6 +57,8 @@ Usage:
     python -m examples.run_projection_pipeline data/train.splat [keep_frac]
     python -m examples.run_projection_pipeline data/train.splat \
         --sweep tikhonov=1e-6,1e-3,1e-1 --sweep keep=0.25
+    python -m examples.run_projection_pipeline data/iphone/redrock.ply \\
+        --sweep keep=0.25 --sweep eps=1e-3,1e-4,1e-5
     python -m examples.run_projection_pipeline --spectrum
 """
 import os
@@ -288,16 +290,41 @@ class BandSolver:
         is ~6x cheaper and leaves the per-cell cost a matvec either way.
         """
         kind, val = setting
-        if kind == "keep":
+        if kind in ("keep", "eps"):
             ev, vec = self.eigen()
-            keep = max(1, round(val * len(ev)))
+            keep = self.rank(ev, kind, val)
+            # UNCHANGED ARITHMETIC. Both truncations differ only in how
+            # many columns they take; the operator built from those
+            # columns is the same expression it always was, so every
+            # keep= number in docs/fit.md still stands unre-derived.
             op = (vec[:, :keep] / ev[:keep][None, :]) @ vec[:, :keep].T
-            return op, "keep=%d" % keep
+            return op, ("keep=%d" % keep if kind == "keep"
+                        else "eps=%.0e -> keep=%d" % (val, keep))
         self._restore()
         # in place: `G + lam * np.eye(d)` allocates a 537 MB identity AND
         # a 537 MB sum for a change that touches d of d*d entries
         self.G.flat[::self.n + 1] = self.diag0 + val * self.scale
         return np.linalg.inv(self.G), "tikhonov lam=%.0e" % val
+
+    @staticmethod
+    def rank(ev, kind, val):
+        """How many eigenvalues survive, by rank fraction or by threshold.
+
+        These are NOT the same knob. `keep` takes the largest `val*d` of
+        them and says nothing about how small the smallest survivor is —
+        and the operator divides by that survivor. Each band's Gram
+        decays at its own rate, so one rank fraction lands at a wildly
+        different eigenvalue per band: at d=8192, keep=0.55 cuts `fine`
+        at 2.47e-12 and `coarse` at 1.79e-03, a factor of 7e8 in what it
+        actually regularises. `eps` cuts at the level instead, so it
+        adapts to each band's spectrum by construction — which is what
+        the Fourier-extension literature does, with accuracy going as
+        sqrt(eps). See docs/fit.md and `--spectrum`.
+        """
+        if kind == "keep":
+            return max(1, round(val * len(ev)))
+        a = np.abs(ev)
+        return max(1, int((a > val * a[0]).sum()))
 
     def close(self):
         self._eig = None
@@ -466,7 +493,7 @@ def report_band_error(name, got, base):
 
 def label_of(setting):
     kind, val = setting
-    return "keep=%.2f" % val if kind == "keep" else "tikhonov=%.0e" % val
+    return "keep=%.2f" % val if kind == "keep" else "%s=%.0e" % (kind, val)
 
 
 def estimate_gb(n_settings):
@@ -626,14 +653,14 @@ def main(path, settings, also_shrink=False, run=None,
                      time.time() - t0), flush=True)
             t_band = time.time()
             ana[lab][name] = solve_band(M, scene, members[name], geom, chunk)
+            # records the stage AND gates it; a killed run's last stage
+            # therefore says exactly how far it got. #80 extracted that
+            # into record_band and left the original call behind, so
+            # every stage was written twice until this run's telemetry
+            # showed the pairs.
             record_band(run, ana[lab][name], fwd_ref.get(name, {}),
                         BandRun(name, lab, how, counts[name]),
                         time.time() - t_band, allow_divergence)
-            if run is not None:
-                # recorded per band per setting, so a killed run's last
-                # stage says exactly how far it got
-                run.stage("%s/%s" % (name, lab), time.time() - t_band,
-                          cells=counts[name], operator=how)
             del M
         del solver
 
@@ -644,8 +671,9 @@ def main(path, settings, also_shrink=False, run=None,
 
 def parse_settings(argv):
     """Back-compatible: a positional keep_frac and --tikhonov still work.
-    --sweep keep=a,b / --sweep tikhonov=a,b add settings that SHARE the
-    band Gram instead of each needing its own process."""
+    --sweep keep=a,b / --sweep eps=a,b / --sweep tikhonov=a,b add
+    settings that SHARE the band Gram instead of each needing its own
+    process. keep and eps additionally share one eigendecomposition."""
     settings, rest = [], []
     i = 0
     while i < len(argv):
@@ -654,8 +682,9 @@ def parse_settings(argv):
             i += 2
         elif argv[i] == "--sweep":
             kind, _, vals = argv[i + 1].partition("=")
-            if kind not in ("keep", "tikhonov"):
-                raise SystemExit("--sweep takes keep=... or tikhonov=...")
+            if kind not in ("keep", "eps", "tikhonov"):
+                raise SystemExit(
+                    "--sweep takes keep=..., eps=... or tikhonov=...")
             settings += [(kind, float(v)) for v in vals.split(",")]
             i += 2
         elif not argv[i].startswith("--"):
