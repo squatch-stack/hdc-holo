@@ -140,6 +140,15 @@ acceptance test for a per-cell solve, because a band can be destroyed
 without it moving. The norm ratio sees what the slice error misses, and
 belongs alongside it whenever a truncation changes.
 
+**So it is a gate, not a warning.** `run_projection_pipeline.py` refuses
+a band whose solved bundles exceed the limit rather than printing and
+carrying on, because printing is not a defence against a metric that
+says the run was the best of four. The refusal names both ways out — a
+smaller `keep`, or `--allow-divergence` for a sweep deliberately
+exploring past the cliff, which is how the cliff was found in the first
+place. The ratio is recorded either way, so a refused run still says how
+far past it went.
+
 Nor is the edge in the same place on every capture. On the LiDAR
 `lidar-dense` capture the top-down slice peaks near 0.40 (+26.9%) and
 has already turned over by 0.55 (+18.7%), while its side slice is still
