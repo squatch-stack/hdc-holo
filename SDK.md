@@ -188,6 +188,39 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **Cell-keyed epochs: one stroke, one tombstone** (sync lane;
+  `holo/orset.py`, `docs/orset.md`; issue #4). `add(desc, cell=)` and
+  `merged(cell=)` partition an epoch's bundle by space, which is what
+  capture scale needs — thousands of cells, a brush stroke crossing
+  dozens.
+
+  Two properties a store-per-cell does not give. The accumulator holds
+  only the cells the CURRENT stroke touched: 40 cells at d=8192 and four
+  channels is **10.0 MB against 655.2 MB**, 66x. And an undo stays ONE
+  tombstone however many cells the stroke wrote, because the tombstone
+  names the epoch and blob keys hang off it — N tombstones can arrive
+  across N syncs, and a peer that saw half of them renders half an undo.
+
+  **The design was decided by Loro's documentation, not by memory.** The
+  obvious shape is a child container per cell; Loro's own guidance is
+  that two peers lazily creating the same child container concurrently
+  get conflicting container ids, which "prevents automatic merging and
+  may result in data loss". A flat map with the cell in the key creates
+  no child containers, so the hazard cannot arise. `@` separates it
+  rather than `/`, because an item id is `<name>/<peer>.<epoch>/<i>` and
+  is told from an epoch key by slash count alone.
+
+  Also from the literature this session, and it connects two things
+  already in the tree: OR-Set tombstones "can only be purged once all
+  replicas acknowledge the deletion" — the SAME precondition as the
+  shallow-snapshot trim point. `compact()` and `trim_history()` are
+  governed by one rule, not two, and both should hang off the epoch
+  boundary `ORStore` already has.
+
+  Backwards compatible: an epoch written without cells still stores the
+  old bare-list index and an unsuffixed blob key, so documents predating
+  this read back unchanged — pinned by a test.
+
 - **The projection's truncation is a knife edge, and 25% was the wrong
   question** (research lane; `examples/run_projection_pipeline.py`,
   `docs/fit.md`; issue #2). Going into this I expected TSVD to be the

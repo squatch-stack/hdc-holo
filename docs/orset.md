@@ -41,6 +41,34 @@ brush stroke across two OS processes over TCP: both peers pick the same
 stroke independently, tombstone it twice, it vanishes once — field
 floor -0.30 (crosstalk noise) vs -2.21 for naive double-subtraction.
 
+**Cells: one stroke, one tombstone.** `add(descriptor, cell=)` partitions
+an epoch's bundle by space, and `merged(cell=)` reads one back. It exists
+for capture scale, where a scene has thousands of cells and a brush
+stroke crosses dozens, and it buys two things a store-per-cell does not.
+
+The accumulator holds only the cells THIS stroke touched: 40 cells at
+d=8192 and four channels is **10.0 MB against 655.2 MB**, 66x, for one
+`(channels, d)` array per cell of the whole capture. And undoing a
+stroke stays **one tombstone** however many cells it wrote, because the
+tombstone names the epoch and the blob keys hang off it — N tombstones
+could otherwise arrive across N syncs, leaving a peer rendering half an
+undo.
+
+The cell rides in the blob KEY of the one flat map (`<name>/<peer>.
+<epoch>@<cell>`), not in a child container per cell. That is Loro's own
+advice: two peers lazily creating the same child container concurrently
+get conflicting container ids, which "prevents automatic merging and may
+result in data loss". A flat map creates no child containers, so the
+hazard cannot arise. `@` rather than `/` because an item id is
+`<name>/<peer>.<epoch>/<i>` and is told from an epoch key by its slash
+count.
+
+An item lives in exactly one cell's blob, so a reader summing a cell
+subtracts only the tombstones belonging to it — subtracting one from
+another cell would remove something that was never added there. An epoch
+written without cells still stores the old bare-list index, so documents
+predating this read back unchanged.
+
 **Costs and maintenance.** Item tombstones cost one re-encode per read
 until the OWNER `compact()`s them into its own blobs (owner-only keys,
 no races; readers skip folded ids — merged() unchanged, verified).
