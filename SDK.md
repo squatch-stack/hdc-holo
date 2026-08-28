@@ -188,6 +188,45 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **Red Rock says keep=0.25 stays, and the referee has a hole**
+  (research lane; `docs/fit.md`; issue #2). The keep sweep was run only
+  on saguaro's `.spz` — a LOSSY export — and on one small LiDAR scene.
+  `docs/real-scenes.md` recommends the raw `.ply`, and `redrock.ply` is
+  the lossless capture it names best. Running there was the user's
+  instinct and it overturned the conclusion.
+
+  By slice error, keep=0.55 wins on Red Rock too (+28.6% / +39.8%
+  against 0.25's +17.8% / +27.8%), which looked like confirmation. It is
+  not. The divergence guard reported every cell of the `fine` band at
+  **1030x** the forward bundle norm at that setting, and the escalation
+  is monotonic and clean:
+
+  | keep | fine-band norm ratio | over the 20x limit |
+  |---|---|---|
+  | 0.25 | median 1.21, p99 1.77 | 0.0% |
+  | 0.40 | median 10, p99 23.9 | 4.9% |
+  | 0.55 | median 1030, p99 2430 | 100% |
+
+  **The slice error cannot see it because `fine` holds 0.7% of Red
+  Rock's splats** — 3,854 against xfine's 542,122. Destroying that band
+  by three orders of magnitude barely moves a metric dominated by xfine.
+  The bundles are still garbage for a render, a `what_is_at` query or a
+  stored scene; only this measurement is blind.
+
+  Two corrections fall out. **keep=0.25 stays** — it is the last
+  truncation with every cell clean — and the claim that it "gives up
+  more than twenty points" was reading a metric that could not see the
+  cost. And the wider one: **slice error against the exact mixture is
+  not a sufficient acceptance test for a per-cell solve.** Every
+  projection number in this repo is measured with it. The norm ratio
+  sees what it misses and belongs beside it whenever a truncation moves.
+
+  Process note, since it nearly went the other way twice: I read the
+  sweep output while it was still being written and twice drew a
+  conclusion from a partial file — once calling a finished run killed.
+  The run log said `ok`; I doubted it before checking. Read the end
+  record, not the tail of a live log.
+
 - **Cell-keyed epochs: one stroke, one tombstone** (sync lane;
   `holo/orset.py`, `docs/orset.md`; issue #4). `add(desc, cell=)` and
   `merged(cell=)` partition an epoch's bundle by space, which is what

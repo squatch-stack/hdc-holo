@@ -100,10 +100,45 @@ saguaro, one eigendecomposition shared across every truncation:
 | 0.85 | -5256.2% | -3188.9% | 148,911 |
 | 1.00 | -71836511.5% | -73842301.8% | 5.2e11 |
 
-The shipped setting gives up more than twenty points of accuracy, and
-the optimum sits **immediately** next to a precipice: 0.55 is the best
-truncation measured and 0.70 is 37x worse than not projecting at all.
-There is no broad plateau to sit in the middle of.
+On saguaro the shipped setting appears to give up more than twenty
+points, and the optimum appears to sit immediately next to a precipice:
+0.55 looks best and 0.70 is 37x worse than not projecting at all.
+
+**That reading was wrong, and Red Rock shows why.** The `.spz` saguaro
+capture is a lossy export; `redrock.ply` is the lossless one this repo
+recommends. Run there, keep=0.55 again looks best by slice error
+(+28.6% / +39.8% against 0.25's +17.8% / +27.8%) — while the divergence
+guard reports every cell of the `fine` band at **1030x** the forward
+bundle norm. Both are true, and the second one is what matters:
+
+| keep | fine-band norm ratio | cells over the 20x limit |
+|---|---|---|
+| 0.25 | median 1.21, p99 1.77 | 0.0% |
+| 0.40 | median 10, p99 23.9 | 4.9% |
+| 0.55 | median 1030, p99 2430 | 100% |
+
+The slice error cannot see it because of how the bands divide the scene:
+
+| band | splats | cells |
+|---|---:|---:|
+| xfine | 542,122 | 1,615 |
+| fine | 3,854 | 1,241 |
+| mid | 641 | 130 |
+| coarse | 21 | 14 |
+
+**The `fine` band holds 0.7% of the splats.** Corrupting it by three
+orders of magnitude barely moves a slice error dominated by xfine's
+542k, so the metric rewards a setting that has destroyed a band. Those
+bundles are still garbage for anything that reads them — a render, a
+`what_is_at` query, a stored scene — and only this particular
+measurement is blind to it.
+
+So **keep=0.25 stays**: it is the last truncation with every cell clean
+on the lossless capture. And the wider lesson is about the referee, not
+the knob — slice error against the exact mixture is not a sufficient
+acceptance test for a per-cell solve, because a band can be destroyed
+without it moving. The norm ratio sees what the slice error misses, and
+belongs alongside it whenever a truncation changes.
 
 Nor is the edge in the same place on every capture. On the LiDAR
 `lidar-dense` capture the top-down slice peaks near 0.40 (+26.9%) and
