@@ -51,7 +51,7 @@ from collections import namedtuple
 
 import numpy as np
 
-from holo import budget
+from holo import runlog
 from holo.capture import (
     BANDS,
     band_codebooks,
@@ -241,7 +241,37 @@ def estimate_gb(n_settings):
     return 5.5 + 0.7 * (n_settings - 1)
 
 
-def main(path, settings, also_shrink=False):
+def report_setting(lab, cells, base, err, also_shrink, run):
+    """One setting's slice error, and optionally what shrinkage adds."""
+    a = err(cells)
+    print("  %-16s analytic (window s=h/2): %.4f / %.4f"
+          "   top-down %+.1f%%  side %+.1f%%"
+          % (lab, a[0], a[1], 100 * (base[0] - a[0]) / base[0],
+             100 * (base[1] - a[1]) / base[1]))
+    if run is not None:
+        run.result(**{lab: {"top_down": round(a[0], 4),
+                            "side": round(a[1], 4),
+                            "vs_forward_pct": round(
+                                100 * (base[0] - a[0]) / base[0], 1)}})
+    if not also_shrink:
+        return
+    # Does shrinkage add anything to an ALREADY-SOLVED bundle? Prediction
+    # was "little or negative" — the solve is L2-optimal on the window and
+    # already regularised. Measured +6.4% / +3.6%: the objective (windowed
+    # L2 per cell) is not the evaluation (slice error with cross-cell
+    # contributions).
+    from holo.denoise import percentile_threshold, shrink
+    for pct in (10, 25):
+        sh = {b: {k: shrink(v, percentile_threshold(v, pct))
+                  for k, v in band.items()} for b, band in cells.items()}
+        e = err(sh)
+        del sh
+        print("    + shrink p%-2d       : %.4f / %.4f  (%+.1f%% / %+.1f%%)"
+              % (pct, e[0], e[1], 100 * (a[0] - e[0]) / a[0],
+                 100 * (a[1] - e[1]) / a[1]))
+
+
+def main(path, settings, also_shrink=False, run=None):
     t0 = time.time()
     scene, smax, box = build_scene(path, verbose=False)
     books = band_codebooks(np.random.default_rng(42))
@@ -261,6 +291,10 @@ def main(path, settings, also_shrink=False):
                 for n, (pts, _) in slices]
 
     base = err(fwd_bundles)
+    if run is not None:
+        run.result(forward={"top_down": round(base[0], 4),
+                            "side": round(base[1], 4)})
+        run.stage("forward encode", time.time() - t0)
     print("%s  |  forward encoding: %.4f / %.4f  (%.0fs)"
           % (path.split("/")[-1], base[0], base[1], time.time() - t0),
           flush=True)
@@ -299,33 +333,18 @@ def main(path, settings, also_shrink=False):
             print("  %-7s %d cells, d=%d, %s, chunk=%d  (%.0fs)"
                   % (name, counts[name], freqs.shape[0], how, chunk,
                      time.time() - t0), flush=True)
+            t_band = time.time()
             ana[lab][name] = solve_band(M, scene, members[name], geom, chunk)
+            if run is not None:
+                # recorded per band per setting, so a killed run's last
+                # stage says exactly how far it got
+                run.stage("%s/%s" % (name, lab), time.time() - t_band,
+                          cells=counts[name], operator=how)
             del M
         del solver
 
     for lab in labels:
-        a = err(ana[lab])
-        print("  %-16s analytic (window s=h/2): %.4f / %.4f"
-              "   top-down %+.1f%%  side %+.1f%%"
-              % (lab, a[0], a[1], 100 * (base[0] - a[0]) / base[0],
-                 100 * (base[1] - a[1]) / base[1]))
-        if also_shrink:
-            # Does shrinkage add anything to an ALREADY-SOLVED bundle?
-            # Prediction was "little or negative" — the solve is
-            # L2-optimal on the window and already regularised. Measured
-            # +6.4% / +3.6%: the objective (windowed L2 per cell) is not
-            # the evaluation (slice error with cross-cell contributions).
-            from holo.denoise import percentile_threshold, shrink
-            for pct in (10, 25):
-                sh = {b: {k: shrink(v, percentile_threshold(v, pct))
-                          for k, v in cells.items()}
-                      for b, cells in ana[lab].items()}
-                e = err(sh)
-                del sh
-                print("    + shrink p%-2d       : %.4f / %.4f  "
-                      "(%+.1f%% / %+.1f%%)"
-                      % (pct, e[0], e[1], 100 * (a[0] - e[0]) / a[0],
-                         100 * (a[1] - e[1]) / a[1]))
+        report_setting(lab, ana[lab], base, err, also_shrink, run)
     print("  total %.0fs" % (time.time() - t0))
 
 
@@ -358,6 +377,8 @@ def parse_settings(argv):
 if __name__ == "__main__":
     argv = sys.argv[1:]
     path, settings = parse_settings(argv)
-    with budget.heavy_run(estimate_gb(len(settings)), path.split("/")[-1],
-                          "--force-memory" in argv):
-        main(path, settings, also_shrink="--shrink" in argv)
+    with runlog.record(path.split("/")[-1],
+                       need_gb=estimate_gb(len(settings)),
+                       force="--force-memory" in argv) as run:
+        run.result(forward=None)          # replaced once the baseline lands
+        main(path, settings, also_shrink="--shrink" in argv, run=run)

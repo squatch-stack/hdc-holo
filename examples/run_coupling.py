@@ -27,7 +27,7 @@ import time
 
 import numpy as np
 
-from holo import budget
+from holo import runlog
 from holo.capture import (
     band_codebooks,
     build_scene,
@@ -100,6 +100,7 @@ def main(paths):
 
 
 if __name__ == "__main__":
-    with budget.heavy_run(6.0, "coupling", "--force-memory" in sys.argv):
+    with runlog.record("coupling", need_gb=6.0,
+                       force="--force-memory" in sys.argv):
         main([a for a in sys.argv[1:] if not a.startswith("--")]
              or DEFAULTS)
