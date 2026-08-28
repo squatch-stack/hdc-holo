@@ -1,5 +1,7 @@
 """Observed-remove semantics: idempotent deletion, add-wins, undo."""
 
+import json
+
 import numpy as np
 import pytest
 
@@ -110,3 +112,102 @@ def test_compact_preserves_merged_state():
     assert np.allclose(or_a.store.merged(), before, atol=1e-4)
     assert np.allclose(or_b.store.merged(), before, atol=1e-4)
     assert or_a.get("k4")[0] == "v0"   # everything else still reads
+
+
+# -- compaction cost under a lossy wire codec -------------------------------
+
+def _lossy_store(n=120, dim=1024):
+    """One epoch holding everything — the ORStrokeScene shape."""
+    from holo.orset import ORStore
+    A = HoloReplica(FHRR(dim, seed=0), codec="hg8")
+    vecs = {}
+
+    def encode(desc):
+        if desc not in vecs:
+            rng = np.random.default_rng(len(vecs))
+            vecs[desc] = (rng.standard_normal(dim)
+                          + 1j * rng.standard_normal(dim)).astype(np.complex64)
+        return vecs[desc]
+
+    store = ORStore(A, "s", encode, epoch_size=10 ** 9, channels=1)
+    ids = [store.add("i%d" % i) for i in range(n)]
+    store.seal()
+    A.flush()
+    return store, ids
+
+
+def test_the_exact_cache_and_the_rebuild_agree_to_float_rounding():
+    """The cache exists only to make compaction cheap — 158x on a
+    5,000-item epoch — so the fallback must not be a DIFFERENT answer.
+
+    Agreement is to float32 rounding, not byte equality: subtracting the
+    doomed from the exact blob and summing the survivors from the index
+    add the same terms in different orders, and one code in ~2,000 lands
+    on the other side of a quantisation boundary (measured: 1 byte of
+    2,076 differing by one level, 1.1e-7 relative). That is the same ~1
+    ulp non-determinism this module already documents for merged(), and
+    it does not divide peers: only the OWNER compacts its own epochs, so
+    there is one writer and its bytes are what everyone reads.
+    """
+    from holo.crdt import unpack_bundle
+    decoded = []
+    for clear_cache in (False, True):
+        store, ids = _lossy_store()
+        for i in range(6):
+            store.remove(ids[i])
+        if clear_cache:
+            store._exact.clear()            # force the index rebuild
+        store.compact()
+        key = next(k for k in store._blobs().keys() if k.startswith("s/"))
+        decoded.append(np.atleast_2d(unpack_bundle(store._blobs().get(key).value)))
+    rel = (np.linalg.norm(decoded[0] - decoded[1])
+           / np.linalg.norm(decoded[1]))
+    assert rel < 1e-5, rel
+
+
+def test_compaction_stays_cheap_without_losing_exactness():
+    """Subtracting from the cached EXACT blob quantises a true value once,
+    exactly as the rebuild does — so the drift is the codec's one-shot
+    error either way, not something the cheap path gives up."""
+    store, ids = _lossy_store()
+    errs = []
+    for stage in range(5):
+        for i in range(stage * 6, stage * 6 + 6):
+            store.remove(ids[i])
+        store.compact()
+        tombs = set(store._tombs().keys())
+        truth = store._zeros()
+        for key in sorted(store._blobs().keys()):
+            if not key.startswith("s/") or key in tombs:
+                continue
+            for i, desc in enumerate(json.loads(store._index().get(key).value)):
+                if f"{key}/{i}" not in tombs:
+                    truth += np.atleast_2d(store.encode(desc))
+        errs.append(float(np.linalg.norm(store.merged() - truth)
+                          / np.linalg.norm(truth)))
+    assert max(errs) < 0.012, errs
+    assert errs[-1] < errs[0] * 1.2, errs
+
+
+def test_the_exact_cache_is_bounded():
+    """A long editing session would otherwise hold one (channels, d) array
+    per stroke for the life of the process."""
+    from holo import orset
+    from holo.orset import ORStore
+    A = HoloReplica(FHRR(256, seed=0), codec="hg8")
+    store = ORStore(A, "s", lambda _d: np.ones(256, np.complex64),
+                    epoch_size=1, channels=1)
+    for i in range(orset.EXACT_CACHE_EPOCHS + 20):
+        store.add("i%d" % i)                 # epoch_size=1 seals every add
+        A.flush()
+    assert len(store._exact) <= orset.EXACT_CACHE_EPOCHS
+
+
+def test_a_store_with_no_cache_at_all_still_compacts_correctly():
+    """The cache is per-instance and empty after a restart, so the rebuild
+    path is the one a fresh process takes."""
+    store, ids = _lossy_store()
+    for i in range(6):
+        store.remove(ids[i])
+    store._exact.clear()
+    assert store.compact() == 6
