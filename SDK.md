@@ -188,6 +188,41 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **Projection encode cost: 98% of it was one call, and the fix changed
+  the accuracy too** (research lane; `examples/run_projection_pipeline.py`,
+  `docs/fit.md`). Profiling put 106 s of a 108.6 s per-band fixed cost in
+  `eigh`; per-cell solves were 27 ms. Two changes: batching cells 256 at a
+  time turns hundreds of BLAS-2 matvecs into one BLAS-3 matmul —
+  bit-identical (deviation 0.00e+00, checked with an uneven final chunk) and
+  7.1x on that step — and Tikhonov needs no eigendecomposition at all, so an
+  explicit inverse replaces `eigh` at ~6x less cost. 770 s -> ~250 s on
+  train.
+  *Tikhonov is also MORE accurate than truncation, at the right lambda, and
+  the right lambda is not portable.* Saguaro wants 1e-6 (0.1227/0.0803,
+  +65.0%/+62.3%); train wants 1e-1 or more (0.2986/0.1388, +68.9%/+71.9%,
+  and the sweep had not turned). Each beats the truncated solve at its own
+  setting. **Using saguaro's lambda on train is a 7.9% REGRESSION against
+  forward encoding** — five orders of magnitude apart, so this is a per-scene
+  knob, not a constant to inherit. Plausible mechanism, untested: a denser
+  cell puts more energy where the Gram is near-singular and needs heavier
+  damping.
+  *A negative kept from the same pass:* randomised SVD is the wrong tool for
+  this. It is 2.5x faster and its eigenvalues are excellent (1e-6 relative),
+  but the pseudo-inverse is dominated by the SMALLEST kept eigenvalues, where
+  a randomised range finder is worst — solve deviation 0.38 to 1120. Checking
+  eigenvalue accuracy alone would have passed it straight through.
+
+- **Shrinkage still helps a SOLVED bundle, contradicting the prediction**
+  (research lane). Written before the test: a solved bundle is L2-optimal on
+  its window and already regularised, so shrinkage should move it away from
+  the optimum. Measured: `shrink` at p10 improves the solved saguaro bundle a
+  further +6.4%/+3.6% (0.2031/0.1317 against 0.2170/0.1367). The prediction
+  failed because the solve is optimal for the *windowed per-cell* objective,
+  which is not the quantity being scored, and truncation means it is not
+  optimal even for that. The gain shrinks where the solve is stronger (+1.4%
+  on train under Tikhonov), which fits. Best combination measured to date:
+  analytic projection + shrinkage, +42.0%/+38.2% on saguaro.
+
 - **The analytic projection is a real solve, end to end** (research lane;
   `examples/run_projection_pipeline.py`, `docs/fit.md`; issue #2).
   Encoding EVERY cell analytically and decoding the same evidence

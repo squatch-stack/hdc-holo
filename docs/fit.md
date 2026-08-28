@@ -102,11 +102,51 @@ The gain is **largest on the dense capture** — the case where doubling
 ([spatial.md](spatial.md)). Train's top-down slice goes from an error
 as large as its signal (0.96) to 0.38.
 
-**What it costs.** Encoding is ~15x slower (770 s against 51 s on
-train, dominated by the per-band eigendecomposition and the per-cell
-solve). Decode and storage are unchanged: the output is an ordinary
-bundle, so everything downstream — codecs, replication, rendering — is
-untouched.
+**What it costs, and how much of that was avoidable.** Profiling put
+98% of the fixed cost in one place: the per-band `eigh` was 106 s of a
+108.6 s fixed cost, while per-cell solves were 27 ms and irrelevant.
+Two changes remove most of it. Solving cells in batches of 256 turns
+hundreds of BLAS-2 matvecs into one BLAS-3 matmul — **bit-identical
+arithmetic**, 7.1x faster on that step. And Tikhonov regularisation
+needs no eigendecomposition at all, so an explicit inverse replaces
+`eigh` at ~6x less cost. Together: 770 s -> ~250 s on train, against
+forward encoding's 51-100 s. Decode and storage are unchanged either
+way — the output is an ordinary bundle, so codecs, replication and
+rendering are untouched.
+
+**Tikhonov beats truncation, and its knob is scene-dependent by five
+orders of magnitude.** Replacing the truncated pseudo-inverse with
+`(G + lambda I)^-1` is both cheaper and more accurate, but only at the
+right lambda, and the right lambda is not portable:
+
+| lambda (x max Gram entry) | saguaro | train (dense) |
+|---|---|---|
+| 1e-6 | **0.1227 / 0.0803** (+65.0% / +62.3%) | 1.0351 / 0.3727 (**-7.9%** / +24.7%) |
+| 1e-3 | 0.1377 / 0.0963 (+60.7% / +54.8%) | 0.3792 / 0.1608 (+60.5% / +67.5%) |
+| 1e-1 | — | **0.2986 / 0.1388** (+68.9% / +71.9%) |
+
+The sparse capture wants 1e-6 and the dense one wants 1e-1 or more —
+the train sweep had not turned at the largest value tried. **Using the
+sparse setting on the dense capture is a 7.9% REGRESSION against
+forward encoding**, which is the failure mode to guard: this is a knob
+that must be set per scene, not a constant to inherit. The plausible
+mechanism is that a dense cell puts more energy at the frequencies
+where the Gram is near-singular, so it needs heavier damping; that is
+consistent with the direction but has not been tested directly.
+
+At its best setting each capture beats the truncated solve
+(saguaro 0.1227 against 0.2170; train 0.2986 against 0.3765) at a
+quarter of the encode cost.
+
+**Shrinkage still adds on top, contradicting the obvious prediction.**
+A solved bundle is already L2-optimal on its window and already
+regularised, so shrinkage ought to move it away from the optimum. It
+does not: on saguaro, `shrink` at the 10th percentile improves the
+solved bundle a further **+6.4% / +3.6%** (0.2031 / 0.1317 against
+0.2170 / 0.1367). The optimum is for the *windowed per-cell* objective,
+which is not the quantity being scored, and truncation means the solve
+is not even optimal for that. The gain is smaller where the solve is
+stronger (+1.4% on train under Tikhonov), which fits.
 
 Window WIDTH is a real knob and not a forgiving one: s = h/2 gives
 0.0739, s = h gives 0.1587, and wider is worse still, because a wide
