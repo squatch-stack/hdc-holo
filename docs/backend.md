@@ -56,6 +56,16 @@ give different results, so `holo.runlog` captures `backend_name()` in
 every heavy run's start record — a measurement that does not say which
 one produced it cannot be compared with another.
 
+**The 5090 box is shared, so its clocks are not reproducible.** Five
+`holo-bench` runs in one sitting on 2026-08-28 gave bit-identical
+checksums — the numerics are genuinely deterministic — while `readout_s`
+split 0.1705/0.1707 against 0.3606/0.3675/0.3747, a **2.1x swing**, and
+`encode_s` ranged 0.1981-0.6435 (3.2x). A `gpu-probe` at the same moment
+showed ~7.4 GB of the card held by another tenant. Checksum and
+cross-backend agreement claims from that box are sound; single-run
+timings are not. `gpu-probe` is cheap, so record GPU occupancy alongside
+any timing you intend to cite rather than inferring load afterwards.
+
 **Platform precision gotchas** — defaults that silently trade accuracy,
 each discovered by tests/bring-up rather than documentation:
 
