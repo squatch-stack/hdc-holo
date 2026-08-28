@@ -348,3 +348,53 @@ def test_compaction_folds_within_the_right_cell():
     expect = sum(store.encode("item%d" % i) for i in (4, 6))
     assert np.allclose(store.merged(cell="c0"), np.atleast_2d(expect),
                        atol=1e-5)
+
+
+# -- ORStrokeScene at capture scale -----------------------------------------
+
+def test_a_partitioned_stroke_scene_writes_one_blob_per_cell_it_touches():
+    """The capture-scale shape: a stroke crosses cells, and each gets its
+    own blob under one epoch. `cell_of` uses the same floor-divide rule
+    as capture.encode_bands, so a stroke lands where a capture would have
+    put it."""
+    A = HoloReplica(FHRR(512, seed=0))
+    scene = ORStrokeScene(A, sigma=0.05, cell_size=0.25)
+    for i in range(8):                       # a stroke sweeping in x
+        scene.add_splat([i * 0.125, 0.1], [1.0, 0.0, 0.0])
+    stroke = scene.end_stroke()
+    A.flush()
+    assert scene.cell_of([0.3, 0.1]) == (1, 0)
+    assert len(scene.cells()) == 4           # 8 splats at 0.125 over 0.25
+    # and undoing it is still ONE tombstone
+    scene.undo_stroke(stroke)
+    assert len(scene.store._tombs().keys()) == 1
+    pts = np.array([[0.3, 0.1]], dtype=np.float32)
+    assert np.allclose(scene.eval_rgb(pts), 0, atol=1e-5)
+
+
+def test_reading_one_cell_sees_only_that_cell_s_strokes():
+    A = HoloReplica(FHRR(512, seed=0))
+    scene = ORStrokeScene(A, sigma=0.05, cell_size=0.5)
+    scene.add_splat([0.1, 0.1], [1.0, 0.0, 0.0])        # cell (0, 0)
+    scene.add_splat([0.9, 0.1], [0.0, 0.0, 1.0])        # cell (1, 0)
+    scene.end_stroke()
+    A.flush()
+    here = np.array([[0.1, 0.1]], dtype=np.float32)
+    near = scene.eval_rgb(here, cell="(0, 0)")[0]
+    far = scene.eval_rgb(here, cell="(1, 0)")[0]
+    # the red splat is in this cell; the blue one is not
+    assert near[0] > far[0]
+    assert np.allclose(scene.eval_rgb(here),
+                       near + far, atol=1e-4)
+
+
+def test_an_unpartitioned_stroke_scene_behaves_exactly_as_before():
+    """cell_size=None is the 2-D demo path and must not change."""
+    A = HoloReplica(FHRR(512, seed=0))
+    scene = ORStrokeScene(A, sigma=0.05)
+    assert scene.cell_of([0.3, 0.1]) is None
+    scene.add_splat([0.3, 0.1], [1.0, 0.0, 0.0])
+    scene.end_stroke()
+    A.flush()
+    assert scene.cells() == []
+    assert all("@" not in k for k in scene.store._blobs().keys())
