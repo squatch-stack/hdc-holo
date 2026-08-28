@@ -68,14 +68,45 @@ Gaussian, so its right-hand side is exact at any splat position, which
 is why it barely degrades between the columns (0.0609 -> 0.0739) where
 the box collapses (0.0273 -> 0.2052).
 
-Two practical consequences. The **window needs no truncation tuning**:
-it improves monotonically and is stable at full rank, where the box
-must be truncated and detonates if it is not (0.0273 at keep=1536,
-8.6 at 2048 on interior splats; 677 at 2048 on whole cells). And
-**one eigendecomposition serves a whole band**, because both Grams
+**One eigendecomposition serves a whole band**, because both Grams
 factorise as `G_c = D G0 D^H` with `D` a unitary diagonal of
 cell-centre phases — cell position enters only as a phase, so the
-expensive step is per band, not per cell.
+expensive step is per band, not per cell. Measured at production
+d=8192: 63 s per band, amortised over thousands of cells.
+
+**Truncation is mandatory, and this is where a smaller study misleads.**
+At d=2048 the window is stable at full rank while the box detonates if
+under-truncated (0.0273 at keep=1536, 8.6 at 2048), which reads like
+the window needing no tuning. It is an artifact of the dimension. At
+the production d=8192 the window Gram's condition number is 1.6e20 to
+3.2e20 across the four bands — past what float64 can invert — and
+solving at full rank returns garbage of order 1e5 rather than a
+degraded answer. Keeping **25%** of the spectrum is safe on every band
+and sits near the ~3,300 space-bandwidth degrees of freedom a cell of
+this size actually supports.
+
+## Through the whole pipeline
+
+The per-cell numbers above are a different quantity from the slice
+error the rest of this repo reports. Encoding EVERY cell analytically
+and decoding the same evidence slices against the same exact-mixture
+referee (`examples/run_projection_pipeline.py`):
+
+| capture | forward encoding | analytic projection | change |
+|---|---|---|---|
+| saguaro | 0.3501 / 0.2132 | 0.2170 / 0.1367 | **+38.0% / +35.9%** |
+| train (dense) | 0.9591 / 0.4948 | **0.3765 / 0.1716** | **+60.7% / +65.3%** |
+
+The gain is **largest on the dense capture** — the case where doubling
+`d` bought 2-4% for +600 MB and where orthogonal coupling bought 1.9%
+([spatial.md](spatial.md)). Train's top-down slice goes from an error
+as large as its signal (0.96) to 0.38.
+
+**What it costs.** Encoding is ~15x slower (770 s against 51 s on
+train, dominated by the per-band eigendecomposition and the per-cell
+solve). Decode and storage are unchanged: the output is an ordinary
+bundle, so everything downstream — codecs, replication, rendering — is
+untouched.
 
 Window WIDTH is a real knob and not a forgiving one: s = h/2 gives
 0.0739, s = h gives 0.1587, and wider is worse still, because a wide
