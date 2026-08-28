@@ -419,14 +419,23 @@ class ORStrokeScene:
     undo_stroke() is observed-remove by exclusion, safe under concurrent
     duplicate undos from any number of peers."""
 
-    def __init__(self, replica, sigma, name="orscene"):
+    def __init__(self, replica, sigma, name="orscene", cell_size=None):
         space = replica.space
         proto = GaussianSplatField(space.dim, sigma, seed=space.seed)
         self.W = proto.W
         self.sigma_inv = proto.sigma_inv
+        self.cell_size = cell_size
         self.store = ORStore(replica, name, self._encode,
                              epoch_size=10 ** 9, channels=3)
         self.splats = []   # local ground-truth mirror for demos/tests
+
+    def cell_of(self, mu):
+        """Which cell a splat belongs to, or None when the scene is
+        unpartitioned. Same floor-divide rule as capture.encode_bands, so
+        a stroke lands in the cells a capture would have put it in."""
+        if self.cell_size is None:
+            return None
+        return tuple(int(np.floor(x / self.cell_size)) for x in mu)
 
     def _encode(self, desc):
         mu = np.asarray(desc[0], dtype=np.float32)
@@ -438,7 +447,17 @@ class ORStrokeScene:
         mu = np.asarray(mu, dtype=np.float32)
         self.splats.append((mu, np.asarray(rgb, np.float32), float(alpha)))
         return self.store.add([[float(x) for x in mu],
-                               [float(c) for c in rgb], float(alpha)])
+                               [float(c) for c in rgb], float(alpha)],
+                              cell=self.cell_of(mu))
+
+    def cells(self):
+        """Cells this scene has written blobs for, across all peers."""
+        self.store.replica.flush()
+        out = set()
+        for key in self.store._blobs().keys():
+            if key.startswith(f"{self.store.name}/") and "@" in key:
+                out.add(key.split("@", 1)[1])
+        return sorted(out)
 
     def end_stroke(self):
         return self.store.seal()
@@ -465,9 +484,13 @@ class ORStrokeScene:
         has seen; concurrent duplicate undos subtract it exactly once."""
         self.store.remove_epoch(stroke_id)
 
-    def eval_rgb(self, points, chunk=8192):
+    def eval_rgb(self, points, chunk=8192, cell=None):
+        """Read the field back. With `cell`, only that cell's strokes —
+        the capture-scale read, where a view wants a handful of cells out
+        of thousands rather than the whole scene summed."""
         from .accel import readout
-        return readout(points, self.W, self.store.merged(), chunk=chunk)
+        return readout(points, self.W, self.store.merged(cell=cell),
+                       chunk=chunk)
 
 
 def _demo_plot(before, after_a, naive):

@@ -76,6 +76,13 @@ Epochs are the capacity knob: coarser = more holographic, finer = more
 surgical deletion. Reconstruction is deterministic only to ~1 ulp —
 compare merged() with `allclose`, digest blob bytes.
 
+**Capture scale.** `ORStrokeScene(replica, sigma, cell_size=)` partitions
+a scene the way `capture.encode_bands` does — the same floor-divide, so a
+stroke lands in the cells a capture would have put it in — and
+`eval_rgb(points, cell=)` reads one back. `cells()` lists what has been
+written to. `cell_size=None` is the unpartitioned 2-D demo path and is
+unchanged.
+
 **API.**
 ```python
 from holo import FHRR, HoloReplica, ORHoloMap, ORStrokeScene
