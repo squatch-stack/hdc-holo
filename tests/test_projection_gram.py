@@ -95,3 +95,37 @@ def test_sweep_parsing_keeps_the_old_forms_working(rp):
         ["s.spz", "--sweep", "tikhonov=1e-6,1e-3", "--sweep", "keep=0.25"])
     assert path == "s.spz"
     assert settings == [("tikhonov", 1e-6), ("tikhonov", 1e-3), ("keep", 0.25)]
+
+
+def test_divergence_is_detectable_in_the_norm_before_anything_decodes(rp):
+    """Truncation is a knife edge and its failure is silent in the decode.
+
+    Measured on saguaro's xfine band, solved-to-forward norm ratio against
+    what the slice error then did:
+
+        keep 0.10-0.40   ratio 1.1-1.3    works
+        keep 0.55        ratio 5.3        BEST measured, +59.3%
+        keep 0.70        ratio 97.4       -1417%, i.e. 37x worse than
+                                          not projecting at all
+        keep 1.00        ratio 5.2e11     -71,836,511%
+
+    Nothing good exceeds 5.3 and nothing broken comes below 97, so the
+    threshold sits in an 18x gap. This pins the separation rather than
+    the exact numbers.
+    """
+    rng = np.random.default_rng(0)
+    forward = {k: (rng.standard_normal((1, 64))
+                   + 1j * rng.standard_normal((1, 64))).astype(np.complex64)
+               for k in ("a", "b", "c")}
+    healthy = {k: v * 1.2 for k, v in forward.items()}
+    diverged = {k: v * 500.0 for k, v in forward.items()}
+
+    assert rp.divergence_ratio(healthy, forward) < rp.DIVERGENCE_RATIO
+    assert rp.divergence_ratio(diverged, forward) > rp.DIVERGENCE_RATIO
+    # and the threshold sits inside the measured gap, not on its edge
+    assert 5.3 < rp.DIVERGENCE_RATIO < 97.0
+
+
+def test_divergence_ratio_is_none_when_there_is_nothing_to_compare(rp):
+    assert rp.divergence_ratio({}, {}) is None
+    assert rp.divergence_ratio({"a": np.ones((1, 4), np.complex64)}, {}) is None

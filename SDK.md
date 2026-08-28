@@ -188,6 +188,45 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **The projection's truncation is a knife edge, and 25% was the wrong
+  question** (research lane; `examples/run_projection_pipeline.py`,
+  `docs/fit.md`; issue #2). Going into this I expected TSVD to be the
+  knob-free alternative to Tikhonov's scene-dependent lambda: keep=0.25
+  won on both captures, so it looked like a setting nobody has to tune.
+  Sweeping it says otherwise, on saguaro:
+
+  | keep | top-down | side | norm ratio |
+  |---|---|---|---|
+  | 0.25 (shipped) | +38.0% | +35.9% | 1.1 |
+  | 0.55 | **+59.3%** | +58.8% | 5.3 |
+  | 0.70 | **-1417.0%** | -838.2% | 97.4 |
+  | 1.00 | -71836511.5% | -73842301.8% | 5.2e11 |
+
+  Two things at once. The projection is **stronger than reported** — the
+  shipped truncation gives up more than twenty points — and it is **less
+  ready than hoped**, because the optimum sits immediately next to a
+  precipice. 0.55 is the best measured and 0.70 is 37x worse than not
+  projecting at all. 25% was picked from a stability argument (full rank
+  detonates) and the space between was never measured.
+
+  The edge moves with the capture, too: on LiDAR `lidar-dense` the
+  top-down slice peaks near 0.40 and has turned over by 0.55, while its
+  own side slice is still climbing there. Two slices of one capture do
+  not agree on a truncation, let alone two captures.
+
+  So the recommendation INVERTED. I opened this expecting to promote #2
+  on the strength of a knob-free TSVD; the measurement says a fixed
+  default is either conservative or catastrophic, and the failure is
+  silent in the decode. It stays a measured spike.
+
+  **What is salvageable is a guard.** The divergence is loud in the norm
+  long before anything decodes: everything working sits at or below 5.3x
+  the forward bundle norm, everything broken at or above 97 — an 18x gap
+  with the threshold in the middle of it. The pipeline now checks after
+  every band and says so. That also names the path to promotion:
+  automatic truncation selection using the norm ratio as its signal,
+  validated against the cliff on every capture. Not done, and not small.
+
 - **Trimming CRDT history is safe in one direction and silently
   destructive in the other** (sync lane; `holo/crdt.py`, `docs/sync.md`).
   Loro can discard history before a chosen version, and the win is not a

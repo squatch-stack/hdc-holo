@@ -64,6 +64,15 @@ from holo.capture import (
 )
 from holo.spectral import SplatScene, spectral_bundle
 
+#: A solved bundle whose norm exceeds the forward-encoded one by more
+#: than this has diverged. Truncation is a knife edge: on saguaro,
+#: keep=0.55 is the best setting measured (+59.3%) at a ratio of 5.3,
+#: and keep=0.70 is 37x WORSE than not projecting at all (-1417%) at a
+#: ratio of 97. Nothing good exceeds 5.3 and nothing broken comes below
+#: 97, so a threshold in that gap catches every divergence with room to
+#: spare — and it is checkable before anything is decoded.
+DIVERGENCE_RATIO = 20.0
+
 #: Bytes a batched solve may hold in its right-hand side and solution.
 #: Cells per chunk falls out of this and the actual (channels, d) shape,
 #: so a wider capture takes smaller chunks instead of more memory.
@@ -217,6 +226,36 @@ def solve_band(M, scene, members_band, geom, chunk):
     return out
 
 
+def divergence_ratio(solved, forward):
+    """Median ratio of solved to forward bundle norm, over shared cells.
+
+    The catastrophic failure of an over-loose truncation is silent in
+    the bundle — it decodes to garbage rather than raising — but it is
+    LOUD in the norm, orders of magnitude before it is subtle anywhere
+    else. Cheap enough to run always.
+    """
+    keys = [k for k in solved if k in forward]
+    if not keys:
+        return None
+    num = np.median([np.linalg.norm(solved[k]) for k in keys])
+    den = np.median([np.linalg.norm(forward[k]) for k in keys])
+    return float(num / den) if den else None
+
+
+def check_divergence(solved, forward, run, name, lab, how, cells, seconds):
+    """Warn when a truncation has gone past the cliff, and record the
+    ratio either way so a future selector has the signal."""
+    ratio = divergence_ratio(solved, forward)
+    if ratio is not None and ratio > DIVERGENCE_RATIO:
+        print("    !! DIVERGED: solved bundles are %.0fx the forward norm "
+              "(limit %.0f). This truncation is past the cliff; the decode "
+              "below is garbage." % (ratio, DIVERGENCE_RATIO), flush=True)
+    if run is not None:
+        run.stage("%s/%s" % (name, lab), seconds, cells=cells, operator=how,
+                  norm_ratio=None if ratio is None else round(ratio, 2))
+    return ratio
+
+
 def label_of(setting):
     kind, val = setting
     return "keep=%.2f" % val if kind == "keep" else "tikhonov=%.0e" % val
@@ -301,6 +340,9 @@ def main(path, settings, also_shrink=False, run=None):
     # the forward bundles have now been scored and are never read again;
     # only their cell counts are. At capture scale they are 0.6-1.3 GB.
     counts = {n: len(c) for n, c in fwd_bundles.items()}
+    # keep a few forward bundles per band as the divergence reference —
+    # a norm baseline costs kilobytes where the full set costs gigabytes
+    fwd_ref = {n: dict(list(c.items())[:64]) for n, c in fwd_bundles.items()}
     del fwd_bundles
 
     labels = [label_of(st) for st in settings]
@@ -335,6 +377,9 @@ def main(path, settings, also_shrink=False, run=None):
                      time.time() - t0), flush=True)
             t_band = time.time()
             ana[lab][name] = solve_band(M, scene, members[name], geom, chunk)
+            check_divergence(ana[lab][name], fwd_ref.get(name, {}),
+                             run, name, lab, how, counts[name],
+                             time.time() - t_band)
             if run is not None:
                 # recorded per band per setting, so a killed run's last
                 # stage says exactly how far it got
