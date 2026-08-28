@@ -188,6 +188,39 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
 
 ## 0.2 findings (running log)
 
+- **The analytic projection is a real solve, end to end** (research lane;
+  `examples/run_projection_pipeline.py`, `docs/fit.md`; issue #2).
+  Encoding EVERY cell analytically and decoding the same evidence
+  slices against the same exact-mixture referee — the quantity the rest
+  of the repo reports — gives saguaro 0.3501/0.2132 -> **0.2170/0.1367**
+  (+38.0%/+35.9%) and train 0.9591/0.4948 -> **0.3765/0.1716**
+  (+60.7%/+65.3%). It is **largest on the dense capture**, which is the
+  case more dimension could not help and where orthogonal coupling
+  bought 1.9%: train's top-down slice goes from an error as large as
+  its signal to 0.38. Of the three levers this session produced —
+  shrinkage, coupling, projection — this is the biggest by a wide
+  margin, and the only one that attacks the error by SOLVING rather
+  than by cleaning up after accumulation.
+  *The per-cell study over-promised in one direction and under-promised
+  in another.* It measured 2.5x on one cell's reconstruction, which is
+  a different quantity; end to end that became +38%. But it also
+  concluded the window "needs no truncation tuning", and that was an
+  artifact of studying at d=2048. At the production d=8192 the window
+  Gram's condition number is 1.6e20 to 3.2e20, past what float64 can
+  invert, and a full-rank solve returns garbage of order 1e5 — not a
+  degraded answer, a divergent one. Keeping 25% of the spectrum is safe
+  on every band and sits near the ~3,300 space-bandwidth DOF a cell
+  supports. `docs/fit.md`'s claim is corrected.
+  *Cost:* encode ~15x slower (770 s against 51 s on train), dominated
+  by the per-band eigendecomposition (63 s at d=8192) and the per-cell
+  solve. Decode and storage unchanged — the output is an ordinary
+  bundle, so codecs, replication and rendering are untouched.
+  *Implementation note worth keeping:* the windowed right-hand side IS
+  `spectral_bundle` applied to a modified scene — covariance shrunk by
+  the window, mean pulled toward the cell centre, amplitude scaled —
+  verified to 9e-7 against a direct per-splat loop. The existing fast
+  path does the work.
+
 - **Analytic L2 projection measured: the box is the better objective and
   the window is the usable one** (research lane;
   `examples/run_analytic_projection.py`, `docs/fit.md`; issue #2). The
