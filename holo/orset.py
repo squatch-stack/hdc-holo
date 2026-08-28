@@ -78,7 +78,9 @@ class ORStore:
         self.epoch = 1 + max((int(k.rsplit(".", 1)[1]) for k in own),
                              default=-1)
         self._items = []
-        self._exact = OrderedDict()   # own epoch key -> exact blob
+        self._item_cells = []         # parallel to _items; None when unkeyed
+        self._cells = {}              # cell -> this epoch's partial bundle
+        self._exact = OrderedDict()   # own blob key -> exact blob
         self._bundle = self._zeros()
         self._pending = False
         replica.flush_hooks.append(self._publish)
@@ -102,12 +104,48 @@ class ORStore:
         which = self.epoch if epoch is None else epoch
         return f"{self.name}/{self.replica.peer}.{which}"
 
+    @staticmethod
+    def _blob_key(epoch_key, cell=None):
+        """Where one epoch's bundle lives, optionally per cell.
+
+        `@` and not `/`: an item id is `<name>/<peer>.<epoch>/<i>` and is
+        told apart from an epoch key by its slash count, so a cell in the
+        slash namespace would be read as an item index.
+
+        The cell rides in the KEY of one flat map rather than in a child
+        container per cell. Loro's own guidance is the reason: two peers
+        lazily creating the same child container concurrently get
+        conflicting container ids, which "prevents automatic merging and
+        may result in data loss". A flat map creates no child containers,
+        so that hazard cannot arise.
+        """
+        return epoch_key if cell is None else "%s@%s" % (epoch_key, cell)
+
+    @staticmethod
+    def _epoch_of(blob_key):
+        """The epoch a blob belongs to — one tombstone on this excludes
+        every cell the stroke touched, however many that was."""
+        return blob_key.split("@", 1)[0]
+
     # -- adding ----------------------------------------------------------
 
-    def add(self, descriptor):
-        """Returns this addend's unique id (keep it to remove later)."""
-        self._bundle += np.atleast_2d(self.encode(descriptor))
+    def add(self, descriptor, cell=None):
+        """Returns this addend's unique id (keep it to remove later).
+
+        `cell` partitions one epoch's bundle by space. The accumulator
+        then holds only the cells THIS stroke touched, not the scene: at
+        capture scale a store per cell would cost ~690 MB of (channels,
+        d) accumulators on saguaro before any editing happened.
+        """
+        if cell is None:
+            self._bundle += np.atleast_2d(self.encode(descriptor))
+        else:
+            key = str(cell)
+            if key not in self._cells:
+                self._cells[key] = self._zeros()
+            self._cells[key] += np.atleast_2d(self.encode(descriptor))
         self._items.append(descriptor)
+        self._item_cells.append(None if cell is None else str(cell))
         self._pending = True
         add_id = f"{self._epoch_key()}/{len(self._items) - 1}"
         if len(self._items) >= self.epoch_size:
@@ -125,10 +163,20 @@ class ORStore:
     def _publish(self):
         if not self._pending:
             return
-        self._remember_exact(self._epoch_key(), self._bundle.copy())
-        self._blobs().insert(self._epoch_key(),
-                             pack_bundle(self._bundle, self.replica.codec))
-        self._index().insert(self._epoch_key(), json.dumps(self._items))
+        epoch_key = self._epoch_key()
+        parts = ([(None, self._bundle)] if not self._cells
+                 else list(self._cells.items()))
+        for cell, bundle in parts:
+            key = self._blob_key(epoch_key, cell)
+            self._remember_exact(key, bundle.copy())
+            self._blobs().insert(key, pack_bundle(bundle,
+                                                  self.replica.codec))
+        # An unkeyed epoch still writes a bare list, so docs written
+        # before cells existed read back unchanged; only a cell-keyed
+        # epoch pays for the richer form.
+        payload = (self._items if not self._cells
+                   else {"items": self._items, "cells": self._item_cells})
+        self._index().insert(epoch_key, json.dumps(payload))
         self._pending = False
 
     def seal(self):
@@ -140,6 +188,8 @@ class ORStore:
         self._publish()
         self.epoch += 1
         self._items = []
+        self._item_cells = []
+        self._cells = {}
         self._bundle = self._zeros()
         return key
 
@@ -153,7 +203,7 @@ class ORStore:
         for key in sorted(self._index().keys()):
             if not key.startswith(f"{self.name}/") or key in tombs:
                 continue
-            for i, desc in enumerate(json.loads(self._index().get(key).value)):
+            for i, desc in enumerate(self._read_index(key)[0]):
                 add_id = f"{key}/{i}"
                 if add_id not in tombs and add_id not in folded:
                     out.append((add_id, desc))
@@ -174,11 +224,28 @@ class ORStore:
         return ids
 
     def remove_epoch(self, epoch_key):
-        """Exclude a whole epoch (stroke/batch) from the merged sum."""
+        """Exclude a whole epoch (stroke/batch) from the merged sum.
+
+        ONE tombstone however many cells the stroke touched, because the
+        tombstone names the epoch and the blob keys hang off it. Forty
+        separate tombstones could also land in forty separate syncs, and
+        a peer that saw half of them would render half an undo.
+        """
         self._tombs().insert(epoch_key, True)
         self.replica.doc.commit()
 
     # -- reading ---------------------------------------------------------
+
+    def _read_index(self, epoch_key):
+        """(descriptors, cells) for one epoch; cells are None when the
+        epoch was written without them."""
+        entry = self._index().get(epoch_key)
+        if entry is None:
+            return [], []
+        data = json.loads(entry.value)
+        if isinstance(data, list):
+            return data, [None] * len(data)
+        return data["items"], data["cells"]
 
     def _folded_ids(self):
         folded = set()
@@ -187,28 +254,59 @@ class ORStore:
                 folded.update(json.loads(self._folded().get(key).value))
         return folded
 
-    def merged(self):
+    def merged(self, cell=None):
         """(channels, d) merged bundle: sum of live epochs minus
-        re-encoded item tombstones."""
+        re-encoded item tombstones.
+
+        With `cell`, only that cell's blobs — the capture-scale read,
+        where a scene has thousands of cells and a view wants a few. A
+        tombstone is on the EPOCH, so undoing a stroke that touched forty
+        cells is one tombstone and forty exclusions, not forty
+        tombstones applied non-atomically.
+        """
         self.replica.flush()
         tombs = set(self._tombs().keys())
         folded = self._folded_ids()
         total = self._zeros()
+        want = None if cell is None else str(cell)
         for key in sorted(self._blobs().keys()):
-            if not key.startswith(f"{self.name}/") or key in tombs:
+            if not key.startswith(f"{self.name}/"):
+                continue
+            epoch_key, _, this_cell = key.partition("@")
+            if epoch_key in tombs:
+                continue
+            if want is not None and this_cell != want:
                 continue
             total += np.atleast_2d(
                 unpack_bundle(self._blobs().get(key).value))
         for tk in sorted(tombs):
-            if not tk.startswith(f"{self.name}/") or tk.count("/") != 2:
-                continue                       # not an item id of ours
-            epoch_key, i = tk.rsplit("/", 1)
-            if epoch_key in tombs or tk in folded or \
-                    self._blobs().get(epoch_key) is None:
-                continue
-            desc = json.loads(self._index().get(epoch_key).value)[int(i)]
-            total -= np.atleast_2d(self.encode(desc))
+            desc = self._tombstoned_item(tk, tombs, folded, want)
+            if desc is not None:
+                total -= np.atleast_2d(self.encode(desc))
         return total
+
+    def _tombstoned_item(self, tk, tombs, folded, want):
+        """The descriptor a reader must subtract for tombstone `tk`, or
+        None when it does not apply to the cell being summed.
+
+        The cell check is not an optimisation: an item lives in exactly
+        one cell's blob, so subtracting it while summing a DIFFERENT cell
+        would remove something that was never added there.
+        """
+        if not tk.startswith(f"{self.name}/") or tk.count("/") != 2:
+            return None                        # not an item id of ours
+        epoch_key, i = tk.rsplit("/", 1)
+        if epoch_key in tombs or tk in folded:
+            return None
+        items, cells = self._read_index(epoch_key)
+        if int(i) >= len(items):
+            return None
+        item_cell = cells[int(i)]
+        if want is not None and item_cell != want:
+            return None
+        if self._blobs().get(self._blob_key(epoch_key, item_cell)) is None:
+            return None
+        return items[int(i)]
 
     # -- maintenance -----------------------------------------------------
 
@@ -222,12 +320,16 @@ class ORStore:
         count = 0
         own = f"{self.name}/{self.replica.peer}."
         for key in [k for k in self._blobs().keys() if k.startswith(own)]:
-            if key in tombs:
+            epoch_key, _, this_cell = key.partition("@")
+            if epoch_key in tombs:
                 self._blobs().delete(key)
                 continue
-            items = json.loads(self._index().get(key).value)
-            doomed = [i for i in range(len(items))
-                      if f"{key}/{i}" in tombs and f"{key}/{i}" not in folded]
+            items, cells = self._read_index(epoch_key)
+            mine = [i for i in range(len(items))
+                    if cells[i] == (this_cell or None)]
+            doomed = [i for i in mine
+                      if f"{epoch_key}/{i}" in tombs
+                      and f"{epoch_key}/{i}" not in folded]
             if not doomed:
                 continue
             # How the doomed items leave the blob depends on whether the
@@ -261,15 +363,15 @@ class ORStore:
                 self._remember_exact(key, blob)
             else:
                 blob = self._zeros()
-                for i in range(len(items)):
-                    if f"{key}/{i}" not in tombs:
+                for i in mine:
+                    if f"{epoch_key}/{i}" not in tombs:
                         blob += np.atleast_2d(self.encode(items[i]))
                 self._remember_exact(key, blob)
             self._blobs().insert(key, pack_bundle(blob, self.replica.codec))
             already = json.loads(self._folded().get(key).value) \
                 if self._folded().get(key) is not None else []
             self._folded().insert(key, json.dumps(
-                sorted(set(already) | {f"{key}/{i}" for i in doomed})))
+                sorted(set(already) | {f"{epoch_key}/{i}" for i in doomed})))
             count += len(doomed)
         self.replica.doc.commit()
         return count
@@ -352,10 +454,11 @@ class ORStrokeScene:
             peer, epoch = key.rsplit("/", 1)[1].rsplit(".", 1)
             return (peer, int(epoch))
 
-        return sorted(
-            (k for k in self.store._blobs().keys()
-             if k.startswith(f"{self.store.name}/") and k not in tombs),
-            key=order)
+        # one stroke is one epoch however many cells it wrote blobs for,
+        # so collapse the cell suffix before listing
+        epochs = {ORStore._epoch_of(k) for k in self.store._blobs().keys()
+                  if k.startswith(f"{self.store.name}/")}
+        return sorted((e for e in epochs if e not in tombs), key=order)
 
     def undo_stroke(self, stroke_id):
         """Observed-remove by exclusion: any peer may undo any stroke it
