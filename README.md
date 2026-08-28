@@ -36,6 +36,25 @@ introductions: [examples/](examples/README.md). New contributors:
   scenes</a>.</sub>
 </p>
 
+**What this is not.** Holographic bundles are a *computational*
+representation, not a storage format. Against the formats a splat
+pipeline actually uses they lose badly and always will — crosstalk is
+`sqrt(N/2d)`, so the gap is structural:
+
+| representation | MB | field error |
+|---|---:|---:|
+| SPZ v3 | 1.0 | 0.0% |
+| SOG | 0.8 | 0.3% |
+| holographic bundles (d=8,192) | 382.8 | 17.4% |
+
+384x larger and 17% lossier ([the full table](results/baseline_table.md)).
+Use SPZ or SOG to *store* a scene. What a bundle buys is what a format
+cannot do at all: query the scene algebraically without decoding it
+(`what_is_at`, `where_is`), take a view as a closed-form bundle, add and
+subtract whole scenes, and merge replicas by addition — which is why the
+collaborative editing works. If you want none of those, you do not want
+this library, and the table above will save you the afternoon.
+
 The substrate is FHRR (Fourier Holographic Reduced Representation): a
 hypervector is `d` unit phasors `e^{i theta}`. Binding is elementwise
 complex multiply (phases add), unbinding by the conjugate is an *exact*
