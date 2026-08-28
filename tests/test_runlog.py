@@ -122,3 +122,75 @@ def test_runlog_is_not_on_the_public_surface():
     assert "runlog" not in getattr(holo, "__all__", [])
     for name in runlog.__all__:
         assert name not in getattr(holo, "__all__", []), name
+
+
+# ---------------------------------------------------------------------------
+# Where the records land — the reason the first ten runs left nothing
+# ---------------------------------------------------------------------------
+
+def _repo(path, name="main"):
+    """A git repo with one commit, so it can carry a worktree."""
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", str(path)], check=True)
+    (path / "seed").write_text(name, encoding="utf-8")
+    subprocess.run(["git", "-C", str(path), "add", "seed"], check=True)
+    subprocess.run(["git", "-C", str(path), "-c", "user.email=t@example.com",
+                    "-c", "user.name=t", "commit", "-qm", "seed"], check=True)
+    return path
+
+
+@pytest.fixture
+def fresh_run_dir(monkeypatch):
+    """run_dir() is cached and reads the environment; reset both."""
+    monkeypatch.delenv("HDC_RUN_DIR", raising=False)
+    runlog.run_dir.cache_clear()
+    yield
+    runlog.run_dir.cache_clear()
+
+
+def test_a_worktree_writes_its_records_to_the_shared_checkout(
+        tmp_path, monkeypatch, fresh_run_dir):
+    """The bug this fixes, and it destroyed evidence rather than raising.
+
+    Every lane works in its own git worktree, so a package-relative
+    RUN_DIR wrote the record INTO the worktree — and `git worktree
+    remove` deleted it with the lane. A missing file is indistinguishable
+    from a run nobody launched, which is why it went unnoticed until the
+    shared checkout was found to have no `out/runs` at all.
+    """
+    main = _repo(tmp_path / "main")
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(main), "worktree", "add", "-q",
+                    str(wt), "-b", "lane"], check=True)
+    monkeypatch.setattr(runlog, "_repo_root", lambda: str(wt))
+
+    assert runlog.run_dir() == os.path.join(str(main), "out", "runs")
+
+
+def test_an_ordinary_clone_still_writes_beside_the_package(
+        tmp_path, monkeypatch, fresh_run_dir):
+    """Outside a worktree `--git-common-dir` is just `.git`, so this
+    resolves where it always did. The fix must not move anyone else."""
+    repo = _repo(tmp_path / "solo")
+    monkeypatch.setattr(runlog, "_repo_root", lambda: str(repo))
+
+    assert runlog.run_dir() == os.path.join(str(repo), "out", "runs")
+
+
+def test_a_tree_git_cannot_read_falls_back_to_the_package(
+        tmp_path, monkeypatch, fresh_run_dir):
+    """No git, no worktree, no crash — telemetry must not be the thing
+    that stops a run from starting."""
+    plain = tmp_path / "nogit"
+    plain.mkdir()
+    monkeypatch.setattr(runlog, "_repo_root", lambda: str(plain))
+
+    assert runlog.run_dir() == os.path.join(str(plain), "out", "runs")
+
+
+def test_an_explicit_override_wins_over_both(tmp_path, monkeypatch,
+                                             fresh_run_dir):
+    monkeypatch.setenv("HDC_RUN_DIR", str(tmp_path / "elsewhere"))
+    runlog.run_dir.cache_clear()
+
+    assert runlog.run_dir() == str(tmp_path / "elsewhere")

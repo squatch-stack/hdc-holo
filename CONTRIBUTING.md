@@ -11,7 +11,7 @@ already bit us once.
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'        # + '.[gpu]' on Apple silicon,
                                          # + '.[crdt]' for Loro sync
-.venv/bin/python -m pytest tests/ -q     # 235+ tests, a few seconds
+.venv/bin/python -m pytest tests/ -q     # 260+ tests, a few seconds
 ```
 
 NumPy is pinned `<2.0`: the Accelerate-backed 2.0 wheels on macOS
@@ -147,7 +147,13 @@ destroyed another session's uncommitted work once.
   those. The start record carries the commit, whether the tree was
   dirty, the backend and the contending jobs, because a number whose
   code and machine are unknown is not reproducible and a wall-clock
-  without them is not comparable.
+  without them is not comparable. **The record goes to the SHARED
+  checkout's `out/runs/`, not to your worktree** — it used to be
+  package-relative, which meant `git worktree remove` deleted the
+  telemetry along with the lane, and every record written before
+  2026-08-28 was lost that way without anyone noticing, because a
+  missing file looks exactly like a run nobody launched. `HDC_RUN_DIR`
+  overrides the location.
 - **Memory is not the only thing you share with a GPU trainer.**
   `holo/accel.py` picks the MLX/Metal backend whenever mlx imports, so a
   heavy encode runs on the same GPU as any splat training on the box.
