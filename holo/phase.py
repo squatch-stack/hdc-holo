@@ -38,8 +38,23 @@ def from_phases(p):
     return np.exp(1j * p).astype(np.complex64)
 
 
+def check_bits(bits, where="bits"):
+    """Refuse a width this storage layer cannot represent."""
+    try:
+        ok = int(bits) == bits and BITS_MIN <= bits <= BITS_MAX
+    except (TypeError, ValueError):
+        ok = False                       # not a number at all
+    if not ok:
+        raise ValueError(
+            "%s must be an integer in [%d, %d]; got %r. Above %d the codes "
+            "no longer fit the uint16 they are stored in and the cast wraps "
+            "without error." % (where, BITS_MIN, BITS_MAX, bits, BITS_MAX))
+    return int(bits)
+
+
 def quantize(v, bits=8):
     """complex -> b-bit phase codes (uint8 for b<=8, else uint16)."""
+    bits = check_bits(bits)
     levels = 1 << bits
     codes = np.round((np.angle(v) + np.pi) * (levels / (2 * np.pi)))
     codes = codes.astype(np.int64) % levels
@@ -63,6 +78,17 @@ def dequantize(codes, bits=8):
 import struct  # noqa: E402
 
 STORAGE_VERSION = 1
+
+#: Codes ride in uint8/int8 at <= 8 bits and uint16/int16 above, so 16 is
+#: the widest this layer can actually represent. Beyond it the cast wrapped
+#: SILENTLY — 24-bit round-tripped to values unrelated to the input, with
+#: no error and no warning, which is the worst shape a failure can take in
+#: a format whose `bits` is read back out of a header. Validated on both
+#: sides for that reason: on encode it is a caller mistake, on decode it is
+#: untrusted input, and replicated blobs make the decode side reachable by
+#: a peer (CONTRIBUTING.md: blobs go through pack_bundle/unpack_bundle).
+BITS_MIN, BITS_MAX = 1, 16
+
 _MAGIC = b"HP"
 _HEADER = struct.Struct("<2sBBI")  # magic, version, bits, dim
 
@@ -96,6 +122,7 @@ def unpack(buf):
     if ver != STORAGE_VERSION:
         raise ValueError(f"phase blob is storage version {ver}; this build "
                          f"speaks {STORAGE_VERSION}")
+    check_bits(bits, "phase blob header bits")
     if bits <= 4:
         packed = np.frombuffer(buf, np.uint8, offset=_HEADER.size)
         codes = np.empty(len(packed) * 2, dtype=np.uint8)
@@ -124,6 +151,7 @@ _HEADER_MAG = struct.Struct("<2sBBIf")  # magic, version, bits, dim, scale
 
 def pack_complex(v, bits=8):
     """complex vector -> tagged magnitude-preserving bytes."""
+    bits = check_bits(bits)
     a = np.ascontiguousarray(v, dtype=np.complex64)
     dim = a.shape[0]
     comps = np.concatenate([a.real, a.imag])           # (2*dim,) float32
@@ -146,6 +174,7 @@ def _unpack_complex(buf):
     if ver != STORAGE_VERSION:
         raise ValueError(f"magnitude blob is storage version {ver}; this "
                          f"build speaks {STORAGE_VERSION}")
+    check_bits(bits, "magnitude blob header bits")
     top = (1 << (bits - 1)) - 1
     if bits <= 4:
         packed = np.frombuffer(buf, np.uint8, offset=_HEADER_MAG.size)
@@ -205,6 +234,7 @@ def _unpack_block(buf, offset, n, bits):
 def pack_polar(v, bits=8, gamma=0.5):
     """complex vector -> gamma-companded polar bytes (magnitude and
     phase at `bits` each; 2 * dim * bits/8 payload + 16-byte header)."""
+    bits = check_bits(bits)
     a = np.ascontiguousarray(v, dtype=np.complex64)
     dim = a.shape[0]
     m, ph = np.abs(a), np.angle(a)
@@ -225,6 +255,7 @@ def _unpack_polar(buf):
     if ver != STORAGE_VERSION:
         raise ValueError(f"polar blob is storage version {ver}; this "
                          f"build speaks {STORAGE_VERSION}")
+    check_bits(bits, "polar blob header bits")
     mtop = (1 << bits) - 1
     plev = 1 << bits
     mq, off = _unpack_block(buf, _HEADER_GAMMA.size, dim, bits)
