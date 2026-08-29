@@ -80,8 +80,17 @@ six of eight closed. Claims still go through SDK.md's log first.
   degrades the `fine` band by a quarter, and the divergence gate passed
   it because the gate's limit was calibrated against catastrophe rather
   than against degradation. `eps=1e-3` damages no band and gives up
-  half the headline gain. What is open is a decision about what to
-  promise, plus one cheap confirmation on a second capture.
+  half the headline gain. The second capture has now confirmed it: the
+  same norm ratio costs the same on saguaro as on Red Rock (1.32 and
+  1.33 cost 24.6% and 29.4% of `fine`), so the limit belongs near 1.2
+  rather than 20, and `eps=1e-4` is a wash on the aggregate while
+  saving ~25 points of `fine` on both. `lidar-dense` turned out to be
+  structurally silent (one band), but applying the knee across all three
+  captures answers a better question: the shipped `keep=0.25` is refused
+  on both multi-band captures, and `eps=1e-3` is the only setting that
+  passes everywhere with a positive aggregate and no band damaged.
+  Promoting that pair — the tighter limit and the threshold default —
+  is a deliberate change to a public surface and is the open decision.
   Details in [docs/fit.md](docs/fit.md).
 - **Occlusion research spike** ([#5](https://github.com/squatch-stack/hdc-holo/issues/5)) —
   untouched, and unrelated to everything else in this milestone. Alpha
