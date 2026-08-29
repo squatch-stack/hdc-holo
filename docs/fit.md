@@ -133,8 +133,16 @@ bundles are still garbage for anything that reads them — a render, a
 `what_is_at` query, a stored scene — and only this particular
 measurement is blind to it.
 
-So **keep=0.25 stays**: it is the last truncation with every cell clean
-on the lossless capture. And the wider lesson is about the referee, not
+So **keep=0.25 stays** — on the evidence available at the time, and
+that qualifier turned out to matter. It was the last truncation with
+every cell under a divergence limit of 20; three captures later that
+limit is known to sit more than an order of magnitude above the level
+where damage starts, and at keep=0.25
+the `fine` band decodes about a quarter worse than not projecting. The
+conclusion below stands and the setting does not; both are kept here
+because the sequence is the point.
+
+The wider lesson was right the first time and is about the referee, not
 the knob — slice error against the exact mixture is not a sufficient
 acceptance test for a per-cell solve, because a band can be destroyed
 without it moving. The norm ratio sees what the slice error misses, and
