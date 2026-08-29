@@ -273,6 +273,110 @@ between **+17.8% with one band a quarter worse** and **+8.7% with no
 band worse** — measured on a metric that, until this run, only ever
 reported the first number.
 
+## The same four settings on a second capture
+
+Saguaro, 2,486 s and 7.59 GB peak. `keep=0.25` reproduces its published
++38.0% / +35.9%:
+
+| setting | aggregate | xfine | fine | mid |
+|---|---|---|---|---|
+| forward | 0.3501 / 0.2132 | 0.3502 / 0.2131 | 0.6357 / 0.5733 | 2.3421 / 0.6775 |
+| keep=0.25 | +38.0% / +35.9% | +38.1% / +35.9% | **-29.4% / -34.8%** | +52.4% / +38.8% |
+| eps=1e-3 | +39.2% / +30.5% | +39.2% / +30.5% | **+15.2% / +12.9%** | +50.6% / +36.1% |
+| eps=1e-4 | **+42.6% / +40.6%** | +42.7% / +40.6% | -1.9% / -5.3% | +46.7% / +29.5% |
+| eps=1e-5 | +53.0% / +44.7% | +53.1% / +44.7% | -41.8% / -49.5% | +39.5% / +16.1% |
+
+`coarse` is absent from that table on purpose. Saguaro's coarse band
+carries almost no field at these slices, and the run reported
+**4,359,160** for it — a division by nearly nothing, not a failure.
+`SIGNAL_FLOOR` now declines to score a band holding less than a
+thousandth of the field rather than printing a number for it.
+
+**Two things repeat and one flips.** The aggregate is `xfine` again
+(0.2170 against xfine's 0.2168), and `keep=0.25` damages `fine` again —
+-29.4% / -34.8% here against Red Rock's -24.6% / -33.1%. What flips is
+the headline: on saguaro the threshold wins the aggregate too, with
+`eps=1e-4` beating `keep=0.25` on both slices while leaving `fine`
+nearly intact.
+
+### The norm ratio predicts per-band error ACROSS captures
+
+| norm ratio (Red Rock / saguaro) | Red Rock `fine` | saguaro `fine` |
+|---|---|---|
+| 1.04 / 1.09 | -1.0% | +15.2% |
+| 1.10 / 1.13 | -2.1% | -1.9% |
+| **1.32 / 1.33** | **-24.6%** | **-29.4%** |
+| 1.39 / 1.49 | -36.0% | -41.8% |
+
+Monotone in `fine` and in `mid` on both captures — and the part that
+matters is that the same ratio costs the same on two different scenes.
+A ratio of 1.32 and one of 1.33 cost 24.6% and 29.4%; ratios of 1.10
+and 1.13 cost about two percent each.
+
+The norm ratio is therefore a transferable predictor, and
+`DIVERGENCE_RATIO = 20` is not a loose threshold on it so much as the
+absence of one. **The knee sits between 1.15 and 1.2** — eight measured
+points across two captures and two bands, rather than the single-scene
+calibration the previous section warned against.
+
+### What that makes defensible, and what it does not
+
+`eps=1e-4` is the setting to prefer over the shipped `keep=0.25` on the
+evidence of two captures: a wash on the aggregate (-4.3 / -3.0 points
+on Red Rock, +4.6 / +4.7 on saguaro) in exchange for roughly
+twenty-five points of `fine` on both. A divergence limit near 1.2 would
+have refused `keep=0.25` on both, which is what the per-band referee
+says is correct.
+
+## The third capture, and what survives its own gate
+
+`lidar-dense` ran the same four settings (1,018 s, 3.93 GB peak) and
+turns out to be **structurally silent on the band question**: it
+populates exactly one band, `mid`, with 241 cells. Its aggregate IS
+that band by construction, so it can neither confirm nor break a
+finding about minority bands. What it does contribute is four more
+points in the safe regime — every ratio between 0.98 and 1.07, every
+setting an improvement, and the improvement shrinking as the ratio
+rises (0.98 -> +25.7%, 1.01 -> +12.7%, 1.07 -> +11.6%), which is the
+same direction the other two captures show.
+
+Applying the 1.2 knee to every capture at once asks a sharper question
+than "which setting scores best": **which setting passes its own
+gate?** One correction is needed first. Red Rock's `coarse` band has a
+FORWARD error of 1.4294 — above 1.0, meaning the pipeline reconstructs
+it worse than returning zeros. A band that never worked cannot be
+damaged, and letting it veto a run is the same mistake `SIGNAL_FLOOR`
+fixes for the error metric, in the other metric. Excluding bands the
+forward encoding already fails:
+
+| setting | Red Rock | saguaro | lidar-dense |
+|---|---|---|---|
+| **keep=0.25** (shipped) | REFUSED, `fine` 1.32 | REFUSED, `fine` 1.33 | pass, 0.98 |
+| **eps=1e-3** | **pass, 1.18** | **pass, 1.09** | **pass, 0.98** |
+| eps=1e-4 | REFUSED, `mid` 1.57 | pass, 1.18 | pass, 1.01 |
+| eps=1e-5 | REFUSED, `mid` 2.23 | REFUSED, `mid` 1.92 | pass, 1.07 |
+
+**The shipped setting is refused on both captures that have more than
+one band, and `eps=1e-3` is the only setting that passes everywhere.**
+Its aggregate is positive on all three (+8.7% / +23.7% Red Rock,
++39.2% / +30.5% saguaro, +25.0% / +5.2% lidar-dense) and it damages no
+band on either capture that has one (`fine`: -1.0% / +10.6% and
++15.2% / +12.9%).
+
+That is the first configuration measured here that is self-consistent:
+it passes the detector that its own numbers calibrated. It costs about
+half the headline gain on the flagship capture — +8.7% against
+keep=0.25's +17.8% top-down on Red Rock — and buys not degrading a band
+by a quarter.
+
+**Three judgements this rests on, none of them shipped yet.** The knee
+at 1.2 comes from eight points on two captures. The "ignore a band the
+forward encoding already fails" rule is principled but untested as a
+rule. And three captures is three. What is measured is recorded above;
+changing `DIVERGENCE_RATIO` and the default truncation is a separate
+change to a public surface, and it should be made deliberately rather
+than as a footnote to a measurement.
+
 **The divergence is silent in the decode and loud in the norm.** The
 last column above is the median solved-bundle norm over the forward
 one: everything that works sits at or below 5.3 and everything broken

@@ -333,3 +333,34 @@ def test_eps_truncates_the_ill_conditioned_band_harder(rp):
     assert ranks["fine"]["eps"] < ranks["coarse"]["eps"]
     # ...where a rank fraction is by construction blind to all of that
     assert len({r["keep"] for r in ranks.values()}) == 1
+
+
+def test_a_faint_band_is_absent_not_catastrophic(rp, lopsided):
+    """The saguaro `coarse` bug: dividing by nearly nothing.
+
+    `rel_err` used to guard only an EXACTLY zero referee. A band with a
+    few distant splats gives a nearly zero one, and the quotient looks
+    like catastrophic failure while actually being an absence of signal.
+    Saguaro's `coarse` band reported 4,359,160 on the top-down slice.
+    That is not a band that failed; it is a band that is not there.
+
+    Pinned both ways round, because a floor that swallowed real bands
+    would be worse than the bug it fixes: the same call declines the
+    faint band and scores the loud one normally.
+    """
+    sc = lopsided
+    band_truth = {n: dict(per, fine=per["fine"] * 1e-6)   # a millionth
+                  for n, per in sc["band_truth"].items()}
+
+    got = rp.band_errors(sc["bundles"], sc["books"], sc["slices"], band_truth)
+    assert got["fine"][0] is None              # declined, not 4e6
+    assert got["xfine"][0] is not None         # and nothing else was taken
+    assert got["xfine"][0] < 0.5
+
+    # the same comparison with no floor is the number that misled: huge,
+    # four significant figures, and meaningless
+    one = [b for b in BANDS if b[0] == "fine"]
+    unfloored = rp.rel_err(
+        decode_slice(sc["pts"], sc["bundles"], sc["books"], bands=one)[:, 0],
+        band_truth["probe"]["fine"][:, 0])
+    assert unfloored > 1e3
