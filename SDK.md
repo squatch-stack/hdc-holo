@@ -867,12 +867,12 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   and >200x CPU on the capture-shaped workload. The CUDA seam the
   roadmap left open is now measured, remote, and sandboxed.
 - **5090 productionization** (box session, published over the gpugate
-  reports channel — ids 20260826-ed92e7 / 20260826-b978b2, **and the
-  second of those is now GONE: HTTP 404 as of 2026-08-29**, which
-  leaves the headline figure below with no retrievable source. It is
-  unverified rather than disproven; see the claim's notes for what
-  would close it): the real-scene pipeline is reported at **6.92 s**
-  end to end on the RTX 5090,
+  reports channel — ids 20260826-ed92e7 / 20260826-b978b2. The second
+  of those was **deleted upstream** on 2026-08-29 while its sibling
+  survived; both are now archived in
+  [docs/reports/](../blob/main/docs/reports/), recovered from a local
+  session transcript, and the claim cites the file rather than the ID):
+  the real-scene pipeline runs **6.92 s** end to end on the RTX 5090,
   from ~22 min upstream NumPy validate (CUDA validate 118 s ->
   production mode 13.1 s — skipping ground truth, the single biggest
   lever and not an optimisation at all -> binned decode_slice 8.25 s
