@@ -1279,6 +1279,54 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   original call behind; nothing surfaced it until a run record was read
   end to end for the first time, which is itself the argument for
   reading them.
+- **The norm ratio transfers, and a faint band is not a broken one**
+  (research lane; `examples/run_projection_pipeline.py`, `docs/fit.md`;
+  issue #2). Saguaro, the same four settings, 2,486 s / 7.59 GB.
+  **The confirmation the previous entry said was needed.** The same
+  norm ratio costs the same on two different captures: 1.32 and 1.33
+  cost 24.6% and 29.4% of the `fine` band; 1.10 and 1.13 cost about two
+  percent each; monotone in `fine` and `mid` on both scenes. Eight
+  points, two captures, two bands — so the knee is between 1.15 and
+  1.2, and DIVERGENCE_RATIO=20 is not a loose threshold so much as the
+  absence of one.
+  Two results repeat and one flips. `keep=0.25` damages `fine` again
+  (-29.4% / -34.8% against Red Rock's -24.6% / -33.1%), and the
+  aggregate is `xfine` again (0.2170 against 0.2168). What flips is the
+  headline: on saguaro `eps=1e-4` beats `keep=0.25` on the aggregate
+  TOO (+42.6% / +40.6% against +38.0% / +35.9%) while leaving `fine`
+  nearly intact. Across both captures eps=1e-4 is a wash on aggregate
+  and about twenty-five points better on `fine`.
+  **And the metric had a hole I put there.** Saguaro's `coarse` band
+  reported a relative error of 4,359,160. `rel_err` guarded only an
+  EXACTLY zero referee, so a band with a few distant splats divided by
+  nearly nothing and printed catastrophe. `SIGNAL_FLOOR` declines to
+  score a band holding under a thousandth of the field at the probe
+  points. Found by reading a run's output, not by a test — the same
+  way the duplicated stage records were found, and the second argument
+  in two days for actually reading them.
+  `lidar-dense` ran as the third capture and is **structurally silent**:
+  it populates exactly one band (`mid`, 241 cells), so its aggregate IS
+  that band and it can neither confirm nor break a minority-band
+  finding. It contributes four points in the safe regime, all
+  improvements, shrinking as the ratio rises — same direction as the
+  other two.
+  Applying the 1.2 knee across all three asks a better question than
+  "which setting scores best": **which setting passes its own gate?**
+  One correction first — Red Rock's `coarse` band has a FORWARD error of
+  1.4294, above 1.0, so the pipeline reconstructs it worse than
+  returning zeros. A band that never worked cannot be damaged, and
+  letting it veto a run is the SIGNAL_FLOOR mistake again in the other
+  metric. Excluding such bands: the shipped `keep=0.25` is REFUSED on
+  both multi-band captures (`fine` at 1.32 and 1.33), and **eps=1e-3 is
+  the only setting that passes on all three** (1.18 / 1.09 / 0.98) with
+  a positive aggregate everywhere and no band damaged. It costs about
+  half the headline gain on Red Rock to get there.
+  That is the first self-consistent configuration measured — it passes
+  the detector its own numbers calibrated. It is NOT shipped: the knee
+  rests on eight points from two captures, the ignore-unreconstructed
+  rule is principled but untested as a rule, and changing
+  DIVERGENCE_RATIO plus the default truncation is a deliberate change to
+  a public surface rather than a footnote to a measurement.
 - Still queued: component-thresholding denoiser (new, unclaimed);
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,

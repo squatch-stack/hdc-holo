@@ -434,15 +434,32 @@ def record_band(run, solved, forward, ident, seconds, allow):
                             allow=allow)
 
 
-def rel_err(got, want):
+#: A band carrying less than this share of the field at the probe points
+#: is not scored there. Its relative error would be the ratio of two
+#: negligible numbers, which is noise wearing four significant figures:
+#: saguaro's `coarse` band reported 4,359,160 on the top-down slice
+#: before this existed. That is not a band that failed, it is a band
+#: that is not present where we are looking.
+#:
+#: A domain of validity rather than a tuned constant — one part in a
+#: thousand of the field is well below any band this pipeline cares
+#: about (Red Rock's smallest, `coarse`, still carries enough to score
+#: at 1.43) and well above the numerical floor.
+SIGNAL_FLOOR = 1e-3
+
+
+def rel_err(got, want, floor=0.0):
     """Relative error, or None when there is nothing to be relative to.
 
-    A band with no splats near a slice gives a zero referee. That is an
-    ABSENCE of a measurement, not a score of zero, and reporting it as
-    0.0 would read as a perfect band.
+    Two ways that happens, and only the first was handled before. A band
+    with no splats near a slice gives an exactly zero referee. A band
+    with a FEW distant splats gives a nearly zero one, and dividing by
+    it produces a number that looks like a catastrophic failure and is
+    actually an absence of signal. Both are missing measurements, not
+    scores of zero and not scores of 4e6.
     """
     scale = float(np.linalg.norm(want))
-    if scale == 0.0:
+    if scale <= floor:
         return None
     return float(np.linalg.norm(got - want) / scale)
 
@@ -466,15 +483,23 @@ def band_errors(bundles, books, slices, band_truth):
     `decode_slice` and `exact_slice` both already restrict to a band
     list, and the bands partition the splats, so this costs one extra
     decode pass in total rather than one per band.
+
+    A band too faint at these points to score is reported as absent
+    rather than as a number — see SIGNAL_FLOOR.
     """
-    out = {}
-    for b in BANDS:
-        if not bundles.get(b[0]):
-            continue
-        out[b[0]] = [rel_err(decode_slice(pts, bundles, books,
-                                          bands=[b])[:, 0],
-                             band_truth[n][b[0]][:, 0])
-                     for n, (pts, _) in slices]
+    out = {b[0]: [] for b in BANDS if bundles.get(b[0])}
+    for n, (pts, _) in slices:
+        # the bands partition the splats, so their truths sum to the
+        # whole field at these points — which is what "a share of the
+        # field" is measured against
+        floor = SIGNAL_FLOOR * float(np.linalg.norm(
+            sum(band_truth[n][b[0]][:, 0] for b in BANDS)))
+        for b in BANDS:
+            if b[0] not in out:
+                continue
+            out[b[0]].append(
+                rel_err(decode_slice(pts, bundles, books, bands=[b])[:, 0],
+                        band_truth[n][b[0]][:, 0], floor))
     return out
 
 
