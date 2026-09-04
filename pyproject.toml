@@ -16,8 +16,15 @@ requires-python = ">=3.9"
 dynamic = ["version"]
 # numpy < 2.0 keeps the OpenBLAS wheels on macOS: the Accelerate-backed
 # 2.0 wheels corrupt float32 GEMV with heap-layout-dependent NaNs
-# (see hdc/fit.py and SDK.md).
-dependencies = ["numpy>=1.26,<2.0"]
+# (see holo/fit.py and SDK.md).
+dependencies = [
+  # macOS: Accelerate-backed numpy 2.x wheels still corrupt float32 GEMV with
+  # heap-layout-dependent non-finite results (re-tested 2026-09-04 on numpy
+  # 2.5.2; see holo/fit.py). OpenBLAS/MKL wheels elsewhere are clean, so the
+  # cap applies to macOS only and Linux may run numpy 2.
+  "numpy>=1.26,<2.0; sys_platform == 'darwin'",
+  "numpy>=1.26; sys_platform != 'darwin'",
+]
 
 [project.optional-dependencies]
 crdt = ["loro>=1.0"]

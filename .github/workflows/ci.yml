@@ -112,3 +112,20 @@ jobs:
         env:
           HDC_BACKEND: numpy
         run: python -m pytest tests/ -q
+
+  # numpy 2 is allowed everywhere except macOS (Accelerate GEMV corruption,
+  # see holo/fit.py). This leg keeps the OpenBLAS-wheel path honest: same
+  # suite, numpy >= 2, Python 3.12.
+  linux-numpy2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install 'numpy>=2' -e '.[dev]'
+      - name: numpy must be 2.x and the backend the NumPy fallback
+        run: python -c "import numpy, holo.backend as b; assert numpy.__version__.startswith('2.'), numpy.__version__; assert b.backend_name() == 'numpy', b.backend_name(); print(numpy.__version__)"
+      - run: python -m pytest tests/ -q
