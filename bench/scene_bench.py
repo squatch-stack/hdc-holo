@@ -41,7 +41,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from holo.capture import (  # noqa: E402
+from holo.capture import (
     band_codebooks,
     build_scene,
     decode_slice,
@@ -96,7 +96,7 @@ def main():
     # Same slices as the evidence figures, at the requested referee size.
     global_pix = 1.0 / args.pix
     slices = []
-    for name, (pts, shape) in [
+    for name, (pts, _shape) in [
         ("top-down", slice_grid((0, box[0]), (0, box[2]), "y", y_mode,
                                 pix=global_pix)),
         ("side", slice_grid((0, box[2]), (0, box[1]), "x", x_mode,
@@ -110,7 +110,7 @@ def main():
         err = float(np.linalg.norm(holo[:, 0] - truth[:, 0])
                     / np.linalg.norm(truth[:, 0]))
         slices.append({
-            "slice": name, "pixels": int(len(pts)),
+            "slice": name, "pixels": len(pts),
             "referee_s": round(tb - ta, 2), "decode_s": round(tc - tb, 2),
             "rel_err": round(err, 4),
         })

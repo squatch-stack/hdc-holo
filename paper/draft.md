@@ -512,8 +512,9 @@ environment, retrieval that needs graph or language machinery, and
 nothing that merges across agents. Collaborative splat SLAM (MAC-Ego3D,
 GS-Share) meets the merge problem directly and fights communication
 load and map fusion for it; no published system in either line treats
-the map as a replicated data type. Those pains are, respectively, §3,
-§4 and §5 of this paper.
+the map as a replicated data type. The first two pains are what §3
+answers — one fixed-size vector, queried by unbinding — and the third
+is §5.
 
 **A note on the word "holographic."** In graphics it now denotes
 wave-optics display holography — Gaussian Wave Splatting propagates
