@@ -18,7 +18,7 @@
 % the same source compiles in-repo AND in a flattened submission.
 \graphicspath{{../results/}{../out/}{./}}
 
-\title{Holographic Scene Representation:\\Gaussian Splats as Hypervectors}
+\title{Hypervector Scene Memory:\\Gaussian Splats in Superposition}
 \author{Squatch Stack}
 \date{}
 
@@ -226,9 +226,11 @@ Figure~\ref{fig:1} --- the price of per-splat covariance.}
 \includegraphics[width=\linewidth]{real_redrock}
 \caption{Red Rock, the flagship capture: 547k splats after cropping, encoded
 through scale bands and spatial cells, and scored against the exact
-Gaussian mixture evaluated cell-locally. Three further captures --- a
-second phone scan, an indoor LiDAR cloud, and a Tanks \& Temples scene
---- pass through the same fixed pipeline.}
+Gaussian mixture evaluated cell-locally. Four further captures --- a
+second phone scan, an indoor LiDAR cloud, a Tanks \& Temples scene, and
+a stone interior scanned from within its walls (the Brookline
+springhouse, whose 15.9\%/28.2\% slices are the best single-axis result
+of any capture) --- pass through the same fixed pipeline.}
 \label{fig:4}
 \end{figure}
 
@@ -578,6 +580,32 @@ rather than per view. HyperSpace~\cite{snyder2026hyperspace} is the
 nearest VSA-framework effort and contains no scene, splat, or
 replication content.
 
+\textbf{Scene memory and shared maps --- where the demand sits.} Two
+active lines frame what a fixed-size queryable scene is \emph{for}.
+Language-embedded splatting (LangSplat~\cite{qin2023langsplat},
+OpenGaussian~\cite{wu2024opengaussian}) attaches per-Gaussian feature
+channels and answers open-vocabulary queries by rasterizing relevancy
+--- storage grows with the primitive count and a query costs a render;
+unbinding answers a narrower class of question against a vector whose
+size never moves. Embodied-agent memory (Clio~\cite{maggio2024clio}'s
+task-driven scene graphs, 3D-Mem~\cite{yang20243dmem}, and lately splat
+maps held as persistent spatial memory in GSMem~\cite{lu2026gsmem})
+states its own pains plainly: memory that grows with the environment,
+retrieval that needs graph or language machinery, and nothing that
+merges across agents. Collaborative splat SLAM
+(MAC-Ego3D~\cite{xu2024macego3d}, GS-Share~\cite{zhang2025gsshare})
+meets the merge problem directly and fights communication load and map
+fusion for it; no published system in either line treats the map as a
+replicated data type. The first two pains are what \S3 answers --- one
+fixed-size vector, queried by unbinding --- and the third is \S5.
+
+\textbf{A note on the word ``holographic.''} In graphics it now denotes
+wave-optics display holography --- Gaussian Wave
+Splatting~\cite{choi2025gaussianwave} propagates complex-valued
+Gaussians for computer-generated holograms. This paper uses the word
+only in Plate's sense: interference-style superposition of distributed
+representations. The two share complex arithmetic and nothing else.
+
 \textbf{Graphics.} Rasterization is better at rasterizing, and the
 compression literature~\cite{ali2025compression} this work is measured
 against in \S7 is better at compression. The contribution here is not a
@@ -641,7 +669,7 @@ becomes an object with an algebra --- one where a query, a view, and a
 merge are the same operation applied differently, and where the noise
 budget of each is known before it is run.
 
-\begin{thebibliography}{22}
+\begin{thebibliography}{30}
 
 \bibitem{plate1995hrr}
 Tony A. Plate.
@@ -789,6 +817,68 @@ Drettakis.
 \newblock 3D Gaussian Splatting for Real-Time Radiance Field Rendering.
 \newblock \emph{ACM Transactions on Graphics} \textbf{42}(4), 2023.
 \newblock \texttt{doi:10.1145/3592433}.
+
+\bibitem{maggio2024clio}
+Dominic Maggio and Yun Chang and Nathan Hughes and Matthew Trang and Dan
+Griffith and Carlyn Dougherty and Eric Cristofalo and Lukas Schmid and
+Luca Carlone.
+\newblock Clio: Real-time Task-Driven Open-Set 3D Scene Graphs.
+, 2024.
+\newblock arXiv:2404.13696.
+
+\bibitem{yang20243dmem}
+Yuncong Yang and Han Yang and Jiachen Zhou and Peihao Chen and Hongxin
+Zhang and Yilun Du and Chuang Gan.
+\newblock 3D-Mem: 3D Scene Memory for Embodied Exploration and
+Reasoning.
+, 2024.
+\newblock arXiv:2411.17735.
+
+\bibitem{wu2024opengaussian}
+Yanmin Wu and Jiarui Meng and Haijie Li and Chenming Wu and Yahao Shi
+and Xinhua Cheng and Chen Zhao and Haocheng Feng and Errui Ding and
+Jingdong Wang and Jian Zhang.
+\newblock OpenGaussian: Towards Point-Level 3D Gaussian-based Open
+Vocabulary Understanding.
+, 2024.
+\newblock arXiv:2406.02058.
+
+\bibitem{lu2026gsmem}
+Yiren Lu and Yi Du and Disheng Liu and Yunlai Zhou and Chen Wang and Yu
+Yin.
+\newblock GSMem: 3D Gaussian Splatting as Persistent Spatial Memory for
+Zero-Shot Embodied Exploration and Reasoning.
+, 2026.
+\newblock arXiv:2603.19137.
+
+\bibitem{zhang2025gsshare}
+Xinran Zhang and Hanqi Zhu and Yifan Duan and Yanyong Zhang.
+\newblock GS-Share: Enabling High-fidelity Map Sharing with Incremental
+Gaussian Splatting.
+, 2025.
+\newblock arXiv:2510.02884.
+
+\bibitem{qin2023langsplat}
+Minghan Qin and Wanhua Li and Jiawei Zhou and Haoqian Wang and Hanspeter
+Pfister.
+\newblock LangSplat: 3D Language Gaussian Splatting.
+, 2023.
+\newblock arXiv:2312.16084.
+
+\bibitem{choi2025gaussianwave}
+Suyeon Choi and Brian Chao and Jacqueline Yang and Manu Gopakumar and
+Gordon Wetzstein.
+\newblock Gaussian Wave Splatting for Computer-Generated Holography.
+, 2025.
+\newblock arXiv:2505.06582.
+
+\bibitem{xu2024macego3d}
+Xiaohao Xu and Feng Xue and Shibo Zhao and Yike Pan and Sebastian
+Scherer and Xiaonan Huang.
+\newblock MAC-Ego3D: Multi-Agent Gaussian Consensus for Real-Time
+Collaborative Ego-Motion and Photorealistic 3D Reconstruction.
+, 2024.
+\newblock arXiv:2412.09723.
 
 \end{thebibliography}
 

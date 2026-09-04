@@ -39,15 +39,15 @@ A 3D Gaussian splatting scene is a list of primitives: fast to
 rasterize, awkward to query, merge, or carry. We show that such a scene
 can instead be *superposed* into a single fixed-size complex vector,
 and that three capabilities then follow from one algebra rather than
-from three mechanisms. Encoding a point as e^(iWp) with frequency
-rows drawn from N(0, Sigma^-1) makes the inner product of two encodings
+from three mechanisms. Encoding a point as `e^{iWp}` with frequency
+rows drawn from `N(0, Σ⁻¹)` makes the inner product of two encodings
 equal a Gaussian kernel, so a mixture of anisotropic Gaussians is a
 random-feature bundle: evaluating the field anywhere is an inner
 product, symbolic attributes attached by binding are recovered by
 unbinding, an entire orthographic view folds into another vector of the
 same kind, and independently-edited replicas merge by addition. A
-single capacity law, sigma ~ sqrt(N R / 2d), predicts the noise of
-every one of those readouts and states where each stops working. We demonstrate
+single capacity law, `σ ~ √(N·R / 2d)`, predicts the noise of every one
+of those readouts and states where each stops working. We demonstrate
 the representation on real captures of up to 682,000 splats, evaluated
 against exact analytic ground truth rather than against images, and we
 report the cost plainly: a bundle is roughly two orders of magnitude
