@@ -1,4 +1,11 @@
-# Holographic Scene Representation: Gaussian Splats as Hypervectors
+# Hypervector Scene Memory: Gaussian Splats in Superposition
+
+*Naming note (2026-09-04): the lead term is "hypervector scene memory,"
+with "holographic" used inside strictly in Plate's HRR sense and defined
+at first use — in graphics, "holographic + Gaussian" now denotes
+wave-optics display holography (Gaussian Wave Splatting, SIGGRAPH 2025),
+and a title leading with it invites the wrong review. Prior title:
+"Holographic Scene Representation: Gaussian Splats as Hypervectors."*
 
 *Draft v0 — prose against [PAPER.md](../PAPER.md)'s three claims.
 Markdown by choice, not by default: no LaTeX toolchain here would let
@@ -32,15 +39,15 @@ A 3D Gaussian splatting scene is a list of primitives: fast to
 rasterize, awkward to query, merge, or carry. We show that such a scene
 can instead be *superposed* into a single fixed-size complex vector,
 and that three capabilities then follow from one algebra rather than
-from three mechanisms. Encoding a point as `e^{iWp}` with frequency
-rows drawn from `N(0, Σ⁻¹)` makes the inner product of two encodings
+from three mechanisms. Encoding a point as e^(iWp) with frequency
+rows drawn from N(0, Sigma^-1) makes the inner product of two encodings
 equal a Gaussian kernel, so a mixture of anisotropic Gaussians is a
 random-feature bundle: evaluating the field anywhere is an inner
 product, symbolic attributes attached by binding are recovered by
 unbinding, an entire orthographic view folds into another vector of the
 same kind, and independently-edited replicas merge by addition. A
-single capacity law, `σ ~ √(N·R / 2d)`, predicts the noise of every one
-of those readouts and states where each stops working. We demonstrate
+single capacity law, sigma ~ sqrt(N R / 2d), predicts the noise of
+every one of those readouts and states where each stops working. We demonstrate
 the representation on real captures of up to 682,000 splats, evaluated
 against exact analytic ground truth rather than against images, and we
 report the cost plainly: a bundle is roughly two orders of magnitude
@@ -197,7 +204,7 @@ agree across three compute backends to 2.5e-8.
 
 ![Figure 4](../results/real_redrock.png)
 
-**Figure 4.** Red Rock, the flagship capture: 547k splats after cropping, encoded through scale bands and spatial cells, and scored against the exact Gaussian mixture evaluated cell-locally. Three further captures — a second phone scan, an indoor LiDAR cloud, and a Tanks & Temples scene — pass through the same fixed pipeline.
+**Figure 4.** Red Rock, the flagship capture: 547k splats after cropping, encoded through scale bands and spatial cells, and scored against the exact Gaussian mixture evaluated cell-locally. Four further captures — a second phone scan, an indoor LiDAR cloud, a Tanks & Temples scene, and a stone interior scanned from within its walls (the Brookline springhouse, whose 15.9%/28.2% slices are the best single-axis result of any capture) — pass through the same fixed pipeline.
 
 
 *Positioning.* VSA-OGM is the closest published relative: SSP-encoded
@@ -491,6 +498,29 @@ both apply the Fourier slice theorem to Gaussian primitives for
 closed-form projection, per primitive rather than per view. HyperSpace
 is the nearest VSA-framework effort and contains no scene, splat, or
 replication content.
+
+**Scene memory and shared maps — where the demand sits.** Two active
+lines frame what a fixed-size queryable scene is *for*. Language-embedded
+splatting (LangSplat, OpenGaussian) attaches per-Gaussian feature
+channels and answers open-vocabulary queries by rasterizing relevancy —
+storage grows with the primitive count and a query costs a render;
+unbinding answers a narrower class of question against a vector whose
+size never moves. Embodied-agent memory (Clio's task-driven scene
+graphs, 3D-Mem, and lately splat maps held as persistent spatial memory
+in GSMem) states its own pains plainly: memory that grows with the
+environment, retrieval that needs graph or language machinery, and
+nothing that merges across agents. Collaborative splat SLAM (MAC-Ego3D,
+GS-Share) meets the merge problem directly and fights communication
+load and map fusion for it; no published system in either line treats
+the map as a replicated data type. Those pains are, respectively, §3,
+§4 and §5 of this paper.
+
+**A note on the word "holographic."** In graphics it now denotes
+wave-optics display holography — Gaussian Wave Splatting propagates
+complex-valued Gaussians for computer-generated holograms. This paper
+uses the word only in Plate's sense: interference-style superposition
+of distributed representations. The two share complex arithmetic and
+nothing else.
 
 **Graphics.** Rasterization is better at rasterizing, and the
 compression literature this work is measured against in §7 is better at
