@@ -59,6 +59,16 @@ CITES = [
     ("CryoSplat", "chen2025cryosplat"),
     ("R2-Gaussian", "zha2024r2gaussian"),
     ("HyperSpace", "snyder2026hyperspace"),
+    # §8's demand-side lines (2026-09-04 sweep). Named directly in the
+    # prose, so proper-noun anchors suffice.
+    ("LangSplat", "qin2023langsplat"),
+    ("OpenGaussian", "wu2024opengaussian"),
+    ("Clio", "maggio2024clio"),
+    ("3D-Mem", "yang20243dmem"),
+    ("GSMem", "lu2026gsmem"),
+    ("MAC-Ego3D", "xu2024macego3d"),
+    ("GS-Share", "zhang2025gsshare"),
+    ("Gaussian Wave Splatting", "choi2025gaussianwave"),
 ]
 
 UNI = [
@@ -224,7 +234,7 @@ PREAMBLE = r"""% Generated from paper/draft.md by paper/md2tex.py — edit the
 % the same source compiles in-repo AND in a flattened submission.
 \graphicspath{{../results/}{../out/}{./}}
 
-\title{Holographic Scene Representation:\\Gaussian Splats as Hypervectors}
+\title{Hypervector Scene Memory:\\Gaussian Splats in Superposition}
 \author{Squatch Stack}
 \date{}
 

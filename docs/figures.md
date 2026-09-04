@@ -42,6 +42,7 @@ source and no search recovers the link.
 | `real_scan-tucson.png`, `real_scan-tucson_xray.png` | `python -m examples.run_real_scene data/scan-tucson.spz` |
 | `real_train.png`, `real_train_xray.png` | `python -m examples.run_real_scene data/train.splat` |
 | `real_lidar-dense.png`, `real_lidar-dense_xray.png` | `python -m examples.run_real_scene data/iphone/lidar-dense.ply` |
+| `real_brookline-station.png`, `real_brookline-station_xray.png` | `python -m examples.run_real_scene data/brookline-station.ply` (run 20260904T073902) |
 | `real_turntable-redrock.gif`, `.png` | `python -m examples.run_turntable data/iphone/redrock.ply --crop 0.5 --elev 0.7` |
 | `real_turntable-scan-tucson.gif`, `.png` | `python -m examples.run_turntable data/scan-tucson.spz` |
 | `real_fit.png` | `python -m examples.run_fit_real` |
