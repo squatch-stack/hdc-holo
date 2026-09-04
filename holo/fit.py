@@ -94,11 +94,15 @@ class HoloRegressor:
         A = self._design(points)
         n, m = A.shape
         ridge = lam * n
-        # NOTE: numpy is pinned to 1.26.4 (OpenBLAS wheels) because the
-        # Accelerate-backed numpy 2.0 wheels on macOS corrupt float32
-        # GEMV (A.T @ y and y @ A alike) with heap-layout-dependent NaNs
-        # at this size. If you lift the pin, run the test suite several
-        # times in a row before trusting a fit.
+        # NOTE: numpy is pinned <2.0 on macOS only. The Accelerate-backed
+        # numpy 2.x wheels there corrupt float32 GEMV (A.T @ y and y @ A
+        # alike) with heap-layout-dependent non-finite results. Re-tested
+        # 2026-09-04 on numpy 2.5.2: 3 non-finite results in 12,000
+        # random products across 10 processes, all in one process and
+        # none on rerun with the same seed: rare, heap-dependent, still
+        # there. OpenBLAS/MKL wheels (Linux) are clean and run numpy 2.
+        # If you ever lift the macOS cap, run the suite several times in
+        # a row before trusting a fit.
         if m <= n:
             G = (A.T @ A).astype(np.float64)
             G[np.diag_indices_from(G)] += ridge

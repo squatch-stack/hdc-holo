@@ -70,8 +70,9 @@ any timing you intend to cite rather than inferring load afterwards.
 each discovered by tests/bring-up rather than documentation:
 
 - *macOS Accelerate float32 GEMV corruption*: the Accelerate-backed
-  numpy 2.0 wheels produce heap-layout-dependent NaNs — hence the
-  `numpy<2` pin (OpenBLAS wheels are clean).
+  numpy 2.x wheels produce heap-layout-dependent NaNs — hence the
+  `numpy<2` pin on macOS (re-tested 2026-09-04 on 2.5.2: still present).
+  OpenBLAS/MKL wheels are clean, so Linux runs numpy 2.
 - *CUDA TF32 by default* (found on an RTX 5090 during job-runner
   bring-up): fp32 matmuls use TF32 tensor cores on Ampere+/Blackwell,
   costing ~2 orders of magnitude (1e-7 -> ~1e-5 relative). Disable it
