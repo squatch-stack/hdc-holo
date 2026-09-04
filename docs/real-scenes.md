@@ -211,6 +211,21 @@ An iPhone LiDAR room cloud (291k points as density-matched isotropic
 splats) decodes at 22%/30% with sub-second slices:
 `results/real_lidar-dense.png`.
 
+The Brookline springhouse (Scaniverse raw `.ply`, 563k splats after the
+gallery pipeline's crop — a stone interior scanned from within its
+walls) decodes at **15.9%/28.2%** slice error: the best single-axis
+number of any real capture, on the worse axis a reminder that a room
+scanned from inside has one direction the camera never crossed. X-rays
+from the same bundles land at **30.5%/37.1%** against their mip
+targets, in family with the other captures. Encoding is deterministic
+(hash-derived codebooks), so these are single-run figures by
+construction; the run record is `out/runs/2026-09-04.jsonl`
+(20260904T073902, 1,423 s, 8.25 GB peak):
+
+![Brookline springhouse: ground truth vs holographic slices](../results/real_brookline-station.png)
+
+![Brookline springhouse X-ray views from the cell bundles](../results/real_brookline-station_xray.png)
+
 Tanks & Temples "train" through the same fixed pipeline:
 `results/real_train.png`, `results/real_train_xray.png` (the
 superseded pre-fix figure showing the herringbone failure mode is

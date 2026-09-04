@@ -16,3 +16,5 @@ quality/codegraph*
 out/arxiv/
 # run telemetry: local, and every heavy run writes one
 out/runs/
+paper/main.pdf
+paper/main.log
