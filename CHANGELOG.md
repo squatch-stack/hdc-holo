@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **numpy 2 allowed on Linux.** The `numpy<2.0` cap now applies to macOS
+  only (`sys_platform == 'darwin'`), where Accelerate-backed numpy 2.x
+  wheels still corrupt float32 GEMV with heap-layout-dependent non-finite
+  results (re-tested 2026-09-04 on numpy 2.5.2: the full suite passes, and
+  a stress test of 12,000 float32 GEMV products across 10 processes produced 3 non-finite results, all in one process). OpenBLAS and
+  MKL wheels are clean; CI gains a Linux numpy-2 leg to keep them so. This
+  unblocks installing `hdc-holo` into environments that already run numpy
+  2 (a CUDA toolpack with numpy 2.5.2 was the case at hand).
+
 ## 0.3.0 — 2026-08-27
 
 <!-- claims: allow project.license@0.2.1 -->

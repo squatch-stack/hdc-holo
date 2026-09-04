@@ -156,8 +156,8 @@ Extras: `.[crdt]` (Loro replication), `.[viz]` (figures), `.[gpu]`
 ```bash
 git clone https://github.com/squatch-stack/hdc-holo && cd hdc-holo
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-# numpy is pinned <2.0 (OpenBLAS wheels): the Accelerate-backed numpy 2.0
-# wheels on macOS corrupt float32 GEMV with heap-dependent NaNs (holo/fit.py)
+# numpy is pinned <2.0 on macOS only: Accelerate-backed numpy 2.x wheels
+# corrupt float32 GEMV with heap-dependent NaNs (holo/fit.py). Linux runs numpy 2.
 .venv/bin/python examples/hello_hologram.py  # the algebra in 5 minutes
 .venv/bin/hdc-demos                      # all demos, capacity tables
 .venv/bin/hdc-demos fsm graph            # a subset

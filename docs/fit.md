@@ -479,8 +479,9 @@ mode before an API exists.
 the model memorizes training points and rings between them (train PSNR
 47dB, test 17dB — the classic signature); lam is a real knob in the
 interpolation regime (features > samples). Platform: NumPy is pinned
-<2.0 because macOS Accelerate float32 GEMV corrupts with heap-dependent
-NaNs — the OpenBLAS wheels are clean (`holo/fit.py` NOTE).
+<2.0 on macOS because Accelerate float32 GEMV corrupts with heap-dependent
+NaNs (still on 2.5.2, 2026-09-04) — OpenBLAS/MKL wheels are clean, so
+Linux runs numpy 2 (`holo/fit.py` NOTE).
 
 **API.**
 ```python
