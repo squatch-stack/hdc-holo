@@ -180,6 +180,116 @@ importance-sampled mixture spectral codebooks; a rule engine with a
 capacity contract and abstention as policy. Those remain the claims to
 lead with.
 
+## 2026-09-04 delta (wedges-and-venues sweep)
+
+A broader pass than the earlier ones: not "is each claim still open"
+but "who has the open problem each capability answers, and where would
+this work get a fair reading." Roughly twenty differently-phrased
+searches across arXiv, Semantic Scholar, CVF, ACM and the HDC
+community's venues; the core negative from the sweeps above still
+holds — no published work applies HDC/VSA/HRR to radiance fields,
+splats, or any appearance-bearing volumetric scene.
+
+**Neighbors this page did not yet carry:**
+
+- **The Waterloo SSP line, and a patent.** SSP-SLAM (Dumont, Furlong,
+  Orchard, Eliasmith — Frontiers in Neuroscience 2023) runs
+  semantic+metric SLAM over spatial semantic pointers; VSA4VQA
+  (Penzkofer et al., CogSci 2024, arXiv:2405.03852) scales SSP maps to
+  natural 2D images with spatial-relation queries — the closest
+  published relatives of `what_is_at`/`where_is`, in 2D. **US patent
+  12,014,263** covers encoding/processing vector-symbolic
+  representations of continuous spaces; a freedom-to-operate skim is
+  warranted before anything commercial touches the SSP-shaped surface.
+- **Hilbert maps** (Ramos & Ott, RSS 2015) — occupancy fields fit by
+  regression over random Fourier features: the mathematical twin of
+  [fit.md](fit.md)'s lane. *Position: cite; the delta is the
+  closed-form forward encoder (no samples) and appearance content.*
+- **Semantic/queryable 3DGS** — LangSplat (arXiv:2312.16084) and V2
+  (arXiv:2507.07136), OpenGaussian (arXiv:2406.02058), Feature 3DGS,
+  LERF. *Different capability class: per-Gaussian feature channels
+  (storage grows with N; a query rasterizes a relevancy map) versus
+  O(d) unbinding against a fixed-size vector — weaker at segmentation,
+  alone at constant-memory retrieval. This is the comparison set for
+  any spatial-memory claim.*
+- **Embodied scene memory** — ConceptGraphs (arXiv:2309.16650), Clio
+  (arXiv:2404.13696), VLMaps, 3D-Mem (arXiv:2411.17735), and 2026's
+  GSMem (arXiv:2603.19137, "3DGS as persistent spatial memory") and
+  LagMemo (arXiv:2510.24118). *Their stated pains are memory growth
+  with environment size, retrieval needing LLM/graph machinery, and
+  nothing merging across agents — the demand side for wedges 1 and 2
+  below.*
+- **Collaborative GS-SLAM** — survey 2025, MAC-Ego3D
+  (arXiv:2412.09723), GS-Share (arXiv:2510.02884): all fighting
+  communication load and map fusion; industry sharing (Niantic Shared
+  AR, Google Cloud Anchors) is centralized. *Still no CRDT ×
+  volumetric-scene publication anywhere.*
+- **Resonator scene understanding** — Renner et al., Nature Machine
+  Intelligence 2024 (arXiv:2208.12880) factorizes synthetic 2D scenes
+  with complex-valued VSAs; robotics HDC (Neubert's introduction;
+  Science Robotics 2019 active perception; QUT's HOPS,
+  arXiv:2412.06153) stays at image-descriptor level.
+- **A naming hazard.** In graphics, "holographic + Gaussian" now means
+  wave-optics displays: Gaussian Wave Splatting (SIGGRAPH 2025,
+  arXiv:2505.06582) and complex-valued holographic radiance fields for
+  CGH. A 3DGS reviewer reading "holographic hypervector" will assume
+  display holography. *Lead external writeups with "hypervector scene
+  memory" and define holographic-in-the-HRR-sense explicitly.*
+
+**Three wedges, ranked by where the demand already exists:**
+
+1. **Fixed-size queryable spatial memory for embodied agents.** Both
+   parent fields are converging here (GSMem/3D-Mem/LagMemo from
+   graphics; VSA spatial work capped at 2D occupancy) and neither has
+   it. The experiment reviewers would ask for: open-vocabulary
+   `where_is` (localization) and `what_is_at` (labeling) against
+   LangSplat and ConceptGraphs on LERF/ScanNet scenes, reported as
+   **accuracy versus stored bytes and query latency** — the plot where
+   the hologram's memory line is flat while every baseline grows with
+   N. Acceptable accuracy at orders-of-magnitude less memory is a
+   paper; parity would be more.
+2. **Mergeable replicated scene state.** No prior art combines CRDTs
+   with any volumetric representation; hash-derived codebooks (peers
+   decoding records they never stored) have no analogue in the
+   collaborative-SLAM literature. Experiment: two-device concurrent
+   capture, peer-to-peer delta sync over a metered link — bytes,
+   time-to-convergence, post-merge fidelity — against a
+   collaborative-GS baseline; the claim to prove is merge cost O(d),
+   independent of splat count.
+3. **The HDC-community flagship-scale demo.** Cheapest to land: the
+   community's spatial benchmark (HyperSpace) evaluates at 28×28
+   cost-map scale and its stated anxieties are scaling and
+   reproducibility; this repo's claims registry is already a runnable
+   answer to both. Package encode→query→slice on a released capture as
+   a public benchmark and bring it to them directly.
+
+*Not wedges:* the splat codec (the RD culture is mature and the
+README's anti-claim already concedes that ground) and medical X-ray
+(rasterized 3DGS-CT is far ahead on their metrics; projection-slice
+from a bundle stays the representational-completeness demo).
+
+**Venues, with the dates that matter (as of this sweep):**
+
+- **VSAonline Speakers' Corner** (sites.google.com/view/hdvsaonline) —
+  lowest friction, densest aligned audience.
+- **IEEE WCCI 2026** HD/VSA special session, Maastricht, June 21–26;
+  **npj Unconventional Computing** publishes this exact lineage
+  (VSA-OGM).
+- **Eurographics 2027** — abstract **September 25, 2026**, paper
+  October 1: the nearest graphics-side deadline.
+- **CVPR 2027** main (abstract ~Nov 7, 2026); its **workshops
+  (~March 2027)** are the friendlier bar for a novel-representation
+  short paper.
+- **arXiv endorsement policy changed January 2026**: an independent
+  author needs personal endorsement from an established in-category
+  author — the working public demo is the attachment on that ask, and
+  the Zenodo DOI is citable meanwhile. Category worth weighing:
+  **cs.CV primary with cs.NE + cs.RO cross-lists** (wedge 1's audience
+  reads cs.CV) against the current draft's cs.NE targeting.
+- Coverage paths for the demo side: radiancefields.com (covers working
+  open-source demos), the MrNeRF Discord + awesome-3D-gaussian-
+  splatting list, and the three.js forum's Showcase category.
+
 Re-run this sweep before any writeup or release; log deltas here with
 the date. Track daily 3DGS postings via the awesome-gaussians list
 (github.com/longxiang-ai/awesome-gaussians).
