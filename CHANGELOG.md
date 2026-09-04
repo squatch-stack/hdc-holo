@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **arXiv endorsement package** (`paper/ENDORSEMENT.md`): the 2026
+  endorsement mechanics from arXiv's own pages, the message an
+  endorser receives, and a pre-submission checklist (license, metadata,
+  ancillary files, moderation). Submission itself is still owner action
+  (issue #59).
+
 - **numpy 2 allowed on Linux.** The `numpy<2.0` cap now applies to macOS
   only (`sys_platform == 'darwin'`), where Accelerate-backed numpy 2.x
   wheels still corrupt float32 GEMV with heap-layout-dependent non-finite
