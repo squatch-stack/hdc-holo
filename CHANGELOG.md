@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **`weighted_quantile` no longer depends on which way an axis points.**
+  It interpolated against the inclusive cumulative weight, which credits a
+  sample with the whole of its own weight; reversing the sort order turns
+  that into an exclusive sum from the other end and shifts the grid by one
+  entire sample. `build_scene` takes its crop centre as the per-axis
+  weighted median and the PLY loaders negate y and z, so the centre moved
+  under a frame flip by about two sample spacings. That is a bias in exact
+  arithmetic, not rounding: at float64 it is 1.4e-05, nine orders above
+  what rounding over 336,094 terms can produce. Interpolating against the
+  midpoint grid removes it exactly, and the accumulator is now float64.
+  Both halves are needed, and together they cost a few splats: measured
+  through `clean_export.py` on three real captures at q0.55, the crop
+  populations move 204,482 to 204,472, 753,314 to 753,238 and 120,391 to
+  120,384. The alpha arm at q0.90 and q0.95 does not move, which is why an
+  earlier draft of this entry called the change free — that arm is
+  invariant to the grid, to the accumulator and to both together, so it
+  cannot discriminate. Found by a peer lane reconciling two independent
+  implementations of this crop, which also caught the false claim.
+
 - **arXiv endorsement package** (`paper/ENDORSEMENT.md`): the 2026
   endorsement mechanics from arXiv's own pages, the message an
   endorser receives, and a pre-submission checklist (license, metadata,
