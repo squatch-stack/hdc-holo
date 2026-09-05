@@ -12,8 +12,14 @@
   arithmetic, not rounding: at float64 it is 1.4e-05, nine orders above
   what rounding over 336,094 terms can produce. Interpolating against the
   midpoint grid removes it exactly, and the accumulator is now float64.
-  Measured on three real captures the crop counts are unchanged. Found by
-  a peer lane reconciling two independent implementations of this crop.
+  Both halves are needed, and together they cost a few splats: measured
+  through `clean_export.py` on three real captures at q0.55, the crop
+  populations move 204,482 to 204,472, 753,314 to 753,238 and 120,391 to
+  120,384. The alpha arm at q0.90 and q0.95 does not move, which is why an
+  earlier draft of this entry called the change free — that arm is
+  invariant to the grid, to the accumulator and to both together, so it
+  cannot discriminate. Found by a peer lane reconciling two independent
+  implementations of this crop, which also caught the false claim.
 
 - **arXiv endorsement package** (`paper/ENDORSEMENT.md`): the 2026
   endorsement mechanics from arXiv's own pages, the message an
