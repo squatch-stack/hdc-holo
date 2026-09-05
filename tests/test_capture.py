@@ -763,3 +763,24 @@ def test_footprint_makes_sub_pixel_needles_visible():
     fp = eval_scene_exact(footprint_blur(scene, pix), pts)[:, 0]
     assert point.max() < 1e-3          # point samples miss it entirely
     assert fp.max() > 10 * point.max()  # the pixel integral finds it
+
+
+def test_weighted_quantile_median_is_frame_independent():
+    """A median must not depend on which way an axis points.
+
+    build_scene takes its crop centre as the per-axis weighted median, and the
+    PLY loaders negate y and z on the way in; before the midpoint grid the two
+    orientations disagreed by about two sample spacings, which moved the crop
+    box. Weights are deliberately non-uniform, since with equal weights the
+    two grids coincide and the test would pass either way.
+    """
+    import numpy as np
+
+    from holo.capture import weighted_quantile
+
+    rng = np.random.default_rng(11)
+    values = rng.normal(size=20_000)
+    weights = rng.random(20_000)
+    forward = weighted_quantile(values, weights, 0.5)
+    flipped = -weighted_quantile(-values, weights, 0.5)
+    assert forward == pytest.approx(flipped, abs=1e-12)

@@ -583,9 +583,24 @@ def quat_to_rot(q):
 # ---------------------------------------------------------------------------
 
 def weighted_quantile(v, w, q):
+    """Weighted quantile on the midpoint grid.
+
+    Each sample is pinned to the cumulative weight at its own midpoint,
+    `cw - w/2`, not at its inclusive end `cw`. Pinning to the inclusive end
+    credits a sample with the whole of its own weight, so reversing the sort
+    order turns an inclusive sum from one end into an exclusive sum from the
+    other and shifts the grid by one entire sample. That made the result
+    depend on which way a loader happened to point an axis: `build_scene`
+    takes the per-axis median for its crop centre, and the PLY loaders negate
+    y and z, so the centre moved under a frame flip by about two sample
+    spacings. It is a bias in exact arithmetic, not a rounding artefact, and
+    the midpoint grid removes it exactly. Found by a peer lane reconciling
+    two independent implementations of this crop.
+    """
     o = np.argsort(v)
-    cw = np.cumsum(w[o])
-    return float(np.interp(q * cw[-1], cw, v[o]))
+    w_sorted = w[o].astype(np.float64)
+    cw = np.cumsum(w_sorted)
+    return float(np.interp(q * cw[-1], cw - w_sorted / 2, v[o]))
 
 
 def build_scene(path, alpha_min=ALPHA_MIN, s_lo=S_LO, s_hi=S_HI,
