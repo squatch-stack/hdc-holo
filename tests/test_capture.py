@@ -784,3 +784,166 @@ def test_weighted_quantile_median_is_frame_independent():
     forward = weighted_quantile(values, weights, 0.5)
     flipped = -weighted_quantile(-values, weights, 0.5)
     assert forward == pytest.approx(flipped, abs=1e-12)
+
+
+def _xray_difference_form(scene, members, cam, bands, dtype, chunk=1024):
+    """exact_xray's exponent written the way the formula reads:
+    d^T S^-1 d - s^2/q, evaluated in `dtype`.
+
+    This is the pre-fix implementation, kept as a test fixture rather
+    than a comment. In float64 it is the referee; in float32 it is the
+    defect, and the test needs both to show the fix is a real gain and
+    not a rewrite that merely moved the error somewhere unmeasured.
+    """
+    from holo.capture import _cell_uv_mask, _pixel_grid, camera_basis_yup
+
+    view, center, half, res = cam
+    v, u1, u2 = camera_basis_yup(view)
+    uv, _ = _pixel_grid(center, v, u1, u2, half, res, 0.0)
+    plane = (np.asarray(center, dtype=np.float32)
+             + uv[:, :1] * u1 + uv[:, 1:] * u2).astype(dtype)
+    ic_all = np.linalg.inv(scene.cov.astype(np.float64)).astype(dtype)
+    mu, amp = scene.mu.astype(dtype), scene.amp.astype(dtype)
+    vv = np.asarray(v, dtype=dtype)
+    out = np.zeros((len(plane), scene.channels), dtype=dtype)
+    for name, cap, cell in bands:
+        reach = 3.0 * cap
+        for k, ids in members[name].items():
+            m = _cell_uv_mask(uv, k, cell, reach, center, u1, u2)
+            if not m.any():
+                continue
+            pts = plane[m]
+            acc = np.zeros((len(pts), scene.channels), dtype=dtype)
+            for slo in range(0, len(ids), chunk):
+                sub = ids[slo:slo + chunk]
+                ic = ic_all[sub]
+                delta = pts[None, :, :] - mu[sub][:, None, :]
+                icv = ic @ vv
+                q = (icv @ vv)[:, None]
+                s = np.einsum("npi,ni->np", delta, icv)
+                quad = np.einsum("npi,nij,npj->np", delta, ic, delta)
+                acc += (np.sqrt(2 * np.pi / q)
+                        * np.exp(-0.5 * (quad - s * s / q))).T @ amp[sub]
+            out[m] += acc
+    return out
+
+
+def _cancellation_case():
+    """A scene built like the ones the defect was found on.
+
+    Two properties do the work, and both are typical of real captures
+    rather than convenient for the test. Splats sit near this
+    pipeline's scale floor, so S^-1 entries reach ~1/S_LO^2 and both
+    terms of the exponent are large where their difference is order
+    one. And they are strongly ANISOTROPIC — one axis at the floor, the
+    others a band cap away — which is what a trained splat looks like,
+    and which raises the condition number of S^-1 far enough that
+    float32 loses most of the mantissa to the subtraction.
+
+    Deterministic: the defect is a property of float32 on these
+    magnitudes, not of a lucky draw.
+    """
+    from holo.capture import quat_to_rot
+
+    rng = np.random.default_rng(17)
+    n = 400
+    thin = rng.uniform(S_LO, 2 * S_LO, (n, 1))
+    fat = rng.uniform(0.008, 0.02, (n, 2))
+    scale = np.concatenate([thin, fat], axis=1).astype(np.float32)
+    # rotate them: with every thin axis on the same world axis the ray
+    # never crosses one obliquely, which is where the cancellation is
+    # worst — and a real trained splat is arbitrarily oriented
+    quat = rng.normal(size=(n, 4))
+    quat /= np.linalg.norm(quat, axis=1, keepdims=True)
+    rots = quat_to_rot(quat.astype(np.float32))
+    cov = np.einsum("nij,nj,nkj->nik", rots, scale ** 2,
+                    rots).astype(np.float32)
+    scene = SplatScene(
+        mu=rng.uniform(0.3, 0.7, (n, 3)).astype(np.float32),
+        cov=cov,
+        amp=rng.uniform(0.2, 1.0, (n, 1)).astype(np.float32))
+    smax = scale.max(axis=1)
+    bands = [("b", 0.02, 0.125)]
+    books = band_codebooks(np.random.default_rng(5), bands, dim=1 << 12,
+                           s_floor=S_LO)
+    _bundles, members = encode_bands(scene, smax, books, bands,
+                                     dim=1 << 12, verbose=False)
+    return scene, members, bands
+
+
+def test_exact_xray_survives_the_cancellation():
+    """The X-ray ground truth must not lose its mantissa to a subtraction.
+
+    exact_xray's exponent is written d^T S^-1 d - s^2/q, a difference of
+    two large nearly-equal quantities. Evaluated that way in float32 it
+    keeps about three decimal digits; evaluated as the equivalent
+    positive semi-definite form d^T M d it keeps all of them. Both are
+    scored here against the SAME expression in float64, so the test
+    measures the arithmetic and not the algebra.
+
+    This guards a silent failure: the difference form returns a
+    plausible field, no warning, no NaN — just a reference that is
+    wrong in its fourth digit and puts an invisible floor under every
+    X-ray number scored against it.
+    """
+    scene, members, bands = _cancellation_case()
+    view, center, half, res = [1.0, 0.0, 0.25], [0.5, 0.5, 0.5], 0.5, 40
+
+    cam = (view, center, half, res)
+    referee = _xray_difference_form(scene, members, cam, bands, np.float64)
+    naive = _xray_difference_form(scene, members, cam, bands, np.float32)
+    fixed = exact_xray(scene, members, view, center, half, res, bands=bands)
+
+    scale = np.abs(referee).max()
+    assert scale > 0, "degenerate case: no signal to compare"
+    naive_err = np.abs(naive - referee).max() / scale
+    fixed_err = np.abs(fixed - referee).max() / scale
+
+    # the defect is real on this scene, so the test would fail if the
+    # case stopped exercising it rather than passing vacuously
+    assert naive_err > 1e-5, (
+        f"cancellation no longer reproduced ({naive_err:.2e}) — the case "
+        "must keep exercising the defect for the bound below to mean "
+        "anything")
+    # and the shipped form is at float32 rounding
+    assert fixed_err < 2e-6, f"exact_xray lost precision: {fixed_err:.2e}"
+    # An order of magnitude is what THIS scene supports, and the bound
+    # is deliberately set to that rather than to the gain measured on
+    # real captures. On the cannon the same comparison is 5.2e-4 vs
+    # 1.9e-7 — 2,700x — because a real scene accumulates hundreds of
+    # thousands of splats per pixel at a finer band cap, and neither
+    # the count nor the cap belongs in a unit test.
+    assert fixed_err < naive_err / 10
+
+
+def test_exact_xray_fix_does_not_move_reported_errors():
+    """The fix is invisible at the precision X-ray errors are quoted to.
+
+    Repo measurements (claims capture.xray_brookline, and every row of
+    results/gpu_sweep.md) are relative errors of tens of percent stated
+    to a tenth of a point. A correction to the reference that large
+    would invalidate them; this one is orders below, and that is
+    checked rather than asserted in prose.
+    """
+    scene, members, bands = _cancellation_case()
+    view, center, half, res = [1.0, 0.0, 0.25], [0.5, 0.5, 0.5], 0.5, 40
+
+    naive = _xray_difference_form(scene, members, (view, center, half, res),
+                                  bands, np.float32)
+    fixed = exact_xray(scene, members, view, center, half, res, bands=bands)
+
+    # a stand-in "reconstruction" scored against each reference in turn:
+    # what shifts is the denominator and the residual, which is exactly
+    # how a reported error would feel this change
+    rng = np.random.default_rng(23)
+    holo = fixed[:, 0] * (1.0 + 0.25 * rng.standard_normal(len(fixed)))
+    err_naive = (np.linalg.norm(holo - naive[:, 0])
+                 / np.linalg.norm(naive[:, 0]))
+    err_fixed = (np.linalg.norm(holo - fixed[:, 0])
+                 / np.linalg.norm(fixed[:, 0]))
+    # measured 3.8e-6 (0.0004 of a percentage point on a 25.2% error);
+    # the bound is set an order below the 0.1-point precision those
+    # measurements are quoted to, which still leaves ~26x headroom
+    assert abs(err_naive - err_fixed) < 1e-4, (
+        f"reported error moves by {abs(err_naive - err_fixed):.2e} — "
+        "committed X-ray measurements would need re-deriving")

@@ -171,10 +171,36 @@ against a pixel-integrated target where the sharp-vs-sharp pair gives
 18.1%, since blurring concentrates each splat's spectrum for the
 codebook (the mechanism behind the X-ray mip encode).
 
+**How precise is the referee?** A ground truth is a measurement too,
+and this one was quietly worse than most of what is scored against it.
+`exact_xray`'s exponent reads `d^T S^-1 d - s^2/q`, and both terms are
+individually large where their difference is order one — splat inverse
+covariances reach `1/S_LO^2` at the scale floor, so the exponent is
+what survives a subtraction of thousands. In float32 that keeps about
+three decimal digits: **5.2e-4** relative error against a float64
+evaluation of the same expression, on the cannon capture. The repair is
+an identity, not a wider float — `d^T S^-1 d - s^2/q == d^T M d` with
+`M = S^-1 - (S^-1 v)(S^-1 v)^T / q`, which is `S^-1` with its component
+along the view ray projected out. `M` is positive semi-definite, so
+nothing cancels: **1.9e-7** against the same referee, and one einsum
+cheaper. Nothing on this page moved, and that was re-run rather than
+argued: the springhouse X-rays below score 30.5494% and 37.1014%
+against the old reference and 30.5490% and 37.1012% against the new
+one — shifts of 0.0004 and 0.0001 of a point, on figures quoted to a
+tenth. The reason to fix it anyway is that a reference wrong in its
+fourth digit puts a floor under later work that nobody would know to
+look for.
+`tests/test_capture.py::test_exact_xray_survives_the_cancellation`
+keeps the difference form as a fixture so the gain stays measured
+rather than asserted.
+
 **Failure modes.** Every band's codebook must reach the GLOBAL scale
 floor or needle splats paint herringbone ([spectral.md](spectral.md));
 mass-centered cropping matters (captures put most splats in a shell of
-background); projections without a mip encode are noise-dominated.
+background); projections without a mip encode are noise-dominated; and
+a ground truth written the way its formula reads can lose most of its
+mantissa to cancellation, silently, while still returning a plausible
+field.
 
 **Evidence.** Red Rock — a raw Scaniverse 3DGS `.ply` export off a
 phone, 547k splats after crop, through the fixed pipeline. The best
