@@ -50,6 +50,7 @@ source and no search recovers the link.
 | `mog_penalty.png` | `python -m examples.run_mog` |
 | `baseline_table.md` (table, not image) | `python -m examples.run_baseline_table` |
 | `gpu_sweep.md`, `gpu_sweep.json` (tables, not images) | `python -m bench.sweep_scenes results/gpu_sweep.json $GALLERY/scenes/*.spz` |
+| `gpu_sweep_matched.json` (table, not an image) | `python -m bench.sweep_scenes results/gpu_sweep_matched.json --footprint $GALLERY/scenes/*.spz` |
 | `real_wilsons-creek.png` | `python -m bench.sweep_scenes /tmp/s.json --figures --dir results $GALLERY/scenes/wilsons-creek.spz` |
 | `real_cannon.png` | `python -m bench.sweep_scenes /tmp/s.json --figures --dir results $GALLERY/scenes/cannon.spz` |
 | `real_oak_xray.png` | `python -m bench.sweep_scenes /tmp/s.json --figures --dir results $GALLERY/scenes/oak.spz` |
