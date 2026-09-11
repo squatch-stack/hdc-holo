@@ -27,10 +27,16 @@ error: if capacity is the mechanism, both fix the blowup, and adaptive
 should get there with far fewer cells — which is the whole point,
 because cells are the storage.
 
-Measured (2026-09-10, Wilson's Creek). Adaptive does that job:
-every over-capacity cell gone at 1.1x the storage, where uniform needs
-8.4x to reach the same error and a further level is refused outright at
-16.5x. But sweeping the budget shows capacity is only PART of the
+Measured (2026-09-10, Wilson's Creek). Adaptive does that job: every
+over-capacity cell gone at 1.1x the storage, where the cheapest uniform
+refinement reaching zero over-capacity cells costs 3.3x and a further
+level is refused outright at 16.5x. Be precise about what that buys,
+because an earlier draft of this line was not: uniform L1 at 3.3x
+scores 126.4% against adaptive's 129.1%, so refinement is not BETTER
+here, it is three times dearer for three points. The case for adaptive
+is storage at equal quality, and nothing more.
+
+Sweeping the budget then shows capacity is only PART of the
 fault — 176.7% at no budget, 129.1% at d/4, 92.1% at d/16, 78.4% at
 d/64, and still 72.2% at d/256, with 96% of the error inside the worst
 1% of pixels throughout. Subdivision asymptotes around 72% and the
