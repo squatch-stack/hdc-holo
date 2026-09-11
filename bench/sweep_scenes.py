@@ -59,7 +59,7 @@ def _describe_crop(path, row, crop_quantile=0.75, crop_margin=1.2):
     row["crop_extent"] = float(2 * crop_margin * radius)
 
 
-def _slices(scene, box, bundles, members, books, row):
+def _slices(scene, box, bundles, members, books, row, bands):
     """The two axis-aligned slices, scored against the exact mixture."""
     from holo.capture import (
         decode_slice,
@@ -77,9 +77,9 @@ def _slices(scene, box, bundles, members, books, row):
             ("top_down", slice_grid((0, box[0]), (0, box[2]), "y", y_slice)),
             ("side", slice_grid((0, box[2]), (0, box[1]), "x", x_slice))]:
         t1 = time.time()
-        truth = exact_slice(pts, scene, members)
+        truth = exact_slice(pts, scene, members, bands)
         t2 = time.time()
-        holo = decode_slice(pts, bundles, books)
+        holo = decode_slice(pts, bundles, books, bands)
         t3 = time.time()
         # The error is RELATIVE, so it says as much about the
         # denominator as the reconstruction: a slice plane that lands in
@@ -117,8 +117,17 @@ def _slices(scene, box, bundles, members, books, row):
     return panels, errs
 
 
-def _xrays(scene, smax, members, row):
-    """The two orthographic X-ray views, scored against the mip."""
+def _xrays(scene, smax, members, row, bands):
+    """The two orthographic X-ray views, scored against the mip.
+
+    Unaffected by the slice referee, and deliberately so: this arm
+    already encodes `render_mip` and scores against that same mip, so it
+    was a matched pair before the flag existed. Under --footprint the
+    scene arrives pre-blurred by sigma_fp and the mip blur becomes
+    sqrt(sigma_fp^2 + SIGMA_MIP^2) — 0.00810 against 0.008, a 1.3%
+    change — so these numbers stay comparable to the published sweep
+    rather than quietly becoming a different measurement.
+    """
     from holo.capture import (
         DIM_R,
         RENDER_BANDS,
@@ -142,7 +151,8 @@ def _xrays(scene, smax, members, row):
     for key, view in [("xray_a", [1.0, 0.0, 0.25]),
                       ("xray_b", [1.0, 0.0, 1.0])]:
         t1 = time.time()
-        sharp = exact_xray(scene, members, view, center_p, half, res)
+        sharp = exact_xray(scene, members, view, center_p, half, res,
+                           bands=bands)
         mip_gt = exact_xray(mip, r_members, view, center_p, half, res,
                             bands=RENDER_BANDS)
         t2 = time.time()
@@ -160,7 +170,36 @@ def _xrays(scene, smax, members, row):
     return xpanels, errs
 
 
-def run_one(path, figures=None, crop_quantile=0.75, crop_margin=1.2):
+def _matched_referee(scene, smax, bands):
+    """Blur the scene by one slice pixel and widen the bands to match.
+
+    The slices point-sample a field whose splats are mostly thinner than
+    a pixel — S_LO / PIX = 0.448, and the clamp puts most of a real
+    capture exactly on that floor — so the sharp referee asks what the
+    field is at infinitely small points while a renderer asks what it
+    averages over a pixel (`footprint_blur`, docs/real-scenes.md). The
+    matched pair encodes the field the referee measures.
+
+    The band caps MUST travel with the scales. `band_of` says so in its
+    own docstring: widening scales without widening bands puts splats
+    past the last cap and `encode_bands` refuses them. Transforming both
+    by the same sqrt(x^2 + sigma^2) keeps every splat in the band it
+    was already in — the map is strictly increasing, so `searchsorted`
+    returns identical indices — which is what makes this a clean
+    one-variable change. Only the referee moves.
+    """
+    from holo.capture import PIX, footprint_blur
+
+    sigma = PIX / np.sqrt(12.0)
+    blurred = footprint_blur(scene, PIX)
+    smax_b = np.sqrt(smax ** 2 + sigma ** 2)
+    bands_b = [(name, float(np.sqrt(cap ** 2 + sigma ** 2)), cell)
+               for name, cap, cell in bands]
+    return blurred, smax_b, bands_b
+
+
+def run_one(path, figures=None, crop_quantile=0.75, crop_margin=1.2,
+            matched=False):
     from holo.capture import (
         BANDS,
         DIM,
@@ -178,23 +217,30 @@ def run_one(path, figures=None, crop_quantile=0.75, crop_margin=1.2):
 
     scene, smax, box = build_scene(path, crop_quantile=crop_quantile,
                                    crop_margin=crop_margin)
+    # The X-ray arm is ALREADY a matched pair — it encodes `render_mip`
+    # and scores against that same mip — so the flag changes the SLICE
+    # referee and leaves the X-ray comparable to the published sweep.
+    bands = BANDS
+    if matched:
+        scene, smax, bands = _matched_referee(scene, smax, BANDS)
+    row["referee"] = "matched (pixel-integrated)" if matched else "sharp"
     row["splats_encoded"] = int(scene.n)
     row["box"] = [float(b) for b in box]
     _describe_crop(path, row, crop_quantile, crop_margin)
 
-    bidx = band_of(smax, BANDS)
+    bidx = band_of(smax, bands)
     row["band_split"] = {name: int(np.sum(bidx == b))
-                         for b, (name, _c, _z) in enumerate(BANDS)}
+                         for b, (name, _c, _z) in enumerate(bands)}
 
     books = band_codebooks(np.random.default_rng(42))
     t_enc = time.time()
-    bundles, members = encode_bands(scene, smax, books)
+    bundles, members = encode_bands(scene, smax, books, bands)
     row["t_encode"] = round(time.time() - t_enc, 1)
     row["cells"] = int(sum(len(b) for b in bundles.values()))
     row["cells_per_band"] = {k: len(v) for k, v in bundles.items()}
 
-    panels, errs = _slices(scene, box, bundles, members, books, row)
-    xpanels, xerrs = _xrays(scene, smax, members, row)
+    panels, errs = _slices(scene, box, bundles, members, books, row, bands)
+    xpanels, xerrs = _xrays(scene, smax, members, row, bands)
     errs.update(xerrs)
 
     row["err"] = {k: round(v, 4) for k, v in errs.items()}
@@ -284,6 +330,9 @@ def main():
     ap.add_argument("--dir", default="results")
     ap.add_argument("--numpy", action="store_true",
                     help="skip the CUDA backend (reference timings)")
+    ap.add_argument("--footprint", action="store_true",
+                    help="matched referee: encode and score the "
+                         "pixel-integrated field instead of point samples")
     ap.add_argument("--crop-quantile", type=float, default=0.75,
                     help="build_scene crop quantile; lower crops tighter")
     ap.add_argument("--crop-margin", type=float, default=1.2)
@@ -308,7 +357,8 @@ def main():
         try:
             row = run_one(path, figures=figdir,
                           crop_quantile=args.crop_quantile,
-                          crop_margin=args.crop_margin)
+                          crop_margin=args.crop_margin,
+                          matched=args.footprint)
         except Exception as exc:
             # One unloadable capture must not cost the other ten their
             # run; the sweep is long and unattended.

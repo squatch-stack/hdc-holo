@@ -166,3 +166,69 @@ original being wrong. That is fixed in `holo/capture.py` (#93), which
 uses the same identity; no number in the table above moves, since these
 errors are tens of percent and the shift is orders below the tenth of a
 point they are quoted to.
+
+## The same twelve under a matched referee
+
+Everything above point-samples: `exact_slice` asks what the field is at
+infinitely small points. A renderer asks what it AVERAGES over a pixel,
+and `S_LO / PIX = 0.448` means a floor-scale splat is under half a
+pixel wide — so the sharp referee is measuring a question no viewer
+asks. `docs/real-scenes.md` has said as much since the footprint work:
+matched pairs are what mean anything, encode the field the referee
+measures.
+
+`bench/sweep_scenes.py --footprint` does that. Same scenes, same
+codebooks, same decode path; the scene is convolved with one pixel
+before encoding and the referee sees the same convolved field.
+
+| scene | sharp | matched | gain |
+|---|---:|---:|---:|
+| saguaro | 17.1% | **13.4%** | 1.28x |
+| wilsons-creek-gun | 19.4% | **14.5%** | 1.34x |
+| oak | 17.9% | **14.8%** | 1.21x |
+| research-library-cannon | 21.5% | **15.4%** | 1.39x |
+| brookline-station | 20.8% | **15.7%** | 1.32x |
+| redrock | 25.3% | **19.8%** | 1.28x |
+| springhouse-outside | 20.1% | **19.8%** | 1.01x |
+| redrock-cairn | 27.6% | **20.1%** | 1.37x |
+| brookline-station-2 | 28.2% | **21.4%** | 1.32x |
+| research-library | 37.1% | **23.2%** | 1.60x |
+| cannon | 30.6% | **23.4%** | 1.31x |
+| wilsons-creek | 176.7% | **86.8%** | 2.04x |
+
+Top-down error; the side slice moves the same way (median 1.29x). Every
+scene improves and none regresses. Setting Wilson's Creek aside, the
+corpus tightens from a 17.1-37.1% spread to **13.4-23.4%** — the same
+encoder, asked the question a rasterizer actually asks.
+
+**One variable moved, and that is checkable.** Cell counts are
+identical in all twelve rows, because the band caps travel with the
+scales under the same `sqrt(x^2 + sigma^2)` map. That transform is
+strictly increasing and `band_of` is a `searchsorted`, so every splat
+stays in the band it was already in. It is also required rather than
+tidy: `band_of`'s own docstring warns that widening scales without
+widening bands puts splats past the last cap, where `encode_bands`
+refuses them. Sharp mode is unchanged and was re-run to prove it —
+cannon returns 30.6% / 150.3% / 31.8% and 3,266 cells, digit for digit.
+
+The X-ray columns are deliberately untouched. That arm already encoded
+`render_mip` and scored against the same mip, so it was a matched pair
+before the flag existed; under `--footprint` its blur becomes
+`sqrt(sigma_fp^2 + SIGMA_MIP^2)` = 0.00810 against 0.008, a 1.3% change,
+which keeps those numbers comparable rather than quietly making them a
+different measurement.
+
+**What this does not establish.** `springhouse-outside` is the obvious
+story and it is only one scene: the mesh export is the sole capture with
+0% of its splats on the scale-clamp floor and a median splat 1.99 px
+wide — genuinely resolved by the grid — and it is the sole capture the
+matched referee barely helps (1.01x). Consistent, but a single control.
+Across the other eleven the gain does not track sub-pixel-ness at all
+(Spearman +0.10), because the clamp pins ten of them at exactly 0.45 px
+and leaves no variance to test; and `cannon`, at 1.21 px with only 22%
+on the floor, gains 1.31x anyway, which the story does not predict.
+
+So the case for the matched referee is the principled one — it is what a
+renderer shows — plus an empirical improvement on every scene. That the
+mechanism is *specifically* sub-pixel sampling remains a lead, not a
+result. Raw rows in `gpu_sweep_matched.json`.
