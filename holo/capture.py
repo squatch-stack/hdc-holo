@@ -988,13 +988,59 @@ def exact_xray(scene, members, view, center, half, res, bands=None,
                chunk=1024):
     """Analytic full-line integral of every anisotropic splat:
     integral = alpha sqrt(2 pi / q) exp(-1/2 (d^T S^-1 d - s^2/q)),
-    q = v^T S^-1 v, s = d^T S^-1 v — with the same cell footprint masks."""
+    q = v^T S^-1 v, s = d^T S^-1 v — with the same cell footprint masks.
+
+    The exponent is evaluated as the equivalent quadratic form d^T M d,
+    NOT as the difference the formula above is written in. Both are the
+    same number in exact arithmetic; in float32 they are not, because
+    d^T S^-1 d and s^2/q are individually large and nearly equal — the
+    exponent is what remains after they cancel. Splat inverse
+    covariances run to 1/sigma^2 ~ 1e4 at this pipeline's scale floor,
+    so both terms reach thousands while their difference is order one,
+    and the subtraction throws away most of the mantissa. Measured
+    against a float64 evaluation of the SAME expression on the cannon
+    capture, the difference form carries 5.2e-4 relative error — three
+    good digits, in something every X-ray number in this repo is scored
+    against.
+
+    The identity that removes it is a rank-1 downdate:
+
+        d^T S^-1 d - s^2/q  ==  d^T M d,
+        M = S^-1 - (S^-1 v)(S^-1 v)^T / q
+
+    M is S^-1 with its component along the view ray projected out, so it
+    is positive semi-definite and d^T M d is a sum of non-negative
+    terms: nothing cancels, and the result is exact to float32 rounding
+    (1.9e-7 against the same float64 referee on that capture). It is
+    also cheaper — one einsum instead of two, and M is built once per
+    call rather than per point-chunk.
+
+    Building M in float64 before the cast matters as much as the
+    identity: it is itself a difference of large terms, and forming it
+    in float32 would move the cancellation rather than remove it.
+
+    This does not move any measurement in the repo, which is checked
+    rather than argued: reported X-ray errors are tens of percent
+    quoted to a tenth of a point, and swapping the reference under a
+    fixed reconstruction moves the reported figure by 0.0004 of a
+    point — see
+    tests/test_capture.py::test_exact_xray_fix_does_not_move_reported_errors.
+    The reason to fix it anyway is that a ground truth wrong in its
+    fourth digit sets a floor nobody knows is there, and the next person
+    to tighten this measurement would hit it without a clue why.
+    """
     v, u1, u2 = camera_basis_yup(view)
     uv, _ = _pixel_grid(center, v, u1, u2, half, res, 0.0)
     plane = (np.asarray(center, dtype=np.float32)
              + uv[:, :1] * u1 + uv[:, 1:] * u2)
     out = np.zeros((len(plane), scene.channels), dtype=np.float32)
-    inv_cov = np.linalg.inv(scene.cov.astype(np.float64)).astype(np.float32)
+    ic64 = np.linalg.inv(scene.cov.astype(np.float64))
+    v64 = np.asarray(v, dtype=np.float64)
+    icv = ic64 @ v64                                       # (n, 3)
+    q = np.einsum("ni,i->n", icv, v64)                     # (n,)
+    downdate = ic64 - (icv[:, :, None] * icv[:, None, :]) / q[:, None, None]
+    downdate = downdate.astype(np.float32)
+    prefactor = np.sqrt(2 * np.pi / q).astype(np.float32)
     for name, cap, cell in (bands or BANDS):
         reach = 3.0 * cap
         for k, ids in members[name].items():
@@ -1005,14 +1051,10 @@ def exact_xray(scene, members, view, center, half, res, bands=None,
             acc = np.zeros((len(pts), scene.channels), dtype=np.float32)
             for slo in range(0, len(ids), chunk):
                 sub = ids[slo:slo + chunk]
-                ic = inv_cov[sub]
                 delta = pts[None, :, :] - scene.mu[sub][:, None, :]
-                icv = ic @ v                                   # (n, 3)
-                q = (icv @ v)[:, None]                         # (n, 1)
-                s = np.einsum("npi,ni->np", delta, icv)
-                quad = np.einsum("npi,nij,npj->np", delta, ic, delta)
-                line = np.sqrt(2 * np.pi / q) \
-                    * np.exp(-0.5 * (quad - s * s / q))
+                perp = np.einsum("npi,nij,npj->np", delta,
+                                 downdate[sub], delta)
+                line = prefactor[sub][:, None] * np.exp(-0.5 * perp)
                 acc += line.T @ scene.amp[sub]
             out[m] += acc
     return out
