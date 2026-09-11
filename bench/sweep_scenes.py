@@ -37,7 +37,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def _describe_crop(path, row):
+def _describe_crop(path, row, crop_quantile=0.75, crop_margin=1.2):
     """Record how much WORLD the cells were spread over.
 
     `build_scene` normalizes every capture into the same unit box, so
@@ -53,9 +53,10 @@ def _describe_crop(path, row):
     keep = rgba[:, 3] >= ALPHA_MIN
     pos, a = pos[keep], rgba[keep][:, 3]
     center = np.array([weighted_quantile(pos[:, i], a, 0.5) for i in range(3)])
-    radius = weighted_quantile(np.abs(pos - center).max(axis=1), a, 0.75)
+    radius = weighted_quantile(np.abs(pos - center).max(axis=1), a,
+                               crop_quantile)
     row["splats_loaded"] = len(rgba)
-    row["crop_extent"] = float(2 * 1.2 * radius)
+    row["crop_extent"] = float(2 * crop_margin * radius)
 
 
 def _slices(scene, box, bundles, members, books, row):
@@ -159,7 +160,7 @@ def _xrays(scene, smax, members, row):
     return xpanels, errs
 
 
-def run_one(path, figures=None):
+def run_one(path, figures=None, crop_quantile=0.75, crop_margin=1.2):
     from holo.capture import (
         BANDS,
         DIM,
@@ -172,12 +173,14 @@ def run_one(path, figures=None):
 
     t0 = time.time()
     row = {"scene": os.path.splitext(os.path.basename(path))[0],
-           "file": os.path.basename(path)}
+           "file": os.path.basename(path),
+           "crop_quantile": crop_quantile, "crop_margin": crop_margin}
 
-    scene, smax, box = build_scene(path)
+    scene, smax, box = build_scene(path, crop_quantile=crop_quantile,
+                                   crop_margin=crop_margin)
     row["splats_encoded"] = int(scene.n)
     row["box"] = [float(b) for b in box]
-    _describe_crop(path, row)
+    _describe_crop(path, row, crop_quantile, crop_margin)
 
     bidx = band_of(smax, BANDS)
     row["band_split"] = {name: int(np.sum(bidx == b))
@@ -200,8 +203,12 @@ def run_one(path, figures=None):
     row["dim_render"] = DIM_R
     try:
         import cupy
+        # total_bytes(), not used_bytes(): the pool holds freed blocks, so
+        # used_bytes() reads ~0 at the end of a run and the first sweep
+        # recorded 0.0 GB for every scene. total_bytes() is the high-water
+        # mark of what was actually taken from the device.
         row["peak_vram_gb"] = round(
-            cupy.get_default_memory_pool().used_bytes() / 1e9, 2)
+            cupy.get_default_memory_pool().total_bytes() / 1e9, 2)
         row["backend"] = "cupy-cuda"
     except ImportError:
         row["backend"] = "numpy"
@@ -277,6 +284,12 @@ def main():
     ap.add_argument("--dir", default="results")
     ap.add_argument("--numpy", action="store_true",
                     help="skip the CUDA backend (reference timings)")
+    ap.add_argument("--crop-quantile", type=float, default=0.75,
+                    help="build_scene crop quantile; lower crops tighter")
+    ap.add_argument("--crop-margin", type=float, default=1.2)
+    ap.add_argument("--tag", default="",
+                    help="label carried into every row, for sweeps that "
+                         "run the same scene at several crops")
     args = ap.parse_args()
 
     if not args.numpy:
@@ -293,7 +306,9 @@ def main():
         print(f"\n=== [{i}/{len(args.scenes)}] {os.path.basename(path)}",
               flush=True)
         try:
-            row = run_one(path, figures=figdir)
+            row = run_one(path, figures=figdir,
+                          crop_quantile=args.crop_quantile,
+                          crop_margin=args.crop_margin)
         except Exception as exc:
             # One unloadable capture must not cost the other ten their
             # run; the sweep is long and unattended.
@@ -301,6 +316,7 @@ def main():
             row = {"scene": os.path.splitext(os.path.basename(path))[0],
                    "file": os.path.basename(path),
                    "error": f"{type(exc).__name__}: {exc}"}
+        row["tag"] = args.tag
         rows.append(row)
         print(f"  -> {row.get('t_total', '?')}s", flush=True)
         with open(args.out, "w") as fh:                # checkpoint each
