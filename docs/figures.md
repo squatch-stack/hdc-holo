@@ -49,6 +49,10 @@ source and no search recovers the link.
 | `capacity_curve.png`, `recon_2d.png`, `translation.png` | `python -m examples.run_prototype` |
 | `mog_penalty.png` | `python -m examples.run_mog` |
 | `baseline_table.md` (table, not image) | `python -m examples.run_baseline_table` |
+| `gpu_sweep.md`, `gpu_sweep.json` (tables, not images) | `python -m bench.sweep_scenes results/gpu_sweep.json $GALLERY/scenes/*.spz` |
+| `real_wilsons-creek.png` | `python -m bench.sweep_scenes /tmp/s.json --figures --dir results $GALLERY/scenes/wilsons-creek.spz` |
+| `real_cannon.png` | `python -m bench.sweep_scenes /tmp/s.json --figures --dir results $GALLERY/scenes/cannon.spz` |
+| `real_oak_xray.png` | `python -m bench.sweep_scenes /tmp/s.json --figures --dir results $GALLERY/scenes/oak.spz` |
 | `failure_herringbone.png` | **not regenerable — archived exhibit** |
 
 `failure_herringbone.png` is the one entry with no command, and
@@ -57,6 +61,26 @@ codebook rule was understood, showing what a band whose codebook does
 not reach the global scale floor does to a capture. Regenerating it
 would mean reintroducing the bug. It is evidence of a failure mode, and
 [spectral.md](spectral.md) cites it as such.
+
+The four `bench.sweep_scenes` rows take `$GALLERY` — the gallery
+checkout whose `scenes/*.spz` are the inputs — because unlike every
+other row here those captures are not in `data/`. They are the
+published exports, and measuring *those* is the point: they are the
+artefacts anyone else can obtain. The driver wants a CUDA device
+(`bench/cuda_backend.py`); `--numpy` reproduces the same digits on CPU
+about thirteen times slower.
+
+Note what those rows do NOT keep. `--figures` writes both plates for
+every scene it is given — `real_<stem>.png` and `real_<stem>_xray.png`
+— but only three of the twenty-four are committed, the ones cited from
+[gpu_sweep.md](../results/gpu_sweep.md). So running the oak row lands a
+`real_oak.png` beside the X-ray plate this table names, and
+`test_every_figure_records_its_provenance` will then fail on it: an
+unrecorded figure is exactly what that test exists to catch, and here
+it is catching a by-product rather than an omission. Delete it, or add
+a row — do not silence the test. The remaining twenty-one are left out
+deliberately: `gpu_sweep.json` carries every number they would show,
+and the sweep costs six minutes to re-run in full.
 
 Captures live in `data/`, which is gitignored — the real-capture rows
 need the source files present. Everything else regenerates from a clean
