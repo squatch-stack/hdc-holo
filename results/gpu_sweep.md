@@ -44,7 +44,7 @@ squared residual and taking the worst 1% of pixels separates them:
 
 | scene | top-down | worst 1% | worst 0.1% | reading |
 |---|---:|---:|---:|---|
-| wilsons-creek | 176.7% | 91% | 32% | one blown cell, rest faithful |
+| wilsons-creek | 176.7% | 91% | 32% | a few adjacent cells, rest faithful |
 | oak | 17.9% | 97% | 61% | *also* one region, despite a good number |
 | research-library | 37.1% | 74% | 18% | mostly localised |
 | cannon (side) | 150.3% | 16% | 3% | distributed herringbone |
@@ -52,16 +52,52 @@ squared residual and taking the worst 1% of pixels separates them:
 | wilsons-creek-gun | 19.4% | 13% | 2% | genuinely broad |
 
 Wilson's Creek reconstructs its whole landscape and then puts nine
-tenths of its error into a single cell (`real_wilsons-creek.png`). The
-cannon's comparable number is the plane-wave herringbone
-`band_codebooks` warns about in its own docstring, spread across the
-entire plane (`real_cannon.png`). Same headline, opposite diagnosis —
-and the oak shows the trap runs both ways, since the second-best number
-in the table is just as localised as the worst.
+tenths of its error into a handful of adjacent cells
+(`real_wilsons-creek.png`). The cannon's comparable number is the
+plane-wave herringbone `band_codebooks` warns about in its own
+docstring, spread across the entire plane (`real_cannon.png`). Same
+headline, opposite diagnosis — and the oak shows the trap runs both
+ways, since the second-best number in the table is just as localised as
+the worst.
 
 **Consequence.** Ranking scans by this error invites a comparison the
 metric cannot support. Any table of these numbers needs the locality
 column beside it.
+
+**Correction (2026-09-11).** This section first read "one blown cell",
+and said nothing about why. Both were wrong, and the follow-up is worth
+more than the original claim.
+
+It is not one cell. `bench/find_bad_cell.py` — ranking cells by
+ENRICHMENT, their share of the error over their share of the image,
+because ranking by raw share just ranks by band reach — finds a cluster:
+`xfine` cells (14,15,16), (15,15,16), (14,15,15) and (16,15,15) holding
+18,558, 18,104, 17,440 and 17,077 members against a band median of 23.
+Those bundles carry d = 8,192, so each cell holds more splats than its
+bundle has dimensions and crosstalk swamps signal. Wilson's Creek keeps
+49.8% of its splats in such cells and the oak 53.5%, while saguaro and
+research-library-cannon — the two best-behaved scenes here — have none.
+
+Nor is capacity the whole cause, which the original text implied by
+offering no other. `bench/adaptive_cells.py` removes every
+over-capacity cell at 1.1x the storage, where the cheapest uniform
+refinement that does the same costs 3.3x — but the error falls only to
+129.1%; tightening the budget further gives 92.1%, 78.4% and then an
+asymptote at 72.2%, with 96% of the error still inside the worst 1% of
+pixels. Roughly half the fault is elsewhere.
+
+`bench/footprint_test.py` locates most of that half in the REFEREE:
+`S_LO / PIX = 0.448`, so a floor-scale splat is under half a pixel
+wide and the slice point-samples needles thinner than its own
+grid — 90.7% of this scene's splats sit exactly on that floor. Encoding
+and scoring the pixel-integrated field instead gives 82.6%, and the two
+fixes compose to 27.4%.
+
+Read that 27.4% narrowly: it is scored against a different and easier
+referee, so it does not belong in a column beside 176.7%. And a spike
+survives both fixes — `worst1%` stays at 91-92% — so a residue is still
+unexplained. The honest state is two identified faults and a remainder,
+not a solved scene.
 
 ## The band ladder collapses to one band
 
