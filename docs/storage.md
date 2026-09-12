@@ -169,6 +169,15 @@ denoised. `HM-4` only where bytes dominate and a single-axis
 ground-truth score is the goal; on current bands it is no longer a free
 win.
 
+## Where the ladder ends
+
+The equal-byte ladder below the nibble (D2 and D3, `results/quant_lowbit.md`)
+puts the knee at four bits per field on synthetic cells and on two captures;
+a shared per-block scale cuts two-bit error by a third and does not move it.
+At that knee a bundle is about 24× the SPZ file of the same capture, median
+over the twelve gallery captures (`results/storage_position.md`), against
+roughly 400× at complex64.
+
 ## Denoising before you persist
 
 A forward-encoded bundle carries crosstalk that a fitted one would not,
