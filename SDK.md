@@ -1335,3 +1335,38 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   dense-scene coherent error (see ROADMAP); box lane: render_xray
   binning (still scans, 0.73 s), point-tile cell_decode fusion,
   cuFINUFFT type-3 prototype.
+- **Five lanes claimed** (2026-09-12; research-first — each lands as a
+  `bench/` tool, an ungated `results/*.md` table, and a dated entry here,
+  positive or negative; SDK promotion is a separate PR per lane, only on
+  clearing the charter bar). Files are exclusive to their lane; the
+  registry, `docs/figures.md`, the docs/README.md map and this log are
+  append-only shared surfaces; `quality/baseline.json` is nobody's.
+  - `research/resonator` — resonator "what is where" factorization
+    (Renner et al., arXiv:2208.12880) replicated on synthetic scenes with
+    `AttributeSplatField.pos` as the fractional-power key, then attempted
+    on real captures with crop bundles as the identity codebook and a
+    translation grid as the position factor. Files: `holo/resonator.py`,
+    `tests/test_resonator.py`, `bench/resonator_*.py`, `docs/resonator.md`.
+  - `research/place-recognition` — whole-scene spectral fingerprints
+    compared by phase correlation through the shift theorem (the bundle
+    is translation-covariant, so raw cosine is not a descriptor), yaw by
+    re-encoding, radial-power control row, scrambled-position noise
+    model. Files: `bench/place_recognition.py`,
+    `tests/test_place_recognition.py`; `holo/fingerprint.py` only if proven.
+  - `bench/operator-bench` — bind / bundle / similarity / cleanup at the
+    operator level, positioned against HyperSpace (arXiv:2604.15113) and
+    stated at equal bytes (FHRR at half the dimension against HRR), not
+    equal d. Files: `bench/operator_bench.py`,
+    `tests/test_operator_bench.py`, `bench/RECIPE.md` section,
+    `results/operator_bench.md`.
+  - `storage/quantized-phase` — the D1 equal-byte ladder extended below
+    the nibble floor with a measurement-first quantiser; a sub-nibble
+    packer (new magic, not a layout change) only if a sub-nibble point
+    wins. Files: `bench/precision_battery.py` (D2), `holo/phase.py` and
+    `holo/storage.py` if it ships.
+  - `bench/error-locality` — the worst-fraction share and enrichment
+    diagnostics lifted out of the sweep tools into a pure-numpy module any
+    field evaluation can call, with a chi-squared null reference. Files:
+    `bench/locality.py`, `tests/test_locality.py`,
+    `results/error_locality.md`; the sweep tools take the refactor after
+    the joined-encoder lane lands.
