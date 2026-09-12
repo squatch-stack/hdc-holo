@@ -220,3 +220,81 @@ Correlation acceptance tests use a fixed every-other-frequency subset of the
 use the full 4096 frequencies.
 No commits, pushes, branch changes, package installs or core/library edits.
 The existing figure registration row is retained; it already reproduces this figure.
+
+## Captures (2026-09-12, RTX 5090, d=8192, σ_rec = 0.5 scene units, grid 32, band floor 0.3)
+
+Parent `wilsons-creek` (cube 40.4 units), crop `wilsons-creek-gun`;
+parent `redrock` (cube 19.2), crop `redrock-cairn`. Whitened one-shot
+correlation is the reference; the resonator runs beside it.
+
+| parent | distractor parents added | correlate: score, error | resonator |
+|---|---:|---|---|
+| wilsons-creek | 0 | 0.769, 0.004 box (0.15 units) | wrong position, not converged |
+| wilsons-creek | 1 / 2 / 4 / 8 | 0.744 / 0.736 / 0.705 / 0.652, all 0.004 | wrong, not converged |
+| redrock | 0 | 0.993, 0.028 box (0.5 units) | 0.028, converged |
+| redrock | 1 / 2 / 4 / 8 | 0.634 → 0.318, error 0.744 (peak at the cube edge) | same wrong peak |
+
+The resonator does not localise on captures, as on the fixture. The
+correlate finds the gun in its parent under eight added parents, and
+loses the cairn to the first one: a distractor parent translated by a
+random shift carries mass out of the cube and the search stops at the
+boundary, which is where the peak goes. That is a defect in the
+distractor construction, not a result about the descriptor.
+
+### The prototype question, with its controls
+
+| target | probe | score | error (scene units) |
+|---|---|---:|---:|
+| wilsons-creek (gun) | prototype(cannon ⊕ research-library-cannon) | 0.436 | 0.72 |
+| wilsons-creek (gun) | cannon alone | 0.307 | 2.34 |
+| wilsons-creek (gun) | **foreign** prototype(cairn ⊕ saguaro) | 0.409 | 0.69 |
+| wilsons-creek (gun) | **foreign** cairn alone | 0.471 | 0.38 |
+| research-library (its cannon) | prototype(cannon ⊕ wilsons-creek-gun) | 0.317 | 1.33 |
+| research-library (its cannon) | cannon alone | 0.399 | 2.53 |
+
+The first row looked like discovery by association — two cannon
+instances superposed find a third they have never seen — and the third
+and fourth rows say it is not: a prototype of a rock pile and a cactus
+finds the gun just as well, and the rock pile alone finds it better.
+Anything compact correlates to the place where the parent's mass is
+concentrated, and in Wilson's Creek that place is the gun
+(`results/place_recognition.md`: half the capture's alpha mass sits
+within 0.1 of the cube of its centre).
+
+### The discriminating test (`results/resonator_diagnostics/composite_test.py`)
+
+Two candidate objects in one frame: the gun where it is in
+wilsons-creek, plus the cairn's splats placed at (0.2, 0.5, 0.2) of the
+same cube. Which does each probe prefer?
+
+```
+probe                                 score   d(gun) d(cairn)  nearer
+prototype(cannon, rlib-cannon)        0.481    0.413    0.005  cairn
+cannon alone                          0.504    0.377    0.066  cairn
+rlib-cannon alone                     0.506    0.407    0.005  cairn
+prototype(saguaro, oak) [foreign]     0.434    0.417    0.060  cairn
+cairn alone [the other object]        0.898    0.410    0.005  cairn
+gun itself [ceiling]                  0.269    0.384    0.025  cairn
+```
+
+Every probe — the gun's own codeword included — lands on the cairn. The
+placed cairn is 368k splats in a 3.8-unit region, denser than anything
+in the parent, and at σ_rec = 0.5 units a whitened correlation against
+a d=8192 fingerprint scores compact mass, not identity. Identity
+discrimination between objects of a real capture does not happen at
+this resolution and dimension; it is the same limit the place lane hit,
+seen from the object side.
+
+## Conclusion
+
+- Resonator Stage 1: negative. The resonator does not converge on
+  spectral bundles of captures; whitened correlation localises, and
+  only when the target is the scene's dominant mass.
+- The analogy question: **not answerable on this corpus by this
+  descriptor.** The synthetic positive (5% jitter) is real but the
+  captures show the score is carried by compact mass, and a foreign
+  prototype matches as well as the class prototype. What would answer
+  it: identity codewords that discard the mass envelope more fully
+  than phase projection does (a resolution-matched, whitened *and*
+  mass-normalised codeword), tested on a composite with two candidates
+  of comparable mass — the test above, with the mass balanced.
