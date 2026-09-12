@@ -30,7 +30,8 @@ def test_cleanup_kernel_matches_itemmemory_scores():
         got = op_cleanup(queries.real, queries.imag, m.real, m.imag, chunk)
         np.testing.assert_array_equal(got['argmax'], expected.argmax(axis=1))
         np.testing.assert_allclose(got['scores'], expected.max(axis=1), atol=2e-6)
-        np.testing.assert_allclose(got['checksum'], expected.sum(dtype=np.float64),
+        np.testing.assert_allclose(got['checksum'],
+                                   np.abs(expected).sum(dtype=np.float64),
                                    atol=1e-5)
 
 
@@ -96,7 +97,7 @@ def test_cleanup_ties_and_hrr_scores():
     result = op_cleanup(q, q * 0, m, m * 0, 1)
     np.testing.assert_array_equal(result['argmax'], [0, 2])
     hrr = op_cleanup_hrr(q, m)
-    assert hrr['checksum'] == float((q @ m.T).sum())
+    assert hrr['checksum'] == float(np.abs(q @ m.T).sum())
     np.testing.assert_array_equal(hrr['argmax'], result['argmax'])
 
 
