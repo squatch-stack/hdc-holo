@@ -17,10 +17,12 @@ exists.*
 **Status.** Complete draft, ~4,100 words of body: every section is
 prose, ten evidence figures are placed at the claims they carry, and
 citations are formatted from [`references.bib`](references.bib) —
-machine-resolved against the arXiv and Crossref APIs, with four book
-and proceedings entries marked UNVERIFIED that still need a human
-check. The numbers are gated by the claims checker, so the draft cannot
-drift from the measurements it rests on.
+machine-resolved against the arXiv and Crossref APIs, with the four
+book and proceedings entries those services index patchily resolved
+against DBLP and Open Library on 2026-08-27. No entry rests on
+recollection, and the file records how each was checked. The numbers
+are gated by the claims checker, so the draft cannot drift from the
+measurements it rests on.
 
 Before submission: conversion to the venue's format, and two things
 arXiv itself will care about. Its plain-text abstract field renders
@@ -48,13 +50,14 @@ unbinding, an entire orthographic view folds into another vector of the
 same kind, and independently-edited replicas merge by addition. A
 single capacity law, `σ ~ √(N·R / 2d)`, predicts the noise of every one
 of those readouts and states where each stops working. We demonstrate
-the representation on real captures of up to 682,000 splats, evaluated
-against exact analytic ground truth rather than against images, and we
-report the cost plainly: a bundle is roughly two orders of magnitude
-larger than a modern splat codec at the same scene. The contribution is
-not compression. It is that query, view synthesis, and coordination-free
-merge become the *same operation* on the same object, with a measurable
-budget attached.
+the representation on twelve real captures of 142,000 to 1,160,000
+splats, evaluated against exact analytic ground truth rather than
+against images, and we report the cost plainly: a bundle is roughly
+two orders of magnitude larger than a modern splat codec at full
+precision, and about 24x larger at the four-bit rate where accuracy
+begins to fall. The contribution is not compression. It is that query,
+orthographic projection, and coordination-free merge become the *same
+operation* on the same object, with a measurable budget attached.
 
 ## 1. Introduction
 
@@ -98,7 +101,7 @@ This paper reports what that buys, what it costs, and where it fails.
    sort, and no geometry present at render time.
 3. **Superposition is almost a CRDT, and the "almost" is exactly one
    axiom.** Bundling is commutative and associative but not idempotent;
-   two standard recipes close that single gap and make holographic
+   two standard recipes close that single gap and make hypervector
    scene state mergeable without coordination.
 
 **Two things we state up front rather than in a discussion section.**
@@ -110,15 +113,20 @@ line integrals; we do not perform novel-view synthesis, and we do not
 compete with rasterizers on photorealism.
 
 *The cost.* On the same capture, a holographic bundle is approximately
-400× larger and 50× less accurate at reproducing the field than a
-current splat codec (§7). If the task is to store a scene and rasterize
+400× larger at complex64 and about 24× larger at the measured four-bit
+knee, and 50× less accurate at reproducing the field than a current
+splat codec (§7). If the task is to store a scene and rasterize
 it later, the correct advice is to use the codec. The claims above are
 about capabilities the codecs do not provide, and the paper is written
 so that a reader can weigh that trade with real numbers.
 
 ## 2. Background
 
-**FHRR.** A hypervector is `d` unit-magnitude complex phasors. Binding
+**FHRR.** "Holographic" here is Plate's — every item is distributed
+across every component of one vector, so any part of the vector carries
+a degraded copy of the whole — and has nothing to do with display
+holography or computer-generated holograms, a collision §8 returns to.
+A hypervector is `d` unit-magnitude complex phasors. Binding
 is elementwise complex multiplication (phases add) and is exactly
 invertible by the conjugate; bundling is addition; a fixed random
 permutation tags order or role. Two independent random hypervectors have
@@ -190,12 +198,15 @@ which is what makes §5 possible.
 
 ### 3.3 Evidence
 
-Capacity curves fit `d^-0.50` exactly, matching the law. Four real
-captures — two phone-scanned outdoor scenes, an indoor LiDAR cloud, and
-a Tanks & Temples scene, from 244k to 682k splats after cropping — pass
-through one fixed pipeline, and slices decode at 19%/22% relative error
-against the *exact Gaussian mixture* evaluated cell-locally. Kernels
-agree across three compute backends to 2.5e-8.
+Capacity curves fit `d^-0.50` exactly, matching the law. Five real
+captures — three phone-scanned outdoor scenes, an indoor LiDAR cloud,
+and a Tanks & Temples scene, from 244k to 682k splats after cropping —
+pass through one fixed pipeline, and slices decode at 19%/22% relative
+error against the *exact Gaussian mixture* evaluated cell-locally.
+Kernels agree across three compute backends to 2.5e-8. The same fixed
+pipeline has since run over all twelve captures of the public gallery,
+142,000 to 1,160,000 splats, without a per-scene setting; §9 reports
+what that wider sweep says about the error metric itself.
 
 ![Figure 3](../results/capacity_curve.png)
 
@@ -613,9 +624,15 @@ prototype superposed from two cannon instances "finding" a third was
 the target's mass, not the prototype's class. What survives is sub-map
 localisation: a crop encoded in its parent's cube is found at its
 offset, and tiles of fixed physical size find exact sub-regions under
-every distractor count tried. Encoding support rather than mass is the
-open experiment; until it is run, the honest statement is that the
-representation localises and does not recognise.
+every distractor count tried. Encoding support rather than mass —
+dividing each splat's alpha by the mass of its recognition-scale voxel
+before the blur — removes the signal along with the ceiling: the
+unrelated wide-capture pair falls from 0.82 to 0.11 as intended, but a
+crop in its parent's cube falls from 0.88 to 0.17 with its recovered
+offset wandering a quarter of the cube, and on the tile matrix every
+capture's best match becomes a wrong one. At this dimension a
+whole-capture bundle scores compact mass or nothing, and the honest
+statement is that the representation localises and does not recognise.
 
 **A note on the referee.** The relative-L2 error this paper reports is
 two different quantities depending on the scene: on some captures it
@@ -659,10 +676,11 @@ budget of each is known before it is run.
 
 *Generated from [`references.bib`](references.bib) — edit the
 `.bib`, not this list. Every arXiv entry there is verbatim from the
-arXiv API and every DOI from Crossref, both resolved 2026-08-27;
-four book and proceedings entries that neither service indexes are
-marked UNVERIFIED in the file and need a human check before
-submission.*
+arXiv API and every DOI from Crossref, both resolved 2026-08-27; the
+four book and proceedings entries that neither service indexes were
+resolved the same day against DBLP and Open Library, which supplied
+the page ranges and the ISBNs. The `.bib` header records how each was
+checked.*
 
 - **Plate, Tony A.** (1995). *Holographic Reduced Representations* IEEE
   Transactions on Neural Networks 6(3):623--641 doi:10.1109/72.377968

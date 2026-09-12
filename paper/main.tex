@@ -38,13 +38,15 @@ by unbinding, an entire orthographic view folds into another vector of
 the same kind, and independently-edited replicas merge by addition. A
 single capacity law, $\sigma \sim \sqrt{N R / 2d}$, predicts the noise
 of every one of those readouts and states where each stops working. We
-demonstrate the representation on real captures of up to 682,000 splats,
-evaluated against exact analytic ground truth rather than against
-images, and we report the cost plainly: a bundle is roughly two orders
-of magnitude larger than a modern splat codec at the same scene. The
-contribution is not compression. It is that query, view synthesis, and
-coordination-free merge become the \emph{same operation} on the same
-object, with a measurable budget attached.
+demonstrate the representation on twelve real captures of 142,000 to
+1,160,000 splats, evaluated against exact analytic ground truth rather
+than against images, and we report the cost plainly: a bundle is roughly
+two orders of magnitude larger than a modern splat codec at full
+precision, and about 24x larger at the four-bit rate where accuracy
+begins to fall. The contribution is not compression. It is that query,
+orthographic projection, and coordination-free merge become the
+\emph{same operation} on the same object, with a measurable budget
+attached.
 \end{abstract}
 
 \section{Introduction}
@@ -92,7 +94,7 @@ one inner product, with no ray marching, no depth sort, and no geometry
 present at render time. 3. \textbf{Superposition is almost a CRDT, and
 the ``almost'' is exactly one axiom.} Bundling is commutative and
 associative but not idempotent; two standard recipes close that single
-gap and make holographic scene state mergeable without coordination.
+gap and make hypervector scene state mergeable without coordination.
 
 \textbf{Two things we state up front rather than in a discussion
 section.}
@@ -104,7 +106,8 @@ against analytic line integrals; we do not perform novel-view synthesis,
 and we do not compete with rasterizers on photorealism.
 
 \emph{The cost.} On the same capture, a holographic bundle is
-approximately 400$\times$ larger and 50$\times$ less accurate at
+approximately 400$\times$ larger at complex64 and about 24$\times$
+larger at the measured four-bit knee, and 50$\times$ less accurate at
 reproducing the field than a current splat codec (\S7). If the task is
 to store a scene and rasterize it later, the correct advice is to use
 the codec. The claims above are about capabilities the codecs do not
@@ -113,12 +116,16 @@ with real numbers.
 
 \section{Background}
 
-\textbf{FHRR.} A hypervector is $d$ unit-magnitude complex phasors.
-Binding is elementwise complex multiplication (phases add) and is
-exactly invertible by the conjugate; bundling is addition; a fixed
-random permutation tags order or role. Two independent random
-hypervectors have similarity $0 \pm 1/\sqrt{2d}$, which is the noise
-floor everything else trades against.
+\textbf{FHRR.} ``Holographic'' here is Plate's --- every item is
+distributed across every component of one vector, so any part of the
+vector carries a degraded copy of the whole --- and has nothing to do
+with display holography or computer-generated holograms, a collision \S8
+returns to. A hypervector is $d$ unit-magnitude complex phasors. Binding
+is elementwise complex multiplication (phases add) and is exactly
+invertible by the conjugate; bundling is addition; a fixed random
+permutation tags order or role. Two independent random hypervectors have
+similarity $0 \pm 1/\sqrt{2d}$, which is the noise floor everything else
+trades against.
 
 \textbf{Capacity as a contract.} Bundling N items puts crosstalk of
 standard deviation $\sigma \sim \sqrt{N R / 2d}$ under every readout,
@@ -201,12 +208,15 @@ reconstructs them independently, which is what makes \S5 possible.
 
 \subsection{Evidence}
 
-Capacity curves fit $d^{-0.50}$ exactly, matching the law. Four real
-captures --- two phone-scanned outdoor scenes, an indoor LiDAR cloud,
+Capacity curves fit $d^{-0.50}$ exactly, matching the law. Five real
+captures --- three phone-scanned outdoor scenes, an indoor LiDAR cloud,
 and a Tanks \& Temples scene, from 244k to 682k splats after cropping
 --- pass through one fixed pipeline, and slices decode at 19\%/22\%
 relative error against the \emph{exact Gaussian mixture} evaluated
-cell-locally. Kernels agree across three compute backends to 2.5e-8.
+cell-locally. Kernels agree across three compute backends to 2.5e-8. The
+same fixed pipeline has since run over all twelve captures of the public
+gallery, 142,000 to 1,160,000 splats, without a per-scene setting; \S9
+reports what that wider sweep says about the error metric itself.
 
 \begin{figure}[htbp]
 \centering
@@ -698,9 +708,15 @@ superposed from two cannon instances ``finding'' a third was the
 target's mass, not the prototype's class. What survives is sub-map
 localisation: a crop encoded in its parent's cube is found at its
 offset, and tiles of fixed physical size find exact sub-regions under
-every distractor count tried. Encoding support rather than mass is the
-open experiment; until it is run, the honest statement is that the
-representation localises and does not recognise.
+every distractor count tried. Encoding support rather than mass ---
+dividing each splat's alpha by the mass of its recognition-scale voxel
+before the blur --- removes the signal along with the ceiling: the
+unrelated wide-capture pair falls from 0.82 to 0.11 as intended, but a
+crop in its parent's cube falls from 0.88 to 0.17 with its recovered
+offset wandering a quarter of the cube, and on the tile matrix every
+capture's best match becomes a wrong one. At this dimension a
+whole-capture bundle scores compact mass or nothing, and the honest
+statement is that the representation localises and does not recognise.
 
 \textbf{A note on the referee.} The relative-L2 error this paper reports
 is two different quantities depending on the scene: on some captures it
