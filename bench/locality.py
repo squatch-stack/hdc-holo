@@ -148,9 +148,13 @@ def locality_report(truth, recon, membership=None, *, floor=0.01,
         raise ValueError("floor must be finite and nonnegative")
     _fraction(spike_share)
     resid = recon - truth
+    # The same expression as sweep_scenes._slices, so the quotient is taken
+    # in the same precision on every NumPy (NEP 50 keeps a float32 norm
+    # divided by a Python float in float32; a float64 quotient differed in
+    # the eighth digit on Linux CI).
     norm_truth = float(np.linalg.norm(truth))
-    norm_resid = float(np.linalg.norm(resid))
-    rel_l2 = norm_resid / norm_truth if norm_truth else (
+    norm_resid = np.linalg.norm(resid)
+    rel_l2 = float(norm_resid / norm_truth) if norm_truth else (
         0.0 if norm_resid == 0 else float("inf"))
     shares = error_shares(resid, dict.fromkeys((*fracs, 0.01)))
     nulls = {frac: null_share(frac, len(truth)) for frac in shares}
