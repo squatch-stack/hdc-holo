@@ -10,9 +10,11 @@ recovered by unbinding, an entire orthographic view folds into another vector
 of the same kind, and independently-edited replicas merge by addition. A
 single capacity law, sigma ~ sqrt(N R / 2d), predicts the noise of every one
 of those readouts and states where each stops working. We demonstrate the
-representation on real captures of up to 682,000 splats, evaluated against
-exact analytic ground truth rather than against images, and we report the cost
-plainly: a bundle is roughly two orders of magnitude larger than a modern
-splat codec at the same scene. The contribution is not compression. It is that
-query, view synthesis, and coordination-free merge become the same operation
-on the same object, with a measurable budget attached.
+representation on twelve real captures of 142,000 to 1,160,000 splats,
+evaluated against exact analytic ground truth rather than against images, and
+we report the cost plainly: a bundle is roughly two orders of magnitude larger
+than a modern splat codec at full precision, and about 24x larger at the
+four-bit rate where accuracy begins to fall. The contribution is not
+compression. It is that query, orthographic projection, and coordination-free
+merge become the *same operation* on the same object, with a measurable budget
+attached.

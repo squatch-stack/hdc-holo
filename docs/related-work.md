@@ -302,20 +302,28 @@ from a bundle stays the representational-completeness demo).
 
 - **VSAonline Speakers' Corner** (sites.google.com/view/hdvsaonline) —
   lowest friction, densest aligned audience.
-- **IEEE WCCI 2026** HD/VSA special session, Maastricht, June 21–26;
-  **npj Unconventional Computing** publishes this exact lineage
-  (VSA-OGM).
+- **IEEE WCCI 2026** HD/VSA special session, Maastricht, June 21–26 —
+  **past** as of 2026-09-12; the session's between-WCCI home is IJCNN,
+  whose 2027 dates need checking in the next sweep. **npj
+  Unconventional Computing** publishes this exact lineage (VSA-OGM) and
+  has no deadline.
 - **Eurographics 2027** — abstract **September 25, 2026**, paper
-  October 1: the nearest graphics-side deadline.
+  October 1. **Decided 2026-09-12: skipped, and the date is recorded
+  here so it is skipped deliberately rather than missed.** It is the
+  wrong axis — the paper performs no novel-view synthesis and §7 is a
+  loss on the metric graphics weighs most — so a submission there buys
+  review time from an audience the work is not addressed to.
 - **CVPR 2027** main (abstract ~Nov 7, 2026); its **workshops
   (~March 2027)** are the friendlier bar for a novel-representation
   short paper.
 - **arXiv endorsement policy changed January 2026**: an independent
   author needs personal endorsement from an established in-category
   author — the working public demo is the attachment on that ask, and
-  the Zenodo DOI is citable meanwhile. Category worth weighing:
-  **cs.CV primary with cs.NE + cs.RO cross-lists** (wedge 1's audience
-  reads cs.CV) against the current draft's cs.NE targeting.
+  the Zenodo DOI is citable meanwhile. Category **settled 2026-09-12:
+  cs.NE primary, cs.CV and cs.RO as cross-lists only where justified**
+  — `paper/ENDORSEMENT.md` had cs.CV primary and now agrees. cs.CV
+  becomes the primary question again only if wedge 1 lands, because
+  that is the wedge whose audience reads it.
 - Coverage paths for the demo side: radiancefields.com (covers working
   open-source demos), the MrNeRF Discord + awesome-3D-gaussian-
   splatting list, and the three.js forum's Showcase category.
