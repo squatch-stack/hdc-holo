@@ -20,9 +20,16 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Rectangle
 
-from bench.place_recognition import build_scene_fixed, crop_box
-from holo.capture import load_scene_file, render_mip, slice_grid
+from bench.place_recognition import (
+    build_scene_fixed,
+    correlate,
+    crop_box,
+    tile_fingerprints,
+    tile_lattice,
+)
+from holo.capture import ALPHA_MIN, load_scene_file, render_mip, slice_grid
 from holo.spectral import (
     SplatScene,
     decode_field_phasor,
@@ -313,6 +320,214 @@ def _real_inputs(args):
     return before, after, bbox, lo, extent, overlap
 
 
+
+def _scene_tile(scene, corner, tile):
+    """Inclusive center/alpha mask from tile_scenes; normalize to tile units.
+
+    Inputs are physical coordinates with alpha in channel zero. Keep this
+    helper local: place_recognition.py is outside this lane's edit matrix.
+    """
+    mask = (scene.amp[:, 0] >= ALPHA_MIN) & np.all(
+        (scene.mu >= corner) & (scene.mu <= corner + tile), axis=1)
+    return SplatScene(((scene.mu[mask] - corner) / tile).astype(np.float32),
+                      (scene.cov[mask] / tile**2).astype(np.float32),
+                      scene.amp[mask])
+
+
+def _tile_score(before, after, freqs, sigma_box, whiten):
+    if not before.n or not after.n:
+        return 1.0 if before.n == after.n else 0.0
+    fps = tile_fingerprints([(np.zeros(3), s, 1.0) for s in (before, after)],
+                            freqs, sigma_box, [0.0])
+    score = correlate(fps[0, 0], fps[1, 0], freqs,
+                      np.zeros((1, 3), np.float32), whiten)[0]
+    # Self-correlation can exceed one by float32 rounding.
+    return float(np.clip(score, -1, 1))
+
+
+def tile_change(  # noqa: PLR0913, PLR0917
+        before_scene, after_scene, lo, extent, tile, overlap, freqs,
+        sigma_box, rng, drift_kw, yaws=1, whiten=1.0):
+    """Fixed-pose change scores on ONE physical lattice; no pose search.
+
+    Scene centers, lo, extent, tile and drift positions are physical units;
+    sigma_box and frequencies are in normalized tile units. The signature
+    follows the lane contract. yaws must be one: registration is not change.
+    A single held-out drift realization supplies each tile's null. The cutoff
+    is that tile's null minus three population standard deviations across
+    retained tiles' nulls. Empty-before nulls are one (empty stays empty),
+    while one-sided occupancy always registers as change. Both-empty tiles
+    remain in the output lattice but are excluded from null pooling.
+    The primitive control takes maxima on a 17-cubed local distance-field
+    grid, using the SAME null scene and per-tile mean-plus-three-sigma rule.
+    These empirical definitions are ours, not a reproduced published method.
+    """
+    if yaws != 1 or not 0 <= whiten <= 1:
+        raise ValueError("tiles require yaws=1 and whiten in [0,1]")
+    if not np.isfinite(sigma_box) or sigma_box <= 0:
+        raise ValueError("sigma_box must be finite and positive")
+    corners = np.asarray(tile_lattice(lo, extent, tile, overlap))
+    null_scene = drift(before_scene, rng, **drift_kw)
+    scores, nulls, baseline, baseline_nulls, counts = [], [], [], [], []
+    grid = _grid(17)
+    for corner in corners:
+        a, b, n = [_scene_tile(s, corner, tile)
+                   for s in (before_scene, after_scene, null_scene)]
+        counts.append((a.n, b.n))
+        scores.append(_tile_score(a, b, freqs, sigma_box, whiten))
+        nulls.append(_tile_score(a, n, freqs, sigma_box, whiten))
+        baseline.append(float(primitive_baseline(a, b, sigma_box, grid).max()))
+        baseline_nulls.append(float(
+            primitive_baseline(a, n, sigma_box, grid).max()))
+    counts = np.asarray(counts)
+    retained = counts.any(axis=1)
+    nulls, scores = np.asarray(nulls), np.asarray(scores)
+    baseline, baseline_nulls = np.asarray(baseline), np.asarray(baseline_nulls)
+    spread = float(nulls[retained].std()) if retained.any() else 0.0
+    base_spread = float(baseline_nulls[retained].std()) if retained.any() else 0.0
+    thresholds = nulls - 3 * spread
+    base_thresholds = baseline_nulls + 3 * base_spread
+    # Numerical tolerance is far below the calibrated drift drops.
+    changed = retained & (scores < thresholds - 1e-6)
+    changed |= (counts[:, 0] == 0) != (counts[:, 1] == 0)
+    return {"corners": corners.tolist(), "counts": counts.tolist(),
+            "retained": retained.tolist(), "scores": scores.tolist(),
+            "nulls": nulls.tolist(), "null_sigma": spread,
+            "thresholds": thresholds.tolist(), "drop": (nulls - scores).tolist(),
+            "changed": changed.tolist(), "baseline_scores": baseline.tolist(),
+            "baseline_nulls": baseline_nulls.tolist(),
+            "baseline_thresholds": base_thresholds.tolist(),
+            "baseline_changed": (retained & (
+                baseline > base_thresholds + 1e-9)).tolist()}
+
+
+def _tile_truth(corners, tile, bboxes):
+    """Quantize the union of true edit bboxes by inclusive tile intersection."""
+    corners = np.asarray(corners)
+    truth = np.zeros(len(corners), dtype=bool)
+    for bbox in np.asarray(bboxes).reshape(-1, 2, 3):
+        truth |= np.all((corners <= bbox[1]) &
+                        (corners + tile >= bbox[0]), axis=1)
+    return truth
+
+
+def _mask_iou(predicted, truth):
+    predicted = np.asarray(predicted, dtype=bool)
+    union = np.count_nonzero(predicted | truth)
+    return float(np.count_nonzero(predicted & truth) / union) if union else 1.0
+
+
+def _physical_scene(scene, lo, extent):
+    return SplatScene(scene.mu * extent + lo, scene.cov * extent**2, scene.amp)
+
+
+def _tile_fixture(seed):
+    before, removed, bbox = synthetic_fixture(seed)
+    obj = _take(before, np.arange(128))
+    after, added_bbox = insert(removed, obj, [0.5, 0, 0])
+    return before, after, np.stack([bbox, added_bbox])
+
+
+def _tile_metrics(row, tile, bboxes, threshold):
+    if threshold is not None:
+        occupancy = np.asarray(row["counts"]) == 0
+        row["thresholds"] = [threshold] * len(row["scores"])
+        row["changed"] = (np.asarray(row["retained"]) & (
+            (np.asarray(row["scores"]) < threshold) |
+            (occupancy[:, 0] != occupancy[:, 1]))).tolist()
+    truth = _tile_truth(row["corners"], tile, bboxes) if bboxes is not None else None
+    row.update({"truth": truth.tolist() if truth is not None else None,
+                "iou_bundle_tile": _mask_iou(row["changed"], truth)
+                if truth is not None else None,
+                "iou_baseline_tile": _mask_iou(row["baseline_changed"], truth)
+                if truth is not None else None,
+                "false_tiles": int(np.count_nonzero(
+                    np.asarray(row["changed"]) & ~truth))
+                if truth is not None else None})
+
+
+def _tile_change_figure(path, row, tile, extent):
+    corners = np.asarray(row["corners"])
+    layers = np.unique(corners[:, 1])
+    layers = layers[np.unique(np.linspace(0, len(layers) - 1,
+                                          min(4, len(layers))).astype(int))]
+    fig, axes = plt.subplots(len(layers), 3, figsize=(12, 3.5 * len(layers)),
+                             squeeze=False, constrained_layout=True)
+    for column, (key, title) in enumerate((
+            ("drop", "Null minus observed correlation"),
+            ("changed", "Detected tiles"), ("truth", "True bbox tiles"))):
+        values = np.asarray(row[key] if row[key] is not None
+                            else np.zeros(len(corners)), dtype=float)
+        norm = plt.Normalize(-1 if key == "drop" else 0, 1)
+        cmap = plt.get_cmap("coolwarm" if key == "drop" else "viridis")
+        for layer, ax in zip(layers, axes[:, column]):
+            for corner, value in zip(corners, values):
+                if corner[1] == layer:
+                    ax.add_patch(Rectangle((corner[0], corner[2]), tile, tile,
+                                           facecolor=cmap(norm(value)),
+                                           edgecolor="gray", linewidth=0.5))
+            ax.set(xlim=(corners[:, 0].min(), corners[:, 0].max() + tile),
+                   ylim=(corners[:, 2].min(), corners[:, 2].max() + tile),
+                   title=f"{title}\ny tile [{layer:g}, {layer + tile:g}]",
+                   xlabel="x (scene units)", ylabel="z (scene units)",
+                   aspect="equal")
+        fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap),
+                     ax=axes[:, column].tolist(), shrink=0.8)
+    fig.suptitle(f"Tile edge {tile:g}; frame extent {extent:g}; "
+                 f"sigma {row['sigma_rec']:g}, drift {row['sigma_pos']:g}")
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=140)
+    plt.close(fig)
+
+
+def _run_tile_change(args):
+    if args.synthetic:
+        before, after, bboxes = _tile_fixture(args.seed)
+        lo, extent, subset_overlap = np.zeros(3), 8.0, None
+    else:
+        before, after, bboxes, lo, extent, subset_overlap = _real_inputs(args)
+    before, after = [_physical_scene(s, lo, extent) for s in (before, after)]
+    bboxes = bboxes * extent + lo if bboxes is not None else None
+    freqs = sample_frequencies(args.dim, 3, args.tile / min(args.sigmas),
+                               np.random.default_rng(args.seed))
+    rows = []
+    for sigma, position in itertools.product(args.sigmas, args.positions):
+        drift_kw = {"sigma_pos": position, "sigma_amp": 0.2, "split_frac": 0.1}
+        rng = np.random.default_rng(args.seed + 1)
+        observed, other = [drift(s, rng, **drift_kw) for s in (before, after)]
+        row = tile_change(observed, other, lo, extent, args.tile, args.overlap,
+                          freqs, sigma / args.tile,
+                          np.random.default_rng(args.seed + 10001), drift_kw,
+                          whiten=args.whiten)
+        _tile_metrics(row, args.tile, bboxes, args.threshold)
+        row.update({"sigma_rec": sigma, "sigma_pos": position})
+        rows.append(row)
+        if args.figure and len(rows) == 1:
+            _tile_change_figure(args.figure, row, args.tile, extent)
+    return {"mode": "tiles", "dim": args.dim, "seed": args.seed,
+            "tile": args.tile, "overlap": args.overlap, "lo": lo.tolist(),
+            "extent": extent, "whiten": args.whiten, "yaws": 1,
+            "translation": [0, 0, 0], "sigma_amp": 0.2, "split_frac": 0.1,
+            "null_draws": 1, "baseline_grid": 17,
+            "frequency_sigma_rho": args.tile / min(args.sigmas),
+            "bboxes_units": bboxes.tolist() if bboxes is not None else None,
+            "subset_overlap": subset_overlap, "ladder": rows}
+
+
+def _validate_tile_change(parser, args):
+    if args.tile is None:
+        if args.threshold is not None:
+            parser.error("--threshold requires --tile")
+        return
+    if not np.isfinite(args.tile) or args.tile <= 0:
+        parser.error("--tile must be positive and finite")
+    if not 0 <= args.overlap < 1 or not 0 <= args.whiten <= 1:
+        parser.error("--overlap must be in [0,1); --whiten in [0,1]")
+    if args.threshold is not None and not -1 <= args.threshold <= 1:
+        parser.error("--threshold must be in [-1,1]")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
@@ -332,12 +547,20 @@ def main(argv=None):
     parser.add_argument("--tol", type=float, default=1e-5)
     parser.add_argument("--figure", type=Path)
     parser.add_argument("--synthetic", action="store_true")
+    parser.add_argument("--tile", type=float, help="tile edge in scene units")
+    parser.add_argument("--overlap", type=float, default=0.0)
+    parser.add_argument("--whiten", type=float, default=1.0)
+    parser.add_argument("--threshold", type=float,
+                        help="override drift cutoff; one-sided empty stays changed")
     # Positionals may follow options (`out before --dim 32 after`); on
     # Python 3.9 parse_args leaves a trailing positional unrecognised when
     # an earlier one is optional, which failed CI's 3.9 job on every push.
     args = parser.parse_intermixed_args(argv)
     _validate(parser, args)
-    if args.synthetic:
+    _validate_tile_change(parser, args)
+    if args.tile is not None:
+        result = _run_tile_change(args)
+    elif args.synthetic:
         result = _ladder(synthetic_fixture(args.seed), 8.0, args.dim, args.seed,
                          args.grid, args.sigmas, args.positions, args.figure)
     else:
