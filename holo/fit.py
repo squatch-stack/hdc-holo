@@ -38,6 +38,8 @@ bundling cannot do, since it never sees data at all.
 
 import numpy as np
 
+from .projection import project_cells
+
 
 class FrequencyBands:
     """Concatenated frequency blocks, one per kernel scale."""
@@ -210,29 +212,33 @@ def demo(dim=4096, seed=0, save_png=True):  # dim: total D of largest fit
           "averages, bundling can't)")
 
     if save_png:
-        try:
-            import matplotlib
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-        except ImportError:
-            print()
-            return
-        fig, axes = plt.subplots(1, len(panels),
-                                 figsize=(3.6 * len(panels), 4.1))
-        for ax, (title, im) in zip(axes, panels):
-            ax.imshow(im, cmap="gray", vmin=0, vmax=1)
-            ax.set_title(title, fontsize=9)
-            ax.set_xticks([]), ax.set_yticks([])
-        fig.tight_layout(rect=(0, 0, 1, 0.92))
-        fig.suptitle("A photograph fit as one complex vector: "
-                     "ridge regression whose weights ARE the hologram",
-                     fontsize=11)
-        import os
-        os.makedirs("out", exist_ok=True)
-        fig.savefig("out/fit_photo.png", dpi=110)
-        plt.close(fig)
-        print("  saved out/fit_photo.png")
+        _plot_panels(panels)
     print()
 
 
-__all__ = ["FrequencyBands", "HoloRegressor"]
+def _plot_panels(panels):
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print()
+        return
+    fig, axes = plt.subplots(1, len(panels),
+                             figsize=(3.6 * len(panels), 4.1))
+    for ax, (title, im) in zip(axes, panels):
+        ax.imshow(im, cmap="gray", vmin=0, vmax=1)
+        ax.set_title(title, fontsize=9)
+        ax.set_xticks([]), ax.set_yticks([])
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    fig.suptitle("A photograph fit as one complex vector: "
+                 "ridge regression whose weights ARE the hologram",
+                 fontsize=11)
+    import os
+    os.makedirs("out", exist_ok=True)
+    fig.savefig("out/fit_photo.png", dpi=110)
+    plt.close(fig)
+    print("  saved out/fit_photo.png")
+
+
+__all__ = ["FrequencyBands", "HoloRegressor", "project_cells"]
