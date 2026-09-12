@@ -32,9 +32,15 @@ Key semantics:
   N ≤ current; lag >10% warns) · `measurement` (tolerance / accepted
   spellings) · `identifier` (exact string) · `text` (pattern presence).
 - `status`: `current` | `superseded` | `retracted`. To update a value:
-  re-id the old line `base.id@<old-version>` with `status:
-  "superseded"`, add the new line under the base id, link them via
-  `supersedes`/`superseded_by`.
+  run `holo-facts supersede <id> --value <value>`, or
+  `holo-facts supersede tests.count --auto` for the registered derivation.
+  The command preserves historical lines, allocates versioned suffixes,
+  and repairs multiple current entries left by a union merge. Use
+  `--dry-run` to preview, `--root <tree>` to select a tree, and `--note`
+  to explain the supersession. Values parse as JSON, falling back to text.
+  With no current entry, an explicit value revives the newest historical
+  entry; `--auto` requires that entry to retain a registered derivation.
+  Newest means latest `as_of.date`, with later registry order breaking ties.
 - `cites`: files that MUST state the current value (drift or silent
   deletion there fails CI).
 - `patterns`: regexes over *normalized* text (markdown/mermaid markup
