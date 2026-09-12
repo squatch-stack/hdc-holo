@@ -277,3 +277,101 @@ whole-capture descriptor. That is the next lane.
 
 Figures: `out/place/similarity-corpus.png` (raw) and
 `out/place/similarity-corpus-whitened.png`.
+
+## Sub-map tiles (synthetic)
+
+The additive `--tile` branch uses fixed physical tile edges and one
+codebook for the run: `sigma_box = sigma_units / tile`. Tiles cover each
+capture's mass-centred crop cube; their mass threshold is a fraction of
+the entire capture's alpha mass (including alpha below the loader floor).
+Overlapping tiles can have mass shares summing above one. The existing
+non-tile computation and JSON schema are unchanged.
+
+Seed 0, a three-cell landmark world, two overlapping capture cubes and
+one unrelated world; the second capture has origin offset [1, 0, 0],
+yaw π/2 and an additional local translation [0.04, -0.03, 0.02] in scene
+units. Each capture retains two tiles. Each tile contains 160 landmarks
+with equal alpha, random positions and heterogeneous covariances.
+Landmark IDs, independent of descriptors, identify one exact shared tile
+pair. This is a controlled localisation fixture, not evidence for real
+re-captures.
+
+| query | capture rank-1 | best positive | best negative | separation | above capture null | partner tile hits / all query tiles |
+|---|---|---|---|---|---|---|
+| world/left | yes | 0.997755 | 0.092701 | 139.74σ | 141.14σ | 1/2 (50%) |
+| world/right-yawed | yes | 0.997674 | 0.086565 | 140.67σ | 141.13σ | 1/2 (50%) |
+
+| tile-level ground truth | result |
+|---|---|
+| exact shared tiles ranked first | 2/2 directed queries |
+| forward winning inverse yaw | 3π/2 |
+| expected forward offset (tile units) | [-0.02000, -0.03000, 0.04000] |
+| recovered forward offset (tile units) | [-0.01875, -0.03000, 0.04125] |
+| maximum coordinate error | 0.001250; below half the coarse grid step, 0.015 |
+| largest unrelated capture score, either direction | 0.092701; 1.40σ above capture-null mean |
+
+The 50% tile hit fractions include the non-overlapping half of each
+capture. Among query tiles with an exact partner, retrieval is 100%.
+A partner-*capture* hit does not by itself establish an exact tile match;
+the JSON reports the landmark-ID checks separately.
+
+| calibration / cost | measurement |
+|---|---|
+| tile phase null: mean ± σ; p95; maximum | 0.077585 ± 0.008052; 0.090659; 0.096543 |
+| capture phase null: mean ± σ; p95; maximum | 0.083608 ± 0.006477; 0.093658; 0.096543 |
+| null draws | 24 tile maxima; 12 capture maxima |
+| ordered tile pairs scored / possible | 12 / 24 (50%) |
+| yaw hypotheses per scored pair | 4 |
+| CPU computation runtime, excluding figure rendering | 36.035 s |
+
+For every query tile, radial-power cosine retains the best two database
+tiles, excluding its own capture. All query yaw descriptors participate
+in the radial comparison. Translation invariance is exact to rounding;
+yaw invariance is only approximate for the finite sampled codebook.
+This preserves the existing module's caveat rather than claiming exact
+pose invariance. Prefiltering can miss partners; `--prefilter 0` scores
+all cross-capture pairs.
+
+Four phase-surrogate draws per query retain its magnitudes and hence
+its selected candidate set. Each draw repeats the maximum over those
+database tiles, yaws and refined translations. The capture null also
+maximises over the capture's query tiles. These calibration definitions
+are ours. Pair counts exclude null work: this run also evaluates 48
+surrogate tile pairs, each with four yaws. Null σ is empirical and based
+on a small seeded sample; the large synthetic separation is not a
+real-capture significance claim. Runtime varies with CPU contention.
+
+Reproduce the table and figure from the repository root:
+
+```sh
+HDC_BACKEND=numpy MPLCONFIGDIR=/tmp/submap-mpl .venv/bin/python -m bench.place_recognition /tmp/submap-tiles.json --synthetic 3 --numpy --tile 1 --overlap 0 --dim 1024 --grid 5 --limit 0.06 --yaws 4 --scrambles 4 --whiten 1 --prefilter 2 --figure out/place/tiles-synthetic.png
+```
+
+Figure: `out/place/tiles-synthetic.png` (capture matrix and all-query-tile
+partner hit fractions). The JSON includes tile origins, mass shares,
+owners, masked tile/capture matrices, best pairs, offsets, yaw indices,
+both null distributions and the exact synthetic ground truth.
+Offsets are in tile units after the winning query yaw; multiply by the
+tile edge for scene units. Null entries mean masked or unscored pairs.
+
+Real captures and an RTX 5090 are unavailable in this worktree. The
+maintainer's corpus runs remain `--tile 6` and `--tile 10`, `--yaws 8`,
+`--grid 32`, `--whiten 1`, with all twelve sorted captures and
+`--partner 1 9 --partner 4 5 --partner 10 11`. The unchanged bar is all
+six known-partner queries at rank 1 and at least 3σ above the calibrated
+null. A negative would be the springhouse/station interior-versus-yard
+pair remaining inside the null at tile level too. No corpus conclusion
+is inferred from this synthetic result.
+
+Validation: `OPENBLAS_NUM_THREADS=1 HDC_BACKEND=numpy .venv/bin/python -m
+pytest tests -q` completed with `3 failed, 357 passed, 9 skipped in 26.32s`.
+All three failures are the expected `tests.count` claim drift (321 in
+the registry, 328 in the tree); updating claims is outside this lane.
+The targeted file passed all 20 tests in 1.78 s with one BLAS thread,
+including the frozen pre-lane JSON computation and forbidden-tile-path
+guards. Its slowest new test took 0.22 s. The initial unrestricted-BLAS
+full-suite run was interrupted in the existing resonator tests after
+severe thread overhead; the single-thread run above completed the full
+suite. Ruff is clean and quality reports `lint debt: 50 (baseline 50)`.
+`holo-facts check --strict` reports `1 FAIL, 25 WARN`, with
+`tests.count` the only failure.

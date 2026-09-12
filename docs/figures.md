@@ -156,3 +156,4 @@ it is named here rather than approximated.
 | `out/change/synthetic.png` | `python -m bench.change_detection /tmp/change-synthetic.json --synthetic --dim 4096 --seed 0 --figure out/change/synthetic.png` |
 | `out/shape/synthetic.png` | Four shape similarity matrices under a synthetic class hypothesis. | `python -m bench.shape_descriptor /tmp/shape-synthetic.json --synthetic --dim 512 --yaws 8 --grid 3 --figure out/shape/synthetic.png` |
 | `out/resonator_capture/where.png` | Synthetic spectral resonator positions and distractor recovery; failed attempts remain visible. | `python -m bench.resonator_capture /tmp/rescap-synthetic.json --synthetic --dim 4096 --values 16 --figure out/resonator_capture/where.png` |
+| `out/place/tiles-synthetic.png` | `python -m bench.place_recognition /tmp/submap-tiles.json --synthetic 3 --numpy --tile 1 --overlap 0 --dim 1024 --grid 5 --limit 0.06 --yaws 4 --scrambles 4 --whiten 1 --prefilter 2 --figure out/place/tiles-synthetic.png` |

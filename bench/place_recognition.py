@@ -58,6 +58,7 @@ different questions and the results note reports both.
 import argparse
 import json
 from pathlib import Path
+from time import perf_counter
 from unittest.mock import patch
 
 import numpy as np
@@ -343,6 +344,347 @@ def _retrieval(scores, groups, partners, noise_sigma):
     return reports
 
 
+def tile_lattice(lo, extent, tile, overlap):
+    """Cover a cube with fixed-size tiles, including a flush final tile.
+
+    Cubes smaller than one tile receive one tile at lo. Interior strides
+    are tile*(1-overlap); the final stride may be shorter to cover the edge.
+    """
+    lo = np.asarray(lo, dtype=float)
+    if lo.shape != (3,) or not np.isfinite(lo).all():
+        raise ValueError("lo must contain three finite coordinates")
+    if not np.isfinite([extent, tile, overlap]).all():
+        raise ValueError("tile lattice parameters must be finite")
+    if min(extent, tile) <= 0 or not 0 <= overlap < 1:
+        raise ValueError("positive extents and overlap in [0, 1) required")
+    end = max(extent - tile, 0)
+    axis = np.arange(0, end, tile * (1 - overlap))
+    axis = np.unique(np.append(axis, end))
+    return [lo + p for p in np.array(np.meshgrid(
+        axis, axis, axis, indexing="ij")).reshape(3, -1).T]
+
+
+def tile_scenes(path, tile, overlap, min_mass, alpha_min=ALPHA_MIN):
+    """Load once; retain fixed physical tiles by share of total capture alpha.
+
+    Shares use alpha, not Gaussian volume, and overlap means their sum can
+    exceed one. The lattice covers crop_box's cube, not the entire halo.
+    """
+    if not np.isfinite(min_mass) or not 0 <= min_mass <= 1:
+        raise ValueError("min_mass must lie in [0, 1]")
+    data = load_scene_file(path)
+    pos, _, rgba, _ = data
+    alpha = rgba[:, 3]
+    total = float(alpha.sum(dtype=np.float64))
+    if total <= 0 or not np.any(alpha >= alpha_min):
+        return []
+    tiles = []
+    # Reuse the public fixed-frame loader without rereading a capture per tile.
+    with patch(__name__ + ".load_scene_file", return_value=data):
+        lo, extent = crop_box(path, alpha_min)
+        for corner in tile_lattice(lo, extent, tile, overlap):
+            inside = (alpha >= alpha_min) & np.all(
+                (pos >= corner) & (pos <= corner + tile), axis=1)
+            share = float(alpha[inside].sum(dtype=np.float64)) / total
+            if inside.any() and share >= min_mass:
+                scene, _, _ = build_scene_fixed(path, corner, tile, alpha_min)
+                tiles.append((corner, scene, share))
+    return tiles
+
+
+def tile_fingerprints(tiles, freqs, sigma_box, angles):
+    """Encode every tile with the run's single physical-resolution codebook."""
+    if not tiles:
+        return np.empty((0, len(angles), len(freqs)), np.complex64)
+    return np.stack([_yaw_fingerprints(s, angles, freqs, sigma_box)
+                     for _, s, _ in tiles])
+
+
+def _tile_candidates(tile_fps, owners, freqs, prefilter):
+    # Use every yaw's radial descriptor to reduce finite-sample yaw bias.
+    power = np.array([[radial_power(fp, freqs) for fp in yaws]
+                      for yaws in tile_fps])
+    power /= np.maximum(np.linalg.norm(power, axis=2, keepdims=True), 1e-30)
+    candidates = []
+    for j, owner in enumerate(owners):
+        indices = np.flatnonzero(owners != owner)
+        similarity = np.einsum("ib,kb->ik", power[indices, 0], power[j]).max(axis=1)
+        order = np.argsort(-similarity, kind="stable")
+        candidates.append(indices[order[:prefilter] if prefilter else order])
+    return candidates
+
+
+def _tile_noise(samples):
+    values = np.asarray(samples, dtype=float)
+    return {"null": "phase", "samples": values.tolist(), "count": len(values),
+            "mean": float(values.mean()), "sigma": float(values.std()),
+            "p95": float(np.percentile(values, 95)), "max": float(values.max())}
+
+
+def _capture_maxima(scores, offsets, yaws, owners):
+    n_caps = int(owners.max()) + 1
+    captures = np.full((n_caps, n_caps), -np.inf)
+    best = [[None for _ in range(n_caps)] for _ in range(n_caps)]
+    for i, j in zip(*np.where(np.isfinite(scores))):
+        a, b = int(owners[i]), int(owners[j])
+        if scores[i, j] > captures[a, b]:
+            captures[a, b] = scores[i, j]
+            best[a][b] = {"reference_tile": int(i), "query_tile": int(j),
+                          "offset_box": offsets[i, j].tolist(),
+                          "yaw_index": int(yaws[i, j])}
+    return captures, best
+
+
+def tile_matrix(tile_fps, owners, freqs, grid, whiten, prefilter, rng,
+                scrambles=1):
+    """Columns are queries; masked/unscored pairs are -inf internally.
+
+    Radial cosine is translation invariant; finite-sample yaw invariance is
+    approximate. The null randomises query phases, preserving radial selection,
+    and repeats exactly the selected database/yaw/translation maximum for each
+    query tile. Capture null samples additionally maximise over its query tiles.
+    These definitions are ours, using the existing Fourier correlator.
+    """
+    owners = np.asarray(owners, dtype=int)
+    if prefilter < 0 or scrambles < 1:
+        raise ValueError("prefilter must be nonnegative; scrambles positive")
+    if len(owners) != len(tile_fps) or len(np.unique(owners)) < 2:
+        raise ValueError("matching requires tiles from at least two captures")
+    if not np.array_equal(np.unique(owners), np.arange(owners.max() + 1)):
+        raise ValueError("owners must be contiguous capture indices")
+    n = len(owners)
+    candidates = _tile_candidates(tile_fps, owners, freqs, prefilter)
+    scores = np.full((n, n), -np.inf)
+    offsets = np.full((n, n, 3), np.nan, np.float32)
+    yaws = np.full((n, n), -1, dtype=int)
+    samples = np.empty((scrambles, n))
+    for j, indices in enumerate(candidates):
+        for i in indices:
+            scores[i, j], offsets[i, j], yaws[i, j] = _best_yaw(
+                tile_fps[i, 0], tile_fps[j], freqs, grid, whiten)
+        for draw in range(scrambles):
+            surrogate = phase_surrogate(tile_fps[j], rng)
+            samples[draw, j] = max(
+                _best_yaw(tile_fps[i, 0], surrogate, freqs, grid, whiten)[0]
+                for i in indices)
+    captures, best = _capture_maxima(scores, offsets, yaws, owners)
+    capture_samples = np.array([samples[:, owners == c].max(axis=1)
+                                for c in range(len(captures))])
+    return {"tile_scores": scores, "capture_scores": captures,
+            "tile_offsets": offsets, "tile_yaws": yaws, "best_pairs": best,
+            "noise": _tile_noise(samples.ravel()),
+            "capture_noise": _tile_noise(capture_samples.ravel()),
+            "null_per_tile": samples.T.tolist(),
+            "pairs_scored": sum(map(len, candidates)),
+            "pairs_possible": int(np.sum(owners[:, None] != owners[None, :]))}
+
+
+def tile_retrieval(capture_scores, tile_scores, owners, partners, noise_sigma):
+    """Report capture ranks and partner hit fractions over all query tiles."""
+    owners = np.asarray(owners)
+    rows = []
+    for a, b in partners:
+        for reference, query in ((a, b), (b, a)):
+            indices = np.flatnonzero(owners == query)
+            hits = sum(np.isfinite(tile_scores[:, j]).any()
+                       and owners[np.argmax(tile_scores[:, j])] == reference
+                       for j in indices)
+            rows.append({"query": query, "partner": reference,
+                         "hits": int(hits), "tiles": len(indices),
+                         "hit_fraction": float(hits / len(indices))})
+    return {"retrieval": _retrieval(capture_scores, list(range(len(capture_scores))),
+                                    partners, noise_sigma),
+            "tile_retrieval": rows}
+
+
+def _synthetic_tiles(rng, tile, overlap, min_mass):
+    """Three-cell landmark world; two overlapping cubes and an unrelated world.
+
+    Each capture is a cube of edge 2*tile. The second sees world cells 1 and 2
+    and rotates its local coordinates by pi/2 about y, then translates by
+    tile*[.04, -.03, .02]. Empty space is intentional. Landmark IDs provide
+    exact tile correspondences independently of descriptors and scores.
+    """
+    worlds = []
+    for _ in range(2):
+        cells = [synthetic_scene(rng) for _ in range(3)]
+        for cell in cells:
+            cell.amp[:] = 1
+            cell.mu[:] = rng.uniform(0.08, 0.92, cell.mu.shape)
+        worlds.append(SplatScene(
+            np.concatenate([s.mu + np.array([i, 0, 0]) for i, s in enumerate(cells)]),
+            np.concatenate([s.cov for s in cells]),
+            np.concatenate([s.amp for s in cells])))
+    captures, memberships = [], []
+    shift = np.array([0.04, -0.03, 0.02], np.float32)
+    for owner, (world, start) in enumerate(
+            ((worlds[0], 0), (worlds[0], 1), (worlds[1], 0))):
+        keep = (world.mu[:, 0] >= start) & (world.mu[:, 0] <= start + 2)
+        ids = np.flatnonzero(keep)
+        scene = SplatScene((world.mu[keep] - [start, 0, 0]) / 2,
+                           world.cov[keep] / 4, world.amp[keep])
+        if owner == 1:
+            scene = yaw_scene(scene, np.pi / 2)
+            scene.mu += shift / 2
+        mu = scene.mu * 2
+        total = float(scene.amp[:, 0].sum())
+        tiles, members = [], []
+        for lo in tile_lattice(np.zeros(3), 2 * tile, tile, overlap):
+            mask = np.all((mu * tile >= lo) & (mu * tile <= lo + tile), axis=1)
+            share = float(scene.amp[mask, 0].sum()) / total
+            if mask.any() and share >= min_mass:
+                tiles.append((lo, SplatScene(
+                    (mu[mask] - lo / tile).astype(np.float32),
+                    scene.cov[mask] * 4, scene.amp[mask]), share))
+                members.append(tuple(ids[mask]))
+        captures.append(tiles)
+        memberships.append(members)
+    truth = []
+    base = len(captures[0])
+    for i, ids in enumerate(memberships[0]):
+        for j, other in enumerate(memberships[1]):
+            if ids == other:
+                truth.append({"reference_tile": i, "query_tile": base + j,
+                              "offset_box": [-0.02, -0.03, 0.04],
+                              "yaw_radians": float(3 * np.pi / 2)})
+    return captures, {"capture_offset_units": (np.array([1, 0, 0]) * tile).tolist(),
+                      "query_shift_units": (shift * tile).tolist(),
+                      "query_yaw_radians": float(np.pi / 2), "pairs": truth}
+
+
+def _validate_tiles(parser, args):
+    sigma = args.tile / 40 if args.sigma_units is None else args.sigma_units
+    if not np.isfinite([args.tile, sigma]).all() or min(args.tile, sigma) <= 0:
+        parser.error("--tile and --sigma-units must be finite and positive")
+    if not 0 <= args.overlap < 1 or not 0 <= args.min_mass <= 1:
+        parser.error("--overlap must be in [0,1); --min-mass in [0,1]")
+    if args.prefilter < 0:
+        parser.error("--prefilter must be nonnegative")
+    if args.frame is not None or args.lo is not None or args.null != "phase":
+        parser.error("tiles use per-capture lattices and the phase null")
+
+
+def _nullable(values):
+    array = np.asarray(values, dtype=object)
+    array[~np.isfinite(np.asarray(values))] = None
+    return array.tolist()
+
+
+def _tile_truth_report(truth, matrix):
+    if truth is None:
+        return None
+    reports = []
+    for pair in truth["pairs"]:
+        i, j = pair["reference_tile"], pair["query_tile"]
+        offset = matrix["tile_offsets"][i, j]
+        reports.append({**pair,
+                        "rank1_hit": bool(matrix["tile_scores"][:, j].argmax() == i),
+                        "reverse_rank1_hit": bool(
+                            matrix["tile_scores"][:, i].argmax() == j),
+                        "score": float(matrix["tile_scores"][i, j]),
+                        "recovered_offset_box": _nullable(offset),
+                        "offset_error_box": (float(np.max(np.abs(
+                            offset - pair["offset_box"])))
+                            if np.isfinite(offset).all() else None)})
+        if not np.isfinite(reports[-1]["score"]):
+            reports[-1]["score"] = None
+    return reports
+
+
+def _run_tiles(args):
+    started = perf_counter()
+    rng = np.random.default_rng(args.seed)
+    sigma_units = args.tile / 40 if args.sigma_units is None else args.sigma_units
+    if args.paths:
+        captures = [tile_scenes(p, args.tile, args.overlap, args.min_mass)
+                    for p in args.paths]
+        labels, truth = [Path(p).name for p in args.paths], None
+    else:
+        captures, truth = _synthetic_tiles(
+            rng, args.tile, args.overlap, args.min_mass)
+        labels = ["world/left", "world/right-yawed", "unrelated"]
+    if len(captures) < 2 or any(not tiles for tiles in captures):
+        raise ValueError("need at least two captures, each with retained tiles")
+    owners = np.repeat(np.arange(len(captures)), [len(t) for t in captures])
+    angles = np.arange(args.yaws) * (2 * np.pi / args.yaws)
+    sigma_box = sigma_units / args.tile
+    freqs = sample_frequencies(args.dim, 3, 1 / sigma_box, rng)
+    fps = tile_fingerprints([t for ts in captures for t in ts],
+                            freqs, sigma_box, angles)
+    matrix = tile_matrix(fps, owners, freqs, translation_grid(args.grid, args.limit),
+                         args.whiten, args.prefilter, rng, args.scrambles)
+    partners = args.partner or ([(0, 1)] if truth is not None else [])
+    retrieval = tile_retrieval(matrix["capture_scores"], matrix["tile_scores"],
+                               owners, partners, matrix["capture_noise"]["sigma"])
+    for row in retrieval["retrieval"]:
+        row["above_null_sigma"] = (
+            (row["positive"] - matrix["capture_noise"]["mean"])
+            / matrix["capture_noise"]["sigma"]
+            if matrix["capture_noise"]["sigma"] > 0 else None)
+    for row in retrieval["retrieval"]:
+        for key, value in row.items():
+            if isinstance(value, float) and not np.isfinite(value):
+                row[key] = None
+    result = {**matrix, **retrieval, "labels": labels, "owners": owners.tolist(),
+              "tiles": [{"count": len(ts), "lo": [lo.tolist() for lo, _, _ in ts],
+                         "mass_shares": [mass for _, _, mass in ts]}
+                        for ts in captures],
+              "settings": {"tile": args.tile, "sigma_units": sigma_units,
+                           "sigma_box": sigma_box, "overlap": args.overlap,
+                           "min_mass": args.min_mass, "prefilter": args.prefilter,
+                           "dim": args.dim, "seed": args.seed, "grid": args.grid,
+                           "limit": args.limit, "yaws": args.yaws,
+                           "angles": angles.tolist(), "whiten": args.whiten,
+                           "scrambles": args.scrambles, "numpy": args.numpy,
+                           "synthetic": not bool(args.paths)},
+              "ground_truth": truth,
+              "ground_truth_retrieval": _tile_truth_report(truth, matrix),
+              "control_caveat": "Radial yaw invariance is approximate with finite "
+                               "samples; unscored/masked entries are null. "
+                               "Offsets are box units after rotating the query."}
+    for key in ("tile_scores", "capture_scores", "tile_offsets", "tile_yaws"):
+        result[key] = _nullable(result[key])
+    result["runtime_seconds"] = perf_counter() - started
+    return result
+
+
+def _display_tiles(result, figure):
+    print("Capture matrix (columns query; null means unscored):")
+    for row in result["capture_scores"]:
+        print(" ".join("     -" if x is None else f"{x:6.3f}" for x in row))
+    for row in result["tile_retrieval"]:
+        print("Tile partner:", json.dumps(row))
+    for row in result["retrieval"]:
+        print("Capture partner:", json.dumps(row))
+    print("Tile null:", json.dumps(result["noise"]))
+    print("Capture null:", json.dumps(result["capture_noise"]))
+    print(f"Pairs scored: {result['pairs_scored']}/{result['pairs_possible']}")
+    print(f"Runtime: {result['runtime_seconds']:.3f} s")
+    if figure is not None:
+        _tile_figure(result, figure)
+
+
+def _tile_figure(result, figure):
+    import matplotlib.pyplot as plt
+
+    hits = np.full((len(result["labels"]), len(result["labels"])), np.nan)
+    for row in result["tile_retrieval"]:
+        hits[row["partner"], row["query"]] = row["hit_fraction"]
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
+    for ax, values, title in zip(
+            axes, (np.asarray(result["capture_scores"], dtype=float), hits),
+            ("Capture correlation", "Partner tile rank-1 fraction")):
+        im = ax.imshow(values, vmin=0, vmax=1)
+        ax.set(title=title, xlabel="query capture", ylabel="reference capture")
+        ax.set_xticks(range(len(result["labels"])), result["labels"], rotation=30,
+                      ha="right")
+        ax.set_yticks(range(len(result["labels"])), result["labels"])
+        fig.colorbar(im, ax=ax)
+    figure.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(figure, dpi=150)
+    plt.close(fig)
+
+
 def _parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
@@ -368,10 +710,17 @@ def _parser():
                         "fingerprints (default) or position scrambling")
     parser.add_argument("--extent", type=float)
     parser.add_argument("--partner", type=int, nargs=2, action="append", default=[])
+    parser.add_argument("--tile", type=float, help="tile edge in scene units")
+    parser.add_argument("--sigma-units", type=float, help="blur; default tile/40")
+    parser.add_argument("--overlap", type=float, default=0.5)
+    parser.add_argument("--min-mass", type=float, default=0.01)
+    parser.add_argument("--prefilter", type=int, default=20)
     return parser
 
 
 def _validate(parser, args):
+    if args.tile is not None:
+        _validate_tiles(parser, args)
     if min(args.synthetic, args.yaws, args.dim, args.scrambles) < 1 or args.grid < 2:
         parser.error("counts must be positive and --grid must be at least 2")
     if not np.isfinite([args.sigma, args.limit]).all() or min(
@@ -383,12 +732,15 @@ def _validate(parser, args):
         parser.error("--whiten must lie in [0, 1]")
     if args.frame is not None and args.lo is not None:
         parser.error("--frame and --lo/--extent are alternatives")
-    n = len(args.paths) if args.paths else 4 * args.synthetic
+    n = len(args.paths) if args.paths else (3 if args.tile else 4 * args.synthetic)
     if any(i == j or min(i, j) < 0 or max(i, j) >= n for i, j in args.partner):
         parser.error("--partner requires distinct valid descriptor indices")
 
 
 def _display(result, figure):
+    if "tiles" in result:
+        _display_tiles(result, figure)
+        return
     for title, key in (("Phase correlation", "scores"), ("Radial control", "radial")):
         print(title)
         for i, row in enumerate(result[key]):
@@ -411,6 +763,8 @@ def _display(result, figure):
 
 
 def _run(args):
+    if args.tile is not None:
+        return _run_tiles(args)
     rng = np.random.default_rng(args.seed)
     scenes, labels, groups = _inputs(args, rng)
     freqs = sample_frequencies(args.dim, 3, 1 / args.sigma, rng)
@@ -443,7 +797,7 @@ def main(argv=None):
     parser = _parser()
     args = parser.parse_args(argv)
     _validate(parser, args)
-    if args.paths and args.lo is None:
+    if args.paths and args.lo is None and args.tile is None:
         print("Per-capture crop normalization: use --lo and --extent for a shared "
               "physical frame; these scores cannot establish metric alignment.")
     if args.numpy:
