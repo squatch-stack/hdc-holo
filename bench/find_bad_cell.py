@@ -103,6 +103,57 @@ def _score_cells(pts, resid2, total, bundles, members, smax, bands,
     return scored
 
 
+def _encode(path, footprint, budget, max_level):
+    """Load, optionally blur, assign cells, encode, lay out the slice.
+
+    Everything routes through `bench/adaptive_cells`, including the
+    baseline: `assign_uniform` at level 0 IS the SDK's fixed lattice,
+    and its keys carry the level so one mask function serves both
+    lattices. That is what lets this tool localise the residual of an
+    adaptively-celled encode — the two fixes could previously only be
+    measured together as a single number, never attributed.
+
+    Under `--footprint` the band caps travel with the scales via the
+    sweep's own helper rather than a restatement of the transform; they
+    MUST move, or `encode_bands` refuses the widened splats.
+    """
+    import numpy as np
+
+    from bench import adaptive_cells as ac
+    from holo.capture import (
+        BANDS,
+        band_codebooks,
+        build_scene,
+        mass_mode,
+        slice_grid,
+    )
+
+    scene, smax, box = build_scene(path)
+    bands = BANDS
+    if footprint:
+        from bench.sweep_scenes import _matched_referee
+        scene, smax, bands = _matched_referee(scene, smax, BANDS)
+
+    if budget:
+        def assign(mu, idx, cell):
+            return ac.assign_adaptive(mu, idx, cell, budget, max_level)
+    else:
+        assign = ac.assign_uniform
+
+    from holo.capture import band_of
+    bidx = band_of(smax, bands)
+    per_band = {}
+    for b, (name, _cap, cell) in enumerate(bands):
+        idx = np.where(bidx == b)[0]
+        per_band[name] = assign(scene.mu, idx, cell) if len(idx) else {}
+
+    books = band_codebooks(np.random.default_rng(42))
+    bundles, members = ac.encode(scene, per_band, books, 8192)
+    y = mass_mode(scene.mu[:, 1], scene.amp[:, 0], box[1])
+    pts, shape = slice_grid((0, box[0]), (0, box[2]), "y", y)
+    return scene, smax, bands, books, bundles, members, pts, shape
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("scene")
@@ -110,6 +161,13 @@ def main():
                     help="how many worst cells to report")
     ap.add_argument("--out", default="", help="write JSON here")
     ap.add_argument("--figure", default="", help="write a PNG here")
+    ap.add_argument("--budget", type=int, default=0,
+                    help="adaptive cells: split any cell over this many "
+                         "members (0 = the SDK's fixed lattice)")
+    ap.add_argument("--max-level", type=int, default=8)
+    ap.add_argument("--footprint", action="store_true",
+                    help="run against the matched (pixel-integrated) "
+                         "referee instead of point samples")
     ap.add_argument("--numpy", action="store_true")
     args = ap.parse_args()
 
@@ -117,34 +175,21 @@ def main():
         import bench.cuda_backend as cb
         cb.install()
 
-    from holo.capture import (
-        BANDS,
-        band_codebooks,
-        build_scene,
-        cell_mask,
-        decode_slice,
-        encode_bands,
-        exact_slice,
-        mass_mode,
-        slice_grid,
-    )
+    from bench import adaptive_cells as ac
 
-    scene, smax, box = build_scene(args.scene)
-    books = band_codebooks(np.random.default_rng(42))
-    bundles, members = encode_bands(scene, smax, books)
-
-    y = mass_mode(scene.mu[:, 1], scene.amp[:, 0], box[1])
-    pts, shape = slice_grid((0, box[0]), (0, box[2]), "y", y)
-    truth = exact_slice(pts, scene, members)
-    holo = decode_slice(pts, bundles, books)
+    scene, smax, bands, books, bundles, members, pts, shape = _encode(
+        args.scene, args.footprint, args.budget, args.max_level)
+    truth = ac.exact(pts, scene, members, bands)
+    holo = ac.decode(pts, bundles, books, bands)
     resid2 = (holo[:, 0].astype(np.float64) - truth[:, 0]) ** 2
     total = float(resid2.sum())
     err = float(np.sqrt(total) / np.linalg.norm(truth[:, 0]))
+    ref = "matched (pixel-integrated)" if args.footprint else "sharp"
     print(f"{os.path.basename(args.scene)}: {scene.n:,} splats, "
-          f"top-down rel err {100 * err:.1f}%")
+          f"{ref} referee, top-down rel err {100 * err:.1f}%")
 
     scored = _score_cells(pts, resid2, total, bundles, members, smax,
-                          BANDS, cell_mask)
+                          bands, ac.mask_for)
     top = scored[:args.top]
 
     def table(title, rows):
@@ -184,7 +229,7 @@ def main():
 
     if args.out:
         with open(args.out, "w") as fh:
-            json.dump({"scene": os.path.basename(args.scene),
+            json.dump({"scene": os.path.basename(args.scene), "referee": ref,
                        "splats": int(scene.n), "err_top_down": err,
                        "pixels": len(pts), "cells_scored": len(scored),
                        "top": top}, fh, indent=2)

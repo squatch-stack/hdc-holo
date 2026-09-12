@@ -211,12 +211,12 @@ widening bands puts splats past the last cap, where `encode_bands`
 refuses them. Sharp mode is unchanged and was re-run to prove it —
 cannon returns 30.6% / 150.3% / 31.8% and 3,266 cells, digit for digit.
 
-The X-ray columns are deliberately untouched. That arm already encoded
-`render_mip` and scored against the same mip, so it was a matched pair
-before the flag existed; under `--footprint` its blur becomes
-`sqrt(sigma_fp^2 + SIGMA_MIP^2)` = 0.00810 against 0.008, a 1.3% change,
-which keeps those numbers comparable rather than quietly making them a
-different measurement.
+The X-ray columns in that table are untouched by the referee flag alone.
+That arm already encoded `render_mip` and scored against the same mip, so
+it was a matched pair before the flag existed; under `--footprint` its blur
+becomes `sqrt(sigma_fp^2 + SIGMA_MIP^2)` = 0.00810 against 0.008, a 1.3%
+change. What the X-ray arm *was* carrying is the other fault — see the
+next section.
 
 **What this does not establish.** `springhouse-outside` is the obvious
 story and it is only one scene: the mesh export is the sole capture with
@@ -232,3 +232,46 @@ So the case for the matched referee is the principled one — it is what a
 renderer shows — plus an empirical improvement on every scene. That the
 mechanism is *specifically* sub-pixel sampling remains a lead, not a
 result. Raw rows in `gpu_sweep_matched.json`.
+
+## Both fixes on all four metrics
+
+`bench/sweep_scenes.py --footprint --budget 128`: the matched referee and
+adaptive cells together, and — new in this run — adaptive cells on the
+X-ray's mip encode as well, through level-aware footprint masks in
+`bench/adaptive_cells.py` (`uv_mask_for`, `render_xray`, `exact_xray`). The
+mip arm had the same capacity fault the slices had: on Wilson's Creek, 4
+`r-fine` cells over `DIM_R`, the largest holding 61,704 splats against a
+band median of 163. The render budget is the SAME FRACTION of the bundle
+dimension as the slice budget (128 of 8,192 → 512 of 32,768), not the same
+count — a constant carried across made 16× the memory and the kernel
+killed the oak at 46 GB RSS before that was fixed.
+
+| scene | top sharp | top both | side sharp | side both | x-ray sharp | x-ray both | cells |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| oak | 17.9% | **4.5%** | 23.8% | **5.8%** | 49.9% | **24.2%** | 37,288 |
+| redrock | 25.3% | **5.2%** | 24.5% | **6.2%** | 33.0% | **17.1%** | 11,708 |
+| saguaro | 17.1% | **5.9%** | 23.6% | **9.2%** | 29.7% | **19.0%** | 9,791 |
+| research-library | 37.1% | **6.2%** | 28.9% | **4.2%** | 40.2% | **23.2%** | 15,969 |
+| springhouse-outside | 20.1% | **7.4%** | 23.9% | **7.8%** | 30.8% | **20.9%** | 16,318 |
+| wilsons-creek-gun | 19.4% | **9.9%** | 27.5% | **15.1%** | 25.0% | **17.5%** | 11,630 |
+| brookline-station-2 | 28.2% | **10.0%** | 23.6% | **9.9%** | 29.4% | **20.9%** | 11,452 |
+| cannon | 30.6% | **10.4%** | 150.3% | **80.2%** | 31.8% | **23.7%** | 5,566 |
+| brookline-station | 20.8% | **11.2%** | 24.9% | **14.0%** | 29.8% | **21.1%** | 14,041 |
+| research-library-cannon | 21.5% | **12.2%** | 34.3% | **23.5%** | 27.4% | **19.1%** | 10,906 |
+| redrock-cairn | 27.6% | **16.9%** | 31.3% | **19.8%** | 32.8% | **22.3%** | 12,793 |
+| wilsons-creek | 176.7% | **28.4%** | 27.7% | **4.1%** | 37.2% | **18.4%** | 12,094 |
+
+Every scene improves on every metric; none regresses. The corpus goes from
+17.1–176.7% to 4.5–28.4% top-down and, for the first time, the X-ray
+column tightens: 24.8–49.9% to **17.1–24.2%**. Median top-down gain 2.9x.
+The price is 3.6x the cells corpus-wide (47,372 → 169,556), very unevenly
+— 1.7x for the cannon, 81x for the mesh-derived springhouse, whose 201-cell
+lattice was always the anomaly. A budget stated as a fraction of `d`
+rather than a constant would price that more sensibly. 1,193 s wall.
+
+What survives both fixes is honest, distributed error. `bench/find_bad_cell.py
+--footprint --budget 128` on Wilson's Creek: the worst cell now holds 0.9%
+of the squared error from 2 pixels, with 26 members against a band median
+of 36 (p40.9); 2,912 of 6,498 cells each carry ≥1%. The spike is gone. The
+cannon's side slice (80.2%) remains the one distributed herringbone case
+and neither fix targets it. Raw rows in `gpu_sweep_both.json`.

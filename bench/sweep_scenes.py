@@ -59,7 +59,7 @@ def _describe_crop(path, row, crop_quantile=0.75, crop_margin=1.2):
     row["crop_extent"] = float(2 * crop_margin * radius)
 
 
-def _slices(scene, box, bundles, members, books, row, bands):
+def _slices(scene, box, bundles, members, books, row, bands, ac=None):
     """The two axis-aligned slices, scored against the exact mixture."""
     from holo.capture import (
         decode_slice,
@@ -77,9 +77,19 @@ def _slices(scene, box, bundles, members, books, row, bands):
             ("top_down", slice_grid((0, box[0]), (0, box[2]), "y", y_slice)),
             ("side", slice_grid((0, box[2]), (0, box[1]), "x", x_slice))]:
         t1 = time.time()
-        truth = exact_slice(pts, scene, members, bands)
-        t2 = time.time()
-        holo = decode_slice(pts, bundles, books, bands)
+        # `ac` carries the variable-cell kernels when the encode used
+        # adaptive cells: its keys are (level, i, j, k) and the SDK's
+        # `cell_mask` takes a 3-tuple, so mixing them raises a broadcast
+        # error rather than quietly mis-masking — which is how this got
+        # caught.
+        if ac is None:
+            truth = exact_slice(pts, scene, members, bands)
+            t2 = time.time()
+            holo = decode_slice(pts, bundles, books, bands)
+        else:
+            truth = ac.exact(pts, scene, members, bands)
+            t2 = time.time()
+            holo = ac.decode(pts, bundles, books, bands)
         t3 = time.time()
         # The error is RELATIVE, so it says as much about the
         # denominator as the reconstruction: a slice plane that lands in
@@ -117,7 +127,8 @@ def _slices(scene, box, bundles, members, books, row, bands):
     return panels, errs
 
 
-def _xrays(scene, smax, members, row, bands):
+def _xrays(scene, smax, members, row, bands, ac=None, budget=0,
+           max_level=8):
     """The two orthographic X-ray views, scored against the mip.
 
     Unaffected by the slice referee, and deliberately so: this arm
@@ -127,6 +138,12 @@ def _xrays(scene, smax, members, row, bands):
     sqrt(sigma_fp^2 + SIGMA_MIP^2) — 0.00810 against 0.008, a 1.3%
     change — so these numbers stay comparable to the published sweep
     rather than quietly becoming a different measurement.
+
+    Under --budget the mip encode uses adaptive cells through the
+    level-aware kernels in `bench/adaptive_cells`, whose footprint mask
+    is the SDK's own disc bound with the size read from the key — so at
+    level 0 it is the SDK path exactly, and the published X-ray numbers
+    still reproduce.
     """
     from holo.capture import (
         DIM_R,
@@ -144,20 +161,61 @@ def _xrays(scene, smax, members, row, bands):
     smax_r = np.sqrt(smax ** 2 + SIGMA_MIP ** 2)
     r_books = band_codebooks(np.random.default_rng(43), RENDER_BANDS,
                              DIM_R, s_floor=SIGMA_MIP)
-    r_bundles, r_members = encode_bands(mip, smax_r, r_books,
-                                        RENDER_BANDS, DIM_R)
+    if ac is None:
+        r_bundles, r_members = encode_bands(mip, smax_r, r_books,
+                                            RENDER_BANDS, DIM_R)
+    else:
+        # Adaptive cells on the mip encode too. Measured before this
+        # existed: on wilsons-creek the r-fine band had 4 cells over
+        # DIM_R, the largest holding 61,704 against a median of 163 —
+        # the same capacity fault the slices had, untreated.
+        from holo.capture import DIM
+        from holo.capture import band_of as _band_of
+        # The budget is a FRACTION of the bundle dimension, not a count:
+        # capacity is members-per-d. A constant carried over from the
+        # d=8,192 slice encode is d/64 there and d/256 at DIM_R=32,768,
+        # which made 4x the cells at 4x the width — and with the slice
+        # bundles still resident, the oak reached 46 GB RSS and the
+        # kernel killed it. Same members-per-d here, and the storage is
+        # predicted and refused rather than discovered.
+        r_budget = max(1, budget * DIM_R // DIM)
+        bidx_r = _band_of(smax_r, RENDER_BANDS)
+        per_band = {}
+        for b, (name, _cap, cell) in enumerate(RENDER_BANDS):
+            idx = np.where(bidx_r == b)[0]
+            per_band[name] = (ac.assign_adaptive(mip.mu, idx, cell,
+                                                 r_budget, max_level)
+                              if len(idx) else {})
+        n_cells = sum(len(c) for c in per_band.values())
+        gb = n_cells * mip.channels * DIM_R * 8 / 1e9
+        row["xray_budget"] = r_budget
+        row["xray_cells"] = n_cells
+        if gb > 12.0:
+            print(f"  x-ray: SKIPPED — {n_cells:,} mip cells would be "
+                  f"{gb:.0f} GB of bundles", flush=True)
+            row["xray_skipped"] = f"{gb:.0f} GB projected"
+            return [], {}
+        r_bundles, r_members = ac.encode(mip, per_band, r_books, DIM_R)
     center_p, half, T, res = [0.5, 0.5, 0.5], 0.5, 2.0, 176
     xpanels = []
     for key, view in [("xray_a", [1.0, 0.0, 0.25]),
                       ("xray_b", [1.0, 0.0, 1.0])]:
         t1 = time.time()
-        sharp = exact_xray(scene, members, view, center_p, half, res,
-                           bands=bands)
-        mip_gt = exact_xray(mip, r_members, view, center_p, half, res,
-                            bands=RENDER_BANDS)
+        sharp = (exact_xray(scene, members, view, center_p, half, res,
+                            bands=bands) if members is not None
+                 else None)
+        cam = (view, center_p, half, res)
+        if ac is None:
+            mip_gt = exact_xray(mip, r_members, view, center_p, half, res,
+                                bands=RENDER_BANDS)
+        else:
+            mip_gt = ac.exact_xray(mip, r_members, cam, RENDER_BANDS)
         t2 = time.time()
-        holo = render_xray(r_bundles, r_books, view, center_p, half, res, T,
-                           bands=RENDER_BANDS)
+        if ac is None:
+            holo = render_xray(r_bundles, r_books, view, center_p, half,
+                               res, T, bands=RENDER_BANDS)
+        else:
+            holo = ac.render_xray(r_bundles, r_books, cam, T, RENDER_BANDS)
         t3 = time.time()
         err = float(np.linalg.norm(holo[:, 0] - mip_gt[:, 0])
                     / np.linalg.norm(mip_gt[:, 0]))
@@ -199,7 +257,7 @@ def _matched_referee(scene, smax, bands):
 
 
 def run_one(path, figures=None, crop_quantile=0.75, crop_margin=1.2,
-            matched=False):
+            matched=False, budget=0, max_level=8):
     from holo.capture import (
         BANDS,
         DIM,
@@ -234,15 +292,41 @@ def run_one(path, figures=None, crop_quantile=0.75, crop_margin=1.2,
 
     books = band_codebooks(np.random.default_rng(42))
     t_enc = time.time()
-    bundles, members = encode_bands(scene, smax, books, bands)
+    ac = None
+    if budget:
+        # Adaptive cells for the slice encode; `_xrays` applies the same
+        # budget to the mip encode through the level-aware kernels.
+        from bench import adaptive_cells as ac
+        bidx_a = band_of(smax, bands)
+        per_band = {}
+        for b, (name, _cap, cell) in enumerate(bands):
+            idx = np.where(bidx_a == b)[0]
+            per_band[name] = (ac.assign_adaptive(scene.mu, idx, cell,
+                                                 budget, max_level)
+                              if len(idx) else {})
+        bundles, members = ac.encode(scene, per_band, books, DIM)
+    else:
+        bundles, members = encode_bands(scene, smax, books, bands)
+    row["budget"] = budget
     row["t_encode"] = round(time.time() - t_enc, 1)
     row["cells"] = int(sum(len(b) for b in bundles.values()))
     row["cells_per_band"] = {k: len(v) for k, v in bundles.items()}
 
-    panels, errs = _slices(scene, box, bundles, members, books, row, bands)
-    xpanels, xerrs = _xrays(scene, smax, members, row, bands)
+    panels, errs = _slices(scene, box, bundles, members, books, row,
+                           bands, ac)
+    if ac is not None:
+        # The X-ray arm encodes its own mip bundles at DIM_R; holding
+        # the slice bundles alongside them is what doubled the peak.
+        import gc
+        del bundles
+        gc.collect()
+        members = None
+    xpanels, xerrs = _xrays(scene, smax, members, row, bands, ac, budget,
+                            max_level)
     errs.update(xerrs)
 
+    for k in ("xray_a", "xray_b"):
+        errs.setdefault(k, float("nan"))
     row["err"] = {k: round(v, 4) for k, v in errs.items()}
     row["t_total"] = round(time.time() - t0, 1)
     row["dim"] = DIM
@@ -259,7 +343,7 @@ def run_one(path, figures=None, crop_quantile=0.75, crop_margin=1.2,
     except ImportError:
         row["backend"] = "numpy"
 
-    if figures:
+    if figures and xpanels:
         _figures(figures, row["scene"], scene, panels, xpanels, row["cells"])
     return row
 
@@ -302,8 +386,14 @@ def _figures(outdir, name, scene, panels, xpanels, n_cells):
     fig.patch.set_facecolor(PAGE)
     for col, (vtitle, sharp, mip_gt, holo, err) in enumerate(xpanels):
         ref = np.percentile(mip_gt[:, 0], 99.5)
+        # Under adaptive cells there is no SDK-lattice membership to
+        # build the full-detail panel from, so it is absent rather than
+        # faked; the mip row stands in and the label says which.
+        detail = (sharp, "analytic line integrals, full detail") \
+            if sharp is not None \
+            else (mip_gt, "full detail unavailable (adaptive cells)")
         for r, (field, label) in enumerate([
-                (sharp, "analytic line integrals, full detail"),
+                detail,
                 (mip_gt, f"analytic, mip σ_b = {SIGMA_MIP}"),
                 (holo, "rendered from the mip bundles")]):
             ax = axes[r, col]
@@ -330,6 +420,10 @@ def main():
     ap.add_argument("--dir", default="results")
     ap.add_argument("--numpy", action="store_true",
                     help="skip the CUDA backend (reference timings)")
+    ap.add_argument("--budget", type=int, default=0,
+                    help="adaptive cells on the slice encode: split any "
+                         "cell over this many members (0 = fixed lattice)")
+    ap.add_argument("--max-level", type=int, default=8)
     ap.add_argument("--footprint", action="store_true",
                     help="matched referee: encode and score the "
                          "pixel-integrated field instead of point samples")
@@ -358,7 +452,8 @@ def main():
             row = run_one(path, figures=figdir,
                           crop_quantile=args.crop_quantile,
                           crop_margin=args.crop_margin,
-                          matched=args.footprint)
+                          matched=args.footprint, budget=args.budget,
+                          max_level=args.max_level)
         except Exception as exc:
             # One unloadable capture must not cost the other ten their
             # run; the sweep is long and unattended.

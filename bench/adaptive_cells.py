@@ -325,3 +325,112 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# ---------------------------------------------------------------------------
+# X-ray over variable-size cells
+# ---------------------------------------------------------------------------
+
+def uv_mask_for(uv, key, cell, reach, center, u1, u2):
+    """`capture._cell_uv_mask` with the cell's size read from its key.
+
+    Same bound as the SDK's: the cell's circumscribed sphere, projected
+    to a disc and dilated by `reach`. Orthographic projection is a
+    contraction, so the 3D circumradius always covers the 2D footprint;
+    at level 0 this is the SDK mask exactly, which is what keeps the
+    published X-ray numbers reproducible under this path.
+
+    It is also the loose bound. Measured against the exact projected
+    hexagon on the two views the X-ray arm uses, the disc over-selects
+    by 1.28-1.54x at level 0 where a support-function rectangle
+    (h * ||u1||_1, h * ||u2||_1 — the SnugBox idea from Speedy-Splat,
+    arXiv 2412.00578) over-selects by 1.03-1.04x. Once `reach` exceeds
+    the cell, from level 2 down, every bound converges and the shape
+    stops mattering. The rectangle is not used here because it would
+    move level-0 numbers; it belongs in a change of its own.
+    """
+    level = key[0]
+    size = cell / (1 << level)
+    c3 = (np.asarray(key[1:], dtype=np.float32) + 0.5) * size \
+        - np.asarray(center, dtype=np.float32)
+    cuv = np.array([c3 @ u1, c3 @ u2], dtype=np.float32)
+    r = np.sqrt(3.0) / 2.0 * size + reach
+    return ((uv - cuv) ** 2).sum(axis=1) <= r * r
+
+
+def render_xray(bundles, books, cam, t_extent, bands, chunk=2048):
+    """`capture.render_xray` over variable-size cells; `cam` is
+    (view, center, half, res)."""
+    from holo import accel as _accel
+    from holo.capture import _pixel_grid, camera_basis_yup
+
+    view, center, half, res = cam
+    v, u1, u2 = camera_basis_yup(view)
+    uv, origins = _pixel_grid(center, v, u1, u2, half, res, t_extent)
+    n_ch = next(b.shape[0] for cells in bundles.values()
+                for b in cells.values())
+    out = np.zeros((len(origins), n_ch), dtype=np.float32)
+    for name, cap, cell in bands:
+        freqs, _, weights = books[name]
+        reach = 3.0 * cap
+        a = (freqs @ v).astype(np.float64)
+        T = float(t_extent)
+        F = np.where(np.abs(a) * T < 1e-6, T,
+                     (np.exp(1j * a * T) - 1.0)
+                     / (1j * np.where(a == 0, 1, a)))
+        wf = (weights * F).astype(np.complex64)
+        pairs = [(uv_mask_for(uv, k, cell, reach, center, u1, u2),
+                  b * wf[None, :]) for k, b in bundles[name].items()]
+        pairs = [(m, b) for m, b in pairs if m.any()]
+        if not pairs:
+            continue
+        if _accel.active():
+            out += _accel.cell_decode(freqs, origins, pairs)
+            continue
+        for plo in range(0, len(origins), chunk):
+            pts = origins[plo:plo + chunk]
+            E = np.exp(1j * (pts @ freqs.T)).astype(np.complex64)
+            for m, wb in pairs:
+                mm = m[plo:plo + chunk]
+                if mm.any():
+                    out[plo:plo + chunk][mm] += \
+                        (E[mm] @ wb.T.astype(np.complex64)).real
+    return out
+
+
+def exact_xray(scene, members, cam, bands, chunk=1024):
+    """`capture.exact_xray` over variable-size cells — the rank-1
+    downdate form (#93), same masks as `render_xray` above; `cam` is
+    (view, center, half, res)."""
+    from holo.capture import _pixel_grid, camera_basis_yup
+
+    view, center, half, res = cam
+    v, u1, u2 = camera_basis_yup(view)
+    uv, _ = _pixel_grid(center, v, u1, u2, half, res, 0.0)
+    plane = (np.asarray(center, dtype=np.float32)
+             + uv[:, :1] * u1 + uv[:, 1:] * u2)
+    out = np.zeros((len(plane), scene.channels), dtype=np.float32)
+    ic64 = np.linalg.inv(scene.cov.astype(np.float64))
+    v64 = np.asarray(v, dtype=np.float64)
+    icv = ic64 @ v64
+    q = np.einsum("ni,i->n", icv, v64)
+    downdate = (ic64 - (icv[:, :, None] * icv[:, None, :])
+                / q[:, None, None]).astype(np.float32)
+    prefactor = np.sqrt(2 * np.pi / q).astype(np.float32)
+    for name, cap, cell in bands:
+        reach = 3.0 * cap
+        for k, ids in members[name].items():
+            m = uv_mask_for(uv, k, cell, reach, center, u1, u2)
+            if not m.any():
+                continue
+            pts = plane[m]
+            acc = np.zeros((len(pts), scene.channels), dtype=np.float32)
+            for slo in range(0, len(ids), chunk):
+                sub = ids[slo:slo + chunk]
+                delta = pts[None, :, :] - scene.mu[sub][:, None, :]
+                perp = np.einsum("npi,nij,npj->np", delta,
+                                 downdate[sub], delta)
+                line = prefactor[sub][:, None] * np.exp(-0.5 * perp)
+                acc += line.T @ scene.amp[sub]
+            out[m] += acc
+    return out
