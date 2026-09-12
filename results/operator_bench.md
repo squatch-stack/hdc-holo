@@ -1,4 +1,4 @@
-# Operator benchmark: CPU template, GPU measurements pending
+# Operator benchmark: CPU template and 5090 rows
 
 HyperSpace code was not accessible; the operators and timing protocol here are ours.
 The research pass checked [arXiv:2604.15113](https://arxiv.org/abs/2604.15113),
@@ -70,12 +70,42 @@ is shown on cleanup rows; see the separate equal-bytes table for the matched pai
 | cleanup | numpy | 1024 | 1000 | 6.905 | 192558080 | 0.179688 |
 | cleanup_hrr | numpy | 1024 | 1000 | 6.970 | 192558080 | 0.253906 |
 | bind_hrr | numpy | 1024 | 1000 | 0.711 | 192558080 | — |
-| bind | cupy | TBD | TBD | pending | pending | pending |
-| bundle | cupy | TBD | TBD | pending | pending | pending |
-| similarity | cupy | TBD | TBD | pending | pending | pending |
-| cleanup | cupy | TBD | TBD | pending | pending | pending |
-| cleanup_hrr | cupy | TBD | TBD | pending | pending | pending |
-| bind_hrr | cupy | TBD | TBD | pending | pending | pending |
+| bind | cupy | 4096 | 100 | 0.575 | 2589995520 | — |
+| bundle | cupy | 4096 | 100 | 0.092 | 2589995520 | — |
+| similarity | cupy | 4096 | 100 | 0.757 | 2589995520 | — |
+| cleanup | cupy | 4096 | 100 | 0.554 | 2589995520 | 0.0903 (FHRR@d, N=2048) / 0.1191 (FHRR@d/2, N=1024) |
+| cleanup_hrr | cupy | 4096 | 100 | 0.445 | 2589995520 | 0.1035 (HRR@d, N=1024) |
+| bind_hrr | cupy | 4096 | 100 | 0.369 | 2589995520 | — |
+| bind | cupy | 4096 | 1000 | 0.574 | 2846487552 | — |
+| bundle | cupy | 4096 | 1000 | 0.341 | 2846487552 | — |
+| similarity | cupy | 4096 | 1000 | 0.753 | 2846487552 | — |
+| cleanup | cupy | 4096 | 1000 | 4.123 | 2846487552 | 0.0903 (FHRR@d, N=2048) / 0.1191 (FHRR@d/2, N=1024) |
+| cleanup_hrr | cupy | 4096 | 1000 | 3.396 | 2846487552 | 0.1035 (HRR@d, N=1024) |
+| bind_hrr | cupy | 4096 | 1000 | 0.370 | 2846487552 | — |
+| bind | cupy | 4096 | 10000 | 0.579 | 5206935552 | — |
+| bundle | cupy | 4096 | 10000 | 3.205 | 5206935552 | — |
+| similarity | cupy | 4096 | 10000 | 0.770 | 5206935552 | — |
+| cleanup | cupy | 4096 | 10000 | 40.854 | 5206935552 | 0.0903 (FHRR@d, N=2048) / 0.1191 (FHRR@d/2, N=1024) |
+| cleanup_hrr | cupy | 4096 | 10000 | 33.565 | 5206935552 | 0.1035 (HRR@d, N=1024) |
+| bind_hrr | cupy | 4096 | 10000 | 0.368 | 5206935552 | — |
+| bind | cupy | 8192 | 100 | 1.220 | 7850701312 | — |
+| bundle | cupy | 8192 | 100 | 0.086 | 7850701312 | — |
+| similarity | cupy | 8192 | 100 | 0.947 | 7850701312 | — |
+| cleanup | cupy | 8192 | 100 | 0.743 | 7850701312 | 0.0593 (FHRR@d, N=4096) / 0.0903 (FHRR@d/2, N=2048) |
+| cleanup_hrr | cupy | 8192 | 100 | 0.554 | 7850701312 | 0.0850 (HRR@d, N=2048) |
+| bind_hrr | cupy | 8192 | 100 | 1.066 | 7850701312 | — |
+| bind | cupy | 8192 | 1000 | 1.221 | 8343122944 | — |
+| bundle | cupy | 8192 | 1000 | 0.399 | 8343122944 | — |
+| similarity | cupy | 8192 | 1000 | 0.946 | 8343122944 | — |
+| cleanup | cupy | 8192 | 1000 | 5.464 | 8343122944 | 0.0593 (FHRR@d, N=4096) / 0.0903 (FHRR@d/2, N=2048) |
+| cleanup_hrr | cupy | 8192 | 1000 | 4.069 | 8343122944 | 0.0850 (HRR@d, N=2048) |
+| bind_hrr | cupy | 8192 | 1000 | 1.060 | 8343122944 | — |
+| bind | cupy | 8192 | 10000 | 1.225 | 13062866944 | — |
+| bundle | cupy | 8192 | 10000 | 3.906 | 13062866944 | — |
+| similarity | cupy | 8192 | 10000 | 0.951 | 13062866944 | — |
+| cleanup | cupy | 8192 | 10000 | 54.053 | 13062866944 | 0.0593 (FHRR@d, N=4096) / 0.0903 (FHRR@d/2, N=2048) |
+| cleanup_hrr | cupy | 8192 | 10000 | 40.420 | 13062866944 | 0.0850 (HRR@d, N=2048) |
+| bind_hrr | cupy | 8192 | 10000 | 1.062 | 13062866944 | — |
 | bind | mlx | TBD | TBD | pending | pending | pending |
 | bundle | mlx | TBD | TBD | pending | pending | pending |
 | similarity | mlx | TBD | TBD | pending | pending | pending |
@@ -139,3 +169,38 @@ Quality debt remains 50 (baseline 50); strict facts reports 0 FAIL, 23 WARN.
 The large d=32768, K=100000, Q=4096 command was also exercised: both its run
 and its K=1000 verification corner were refused under the 12 GB budget before
 workload allocation, and the refusal report was written successfully.
+
+## 5090 rows (2026-09-12)
+
+RTX 5090, CuPy 13.6, TF32 off, best of 3, `--verify` corners at d=4096 and
+8192 (K=1000) agreeing with NumPy to 2e-7 or better on every operator once
+the checksum summed absolute values (see the verification paragraph). K=10⁴
+at d=8192 needed `--max-gb 26`; K=10⁵ at any d and every d=32768 row were
+refused by the byte prediction (28.8 GB, 60 GB, and 96–305 GB) — the
+refusal is doing its job, but see the second caveat.
+
+- **Cleanup dominates, as HyperSpace reports.** At K=10⁴ cleanup is
+  40.9 ms (FHRR) and 33.6 ms (HRR) at d=4096, 54.1 and 40.4 ms at
+  d=8192, against sub-millisecond bind, similarity and bind_hrr and a
+  3–4 ms bundle. HRR cleanup is 18–25% cheaper at the same d (one real
+  GEMM against two); at equal bytes (FHRR at d/2) the FLOPs are equal by
+  construction.
+- **The equal-bytes accuracy row leans FHRR on the GPU**, the opposite
+  of the CPU corner: at 16 KB/codeword FHRR@d/2 recovers 11.9% against
+  HRR@d 10.4% (d=4096); at 32 KB, 9.0% against 8.5% (d=8192). Do not
+  read that as a result yet, for two reasons below.
+
+Two caveats that are design defects in this tool, not findings:
+
+1. **The 50%-of-nominal-capacity load is the failure regime.** Every
+   variant recovers 6–12% top-1 there, so the row compares how three
+   codes fail rather than how they work. The load should be chosen where
+   recovery is high (say 10% of `d/2`), and the accuracy stated as a
+   curve over N rather than one point.
+2. **The accuracy probe is quadratic in d.** It bundles N=d/2 items of
+   dimension d, so its memory is ∝ d² and d=32768 predicts 96 GB before
+   any codebook — the reason the largest column is empty. Cap N (the
+   comparison needs equal N across the three rows, not N ∝ d) and the
+   d=32768 timing rows fit in 12 GB.
+
+Both are the next lane for this tool; the rows above stand as timings.
