@@ -332,7 +332,10 @@ def main(argv=None):
     parser.add_argument("--tol", type=float, default=1e-5)
     parser.add_argument("--figure", type=Path)
     parser.add_argument("--synthetic", action="store_true")
-    args = parser.parse_args(argv)
+    # Positionals may follow options (`out before --dim 32 after`); on
+    # Python 3.9 parse_args leaves a trailing positional unrecognised when
+    # an earlier one is optional, which failed CI's 3.9 job on every push.
+    args = parser.parse_intermixed_args(argv)
     _validate(parser, args)
     if args.synthetic:
         result = _ladder(synthetic_fixture(args.seed), 8.0, args.dim, args.seed,
