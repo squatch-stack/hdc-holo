@@ -164,3 +164,35 @@ def test_retrieval_excludes_self_and_other_known_positives():
     explicit = place._retrieval(scores, list(range(4)), [(0, 1)], 0)
     assert len(explicit) == 2
     assert explicit[0]["separation_sigma"] is None
+
+
+def test_phase_surrogate_keeps_radial_power_and_breaks_correlation():
+    rng = np.random.default_rng(5)
+    scene = place.synthetic_scene(rng)
+    freqs = sample_frequencies(512, 3, 1 / 0.05, rng)
+    grid = place.translation_grid(5)
+    fp = place.fingerprint(scene, freqs, 0.05)
+    surrogate = place.phase_surrogate(fp, rng)
+    np.testing.assert_allclose(np.abs(surrogate), np.abs(fp), rtol=1e-5)
+    np.testing.assert_allclose(place.radial_power(surrogate, freqs),
+                               place.radial_power(fp, freqs), rtol=1e-4)
+    match = place.correlate(fp, fp, freqs, grid)[0]
+    assert place.correlate(fp, surrogate, freqs, grid)[0] < match / 3
+
+
+def test_frame_from_reference_matches_build_scene(tmp_path):
+    rng = np.random.default_rng(9)
+    n = 60
+    pos = rng.uniform(-3, 3, (n, 3)).astype(np.float32)
+    scale = rng.uniform(0.01, 0.05, (n, 3)).astype(np.float32)
+    rgba = rng.uniform(0.2, 1, (n, 4)).astype(np.float32)
+    quat = rng.normal(size=(n, 4)).astype(np.float32)
+    quat /= np.linalg.norm(quat, axis=1, keepdims=True)
+    path = tmp_path / "ref.spz"
+    save_spz(path, pos, scale, rgba, quat)
+    lo, extent = place.crop_box(path)
+    framed, _, _ = place.build_scene_fixed(path, lo, extent)
+    stock, _, _ = build_scene(path, verbose=False)
+    np.testing.assert_allclose(framed.mu, stock.mu, atol=1e-6)
+    np.testing.assert_allclose(framed.cov, stock.cov, rtol=1e-5)
+    np.testing.assert_allclose(framed.amp, stock.amp)
