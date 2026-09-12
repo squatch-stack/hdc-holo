@@ -265,3 +265,47 @@ for k in (100, 1000, 10000):
     print(k, predict_bytes(32768, k, 4096, max_items=4096))
 PYTHON
 ```
+
+## 5090 load curves (2026-09-12, Q=1024)
+
+`--backend cupy --d 4096,8192,32768 --K 100,1000,10000 --Q 1024 --reps 3 --max-gb 26 --verify`;
+every `--verify` corner agreed with NumPy to 2.4e-7 or better; d=32768 at K=10⁴ refused
+(the codebook planes are held whole). N is identical across the three rows at every load.
+
+Timings (ms, best of three):
+
+| d | K | bind | bundle | similarity | cleanup | cleanup_hrr | bind_hrr |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 4096 | 100 | 0.11 | 0.09 | 0.21 | 0.16 | 0.12 | 0.09 |
+| 4096 | 1000 | 0.11 | 0.33 | 0.20 | 1.33 | 1.07 | 0.09 |
+| 4096 | 10000 | 0.11 | 3.25 | 0.21 | 13.12 | 10.51 | 0.09 |
+| 8192 | 100 | 0.24 | 0.09 | 0.26 | 0.21 | 0.14 | 0.16 |
+| 8192 | 1000 | 0.23 | 0.41 | 0.25 | 1.73 | 1.22 | 0.16 |
+| 8192 | 10000 | 0.24 | 3.97 | 0.25 | 16.93 | 12.27 | 0.16 |
+| 32768 | 100 | 1.22 | 0.14 | 0.61 | 0.55 | 0.32 | 1.08 |
+| 32768 | 1000 | 1.22 | 1.14 | 0.60 | 3.84 | 2.32 | 1.08 |
+
+Top-1 recovery by load (fraction of the equal-bytes pair's nominal d/4; N in brackets):
+
+| d | row | 0.02 | 0.05 | 0.1 | 0.2 | 0.5 |
+|---:|---|---:|---:|---:|---:|---:|
+| 4096 | FHRR@d | 1.000 (20) | 1.000 (51) | 1.000 (102) | 1.000 (205) | 0.795 (512) |
+| 4096 | FHRR@d/2 | 1.000 (20) | 1.000 (51) | 1.000 (102) | 0.946 (205) | 0.408 (512) |
+| 4096 | HRR@d | 1.000 (20) | 1.000 (51) | 1.000 (102) | 0.946 (205) | 0.418 (512) |
+| 8192 | FHRR@d | 1.000 (41) | 1.000 (102) | 1.000 (205) | 1.000 (410) | 0.772 (1024) |
+| 8192 | FHRR@d/2 | 1.000 (41) | 1.000 (102) | 1.000 (205) | 0.927 (410) | 0.350 (1024) |
+| 8192 | HRR@d | 1.000 (41) | 1.000 (102) | 1.000 (205) | 0.910 (410) | 0.339 (1024) |
+| 32768 | FHRR@d | 1.000 (164) | 1.000 (410) | 1.000 (819) | 0.998 (1638) | 0.634 (4096) |
+| 32768 | FHRR@d/2 | 1.000 (164) | 1.000 (410) | 0.999 (819) | 0.842 (1638) | 0.220 (4096) |
+| 32768 | HRR@d | 1.000 (164) | 1.000 (410) | 0.999 (819) | 0.862 (1638) | 0.221 (4096) |
+
+**Verdict at equal bytes: a tie.** At every load through 0.2 the pair (FHRR at d/2, HRR at d)
+recovers the same fraction to within a point — 0.946 / 0.946 at d=4096, 0.927 / 0.910 at
+d=8192, 0.842 / 0.862 at d=32768 — and at 0.5, where all three rows are past useful capacity,
+they remain within noise (0.408 / 0.418, 0.350 / 0.339, 0.220 / 0.221). FHRR at d holds
+0.63–0.80 at 0.5 because it has twice the bytes. So HyperSpace's "HRR needs half the
+memory" is a same-d statement: at equal bytes the two codes recover the same, and the choice
+between them is about operators, not capacity. Cleanup still dominates the operator table
+(13–17 ms at K=10⁴ against sub-millisecond bind and similarity), and HRR's single real GEMM
+is 20–30% cheaper than FHRR's two at the same K.
+
