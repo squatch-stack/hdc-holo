@@ -1,70 +1,13 @@
-"""Analytic projection through the WHOLE pipeline (issue #2).
+"""Driver for opt-in analytic projection; see docs/projection.md.
 
-`run_analytic_projection.py` measures one cell's reconstruction. This
-encodes EVERY cell analytically, decodes the same evidence slices, and
-compares against the same exact-mixture referee — the quantity every
-other number in this repo is reported in. Measured:
-
-    saguaro   forward 0.3501 / 0.2132  ->  0.2170 / 0.1367   +38% / +36%
-    train     forward 0.9591 / 0.4948  ->  0.3765 / 0.1716   +61% / +65%
-
-Biggest on the DENSE scene, which is the one more dimension could not
-help (issue #3) and where orthogonal coupling bought 1.9%.
-
-SCORED PER BAND AS WELL AS IN AGGREGATE, because the aggregate alone is
-not an acceptance test. On Red Rock at keep=0.55 the slice error
-IMPROVES while every cell of the `fine` band sits at 1030x the forward
-bundle norm: that band holds 0.7% of the splats (3,854 against xfine's
-542,122), so destroying it barely moves a number xfine dominates. The
-second referee is close to free — the bands partition the splats, so
-four single-band passes touch what one full pass does.
-
---spectrum reports what a `keep` fraction actually CUTS AT, per band,
-and needs no capture at all: the Gram depends on (codebook, cell size,
-window width) alone. `keep` is a rank fraction, which is not the same
-thing as a regularisation level, and the two differ per band.
-
-Three things make this affordable, and the third is a trap:
-
-1. The windowed right-hand side IS `spectral_bundle` applied to a
-   modified scene — covariance shrunk by the window, mean pulled toward
-   the cell centre, amplitude scaled. Verified to 9e-7 against a direct
-   per-splat loop, so the existing fast path does the work.
-2. `G_c = D G0 D^H`, so ONE eigendecomposition serves a whole band:
-   63 s at d=8192, amortised over thousands of cells.
-3. TRUNCATION IS MANDATORY AT PRODUCTION d. The window Gram's condition
-   number is 1.6e20 to 3.2e20 at d=8192 — past what float64 can invert
-   — and solving at full rank returns garbage of order 1e5, not a
-   degraded answer. Keeping 25% of the spectrum is safe across all four
-   bands and is close to the ~3,300 space-bandwidth DOF a cell of this
-   size actually supports. An earlier per-cell study at d=2048 found
-   full rank stable and concluded no truncation was needed; that was an
-   artifact of the smaller d.
-
-Cost: encoding is ~15x slower than forward (770 s against 51 s on
-train). Decode and storage are unchanged — the output is an ordinary
-bundle.
-
-SWEEP IN ONE PROCESS, NOT ONE PROCESS PER SETTING. The Gram depends
-only on (codebook, cell size, window width) — not on the regulariser
-and not on the scene — so every setting in a sweep can share it, and
-every TSVD truncation can share one eigendecomposition. Running the
-settings as concurrent processes instead pays N times for the same
-537 MB matrix AND N times for the same O(d^3), which is how this
-pipeline OOM-killed the machine twice.
-
-Usage:
-    python -m examples.run_projection_pipeline data/train.splat [keep_frac]
-    python -m examples.run_projection_pipeline data/train.splat \
-        --sweep tikhonov=1e-6,1e-3,1e-1 --sweep keep=0.25
-    python -m examples.run_projection_pipeline data/iphone/redrock.ply \\
-        --sweep keep=0.25 --sweep eps=1e-3,1e-4,1e-5
-    python -m examples.run_projection_pipeline --spectrum
+Run a capture with ``python -m examples.run_projection_pipeline SCENE``.
+Legacy positional keep and --sweep forms remain available; settings run
+sequentially through the public API. --synthetic is a seeded CPU smoke test.
+Use --dim 2048 for a CPU-scale fixture, or --spectrum for band spectra.
 """
 import os
 import sys
 import time
-from collections import namedtuple
 
 import numpy as np
 
@@ -80,80 +23,14 @@ from holo.capture import (
     mass_mode,
     slice_grid,
 )
-from holo.spectral import SplatScene, spectral_bundle
-
-#: A solved bundle whose norm exceeds the forward-encoded one by more
-#: than this has diverged. Truncation is a knife edge: on saguaro,
-#: keep=0.55 is the best setting measured (+59.3%) at a ratio of 5.3,
-#: and keep=0.70 is 37x WORSE than not projecting at all (-1417%) at a
-#: ratio of 97. Nothing good exceeds 5.3 and nothing broken comes below
-#: 97, so a threshold in that gap catches every divergence with room to
-#: spare — and it is checkable before anything is decoded.
-DIVERGENCE_RATIO = 20.0
-
-#: Bytes a batched solve may hold in its right-hand side and solution.
-#: Cells per chunk falls out of this and the actual (channels, d) shape,
-#: so a wider capture takes smaller chunks instead of more memory.
-CHUNK_BUDGET = 0.25 * (1 << 30)
-
-
-def cell_chunk(channels, dim):
-    """How many cells fit CHUNK_BUDGET. rhs and sol are both
-    (chunk*channels, dim) complex128 — 16 bytes each, twice over."""
-    per_cell = 2 * channels * dim * 16
-    return max(1, int(CHUNK_BUDGET // per_cell))
-
-
-def eigen(G):
-    ev, V = np.linalg.eigh(G)
-    o = np.argsort(np.abs(ev))[::-1]
-    return ev[o], V[:, o]
-
-def window_bundle(scene, ids, centre, s, freqs):
-    """RHS of the windowed projection for one cell, all channels."""
-    cov = scene.cov[ids].astype(np.float64)
-    mu = (scene.mu[ids] - centre).astype(np.float64)
-    prec = np.linalg.inv(cov)
-    joint = prec + np.eye(3) / s**2
-    shrunk = np.linalg.inv(joint)
-    pulled = np.einsum("nij,njk,nk->ni", shrunk, prec, mu)
-    scale = np.exp(-0.5 * (np.einsum("ni,nij,nj->n", mu, prec, mu)
-                           - np.einsum("ni,nij,nj->n", pulled, joint, pulled)))
-    mod = SplatScene(mu=pulled.astype(np.float32),
-                     cov=shrunk.astype(np.float32),
-                     amp=(scene.amp[ids] * scale[:, None]).astype(np.float32))
-    return spectral_bundle(mod, freqs)          # (C, d)
-
-def build_gram(fd, s):
-    """The band's Gaussian-window Gram, in ONE d x d buffer.
-
-    G_jk = (2 pi s^2)^{3/2} exp(-s^2 |w_j - w_k|^2 / 2), real symmetric.
-    The readable form holds three 537 MB arrays at once at d=8192 and
-    allocates six in all; this holds two and allocates two, by doing
-    every step after the two products in place.
-
-    BIT-IDENTICAL, and that is a requirement rather than a bonus. The
-    tempting version folds the gemm into one buffer — G = fd @ fd.T,
-    then *= -2, += sq[:,None], += sq[None,:] — which reassociates
-    (a + b) - 2c into (-2c + a) + b and moves the Gram by one ulp. That
-    is 5e-15 relative on G, and harmless-looking, but this solve is
-    ill-conditioned by construction (1.6e20 at d=8192, which is why
-    truncation is mandatory) and the truncated pseudo-inverse amplified
-    that ulp to 2.8e-8 on the operator at d=1024 alone. Identical
-    arithmetic is what lets every downstream number stand unre-derived.
-    """
-    sq = (fd ** 2).sum(1)
-    G = sq[:, None] + sq[None, :]         # buffer 1
-    prod = fd @ fd.T                      # buffer 2
-    prod *= 2.0                           # exact: a power of two
-    G -= prod                             # (a + b) - 2c, in that order
-    del prod
-    np.maximum(G, 0.0, out=G)             # |w_j - w_k|^2, clipped
-    G *= -0.5 * s ** 2
-    np.exp(G, out=G)
-    G *= (2 * np.pi * s ** 2) ** 1.5
-    return G
-
+from holo.projection import (
+    Referee,
+    band_errors,
+    build_gram,
+    project_cells,
+    rel_err,
+)
+from holo.spectral import SplatScene
 
 #: What `--spectrum` reports. The eps grid spans the regime the
 #: pipeline actually operates in: at d=8192 the shipped keep=0.25 cuts
@@ -248,259 +125,6 @@ def _spectrum_tables(spectra, dim):
     for name, a in spectra.items():
         print("  %-7s %s" % (name, " ".join("%11.3f" % at_eps(a, e)
                                             for e in SPECTRUM_EPS)))
-
-
-class BandSolver:
-    """One band's Gram, reused across every setting in a sweep.
-
-    The Gram depends on (codebook, cell size, window width) alone — not
-    on the regulariser, not on the scene — so a sweep builds it once.
-    TSVD additionally shares ONE eigendecomposition across every
-    truncation, because truncating is just taking fewer columns of a
-    spectrum already computed. That is the whole reason a sweep belongs
-    in one process: N processes pay N times for both.
-    """
-
-    def __init__(self, G):
-        self.G = G
-        self.n = G.shape[0]
-        # G is exp(negative) times a positive constant, so it is strictly
-        # positive and max() is abs().max() without the 537 MB abs copy.
-        self.scale = float(G.max())
-        self.diag0 = G.diagonal().copy()
-        self._eig = None
-
-    def _restore(self):
-        """Tikhonov writes lambda into the diagonal in place; every
-        other use needs the original back. Restoring on entry rather
-        than on exit means a sweep can interleave the two in any order."""
-        self.G.flat[::self.n + 1] = self.diag0
-
-    def eigen(self):
-        if self._eig is None:
-            self._restore()
-            self._eig = eigen(self.G)
-        return self._eig
-
-    def operator(self, setting):
-        """The per-band solve operator for one setting, and a label.
-
-        TSVD needs the eigendecomposition (O(d^3), 106 s at d=8192 and
-        98% of the fixed cost). Tikhonov needs none: an explicit inverse
-        is ~6x cheaper and leaves the per-cell cost a matvec either way.
-        """
-        kind, val = setting
-        if kind in ("keep", "eps"):
-            ev, vec = self.eigen()
-            keep = self.rank(ev, kind, val)
-            # UNCHANGED ARITHMETIC. Both truncations differ only in how
-            # many columns they take; the operator built from those
-            # columns is the same expression it always was, so every
-            # keep= number in docs/fit.md still stands unre-derived.
-            op = (vec[:, :keep] / ev[:keep][None, :]) @ vec[:, :keep].T
-            return op, ("keep=%d" % keep if kind == "keep"
-                        else "eps=%.0e -> keep=%d" % (val, keep))
-        self._restore()
-        # in place: `G + lam * np.eye(d)` allocates a 537 MB identity AND
-        # a 537 MB sum for a change that touches d of d*d entries
-        self.G.flat[::self.n + 1] = self.diag0 + val * self.scale
-        return np.linalg.inv(self.G), "tikhonov lam=%.0e" % val
-
-    @staticmethod
-    def rank(ev, kind, val):
-        """How many eigenvalues survive, by rank fraction or by threshold.
-
-        These are NOT the same knob. `keep` takes the largest `val*d` of
-        them and says nothing about how small the smallest survivor is —
-        and the operator divides by that survivor. Each band's Gram
-        decays at its own rate, so one rank fraction lands at a wildly
-        different eigenvalue per band: at d=8192, keep=0.55 cuts `fine`
-        at 2.47e-12 and `coarse` at 1.79e-03, a factor of 7e8 in what it
-        actually regularises. `eps` cuts at the level instead, so it
-        adapts to each band's spectrum by construction — which is what
-        the Fourier-extension literature does, with accuracy going as
-        sqrt(eps). See docs/fit.md and `--spectrum`.
-        """
-        if kind == "keep":
-            return max(1, round(val * len(ev)))
-        a = np.abs(ev)
-        return max(1, int((a > val * a[0]).sum()))
-
-    def close(self):
-        self._eig = None
-        self.G = None
-
-
-#: Everything about a band that the per-cell solve needs, so the solve
-#: takes a geometry rather than eight loose positional arguments.
-BandGeom = namedtuple("BandGeom", "cell s freqs fd weights")
-
-
-def solve_band(M, scene, members_band, geom, chunk):
-    """Every cell of one band through one operator, in batches.
-
-    Identical arithmetic to solving cells one at a time — the same M
-    against the same right-hand sides — but one BLAS-3 matmul instead of
-    hundreds of BLAS-2 matvecs, measured 7.1x on this shape and verified
-    bit-identical including an uneven final chunk.
-    """
-    out = {}
-    keys = list(members_band.keys())
-    for lo in range(0, len(keys), chunk):
-        batch = keys[lo:lo + chunk]
-        centres = [(np.array(k, dtype=np.float64) + 0.5) * geom.cell
-                   for k in batch]
-        rhs = np.concatenate(
-            [window_bundle(scene, members_band[k], c0, geom.s, geom.freqs)
-             for k, c0 in zip(batch, centres)], axis=0)          # (B*C, d)
-        sol = (M @ rhs.astype(np.complex128).T).T                # (B*C, d)
-        nch = rhs.shape[0] // len(batch)
-        for i, (k, c0) in enumerate(zip(batch, centres)):
-            c = sol[i * nch:(i + 1) * nch]
-            # cell-local -> world phase, then pre-divide so decode_slice's
-            # weight multiply cancels exactly
-            c = c * np.exp(-1j * (geom.fd @ c0))[None, :]
-            out[k] = (c / geom.weights[None, :]).astype(np.complex64)
-    return out
-
-
-def divergence_ratio(solved, forward):
-    """Median ratio of solved to forward bundle norm, over shared cells.
-
-    The catastrophic failure of an over-loose truncation is silent in
-    the bundle — it decodes to garbage rather than raising — but it is
-    LOUD in the norm, orders of magnitude before it is subtle anywhere
-    else. Cheap enough to run always.
-    """
-    keys = [k for k in solved if k in forward]
-    if not keys:
-        return None
-    num = np.median([np.linalg.norm(solved[k]) for k in keys])
-    den = np.median([np.linalg.norm(forward[k]) for k in keys])
-    return float(num / den) if den else None
-
-
-class Diverged(ValueError):
-    """A band's solved bundles are past the truncation cliff."""
-
-
-def check_divergence(solved, forward, band, label, allow=False):
-    """GATE, not a warning: refuse a band whose solve has diverged.
-
-    This used to print and carry on, and that is exactly how a corrupted
-    band reaches a caller unnoticed. On Red Rock at keep=0.55 every cell
-    of the `fine` band sits at 1030x the forward bundle norm while the
-    SLICE ERROR IMPROVES — because that band holds 0.7% of the splats,
-    so destroying it barely moves the metric. Whoever reads those
-    bundles for a render, a `what_is_at` query or storage gets garbage,
-    and the number they were shown said the run was the best of four.
-
-    `allow=True` (the --allow-divergence flag) is for sweeps that
-    deliberately explore past the cliff, which is the only reason to
-    want a diverged band at all.
-    """
-    ratio = divergence_ratio(solved, forward)
-    if ratio is None or ratio <= DIVERGENCE_RATIO:
-        return ratio
-    message = (
-        "%s band diverged at %s: solved bundles are %.0fx the forward norm "
-        "(limit %.0f). This truncation is past the cliff and the band is "
-        "garbage — the slice error will NOT necessarily show it, because a "
-        "band holding a small share of the splats can be destroyed without "
-        "moving it. Use a smaller keep, or --allow-divergence if you are "
-        "sweeping past the cliff on purpose."
-        % (band, label, ratio, DIVERGENCE_RATIO))
-    if not allow:
-        raise Diverged(message)
-    print("    !! %s" % message, flush=True)
-    return ratio
-
-
-#: Which band, at which setting — carried together so the gate and the
-#: run record do not each need four loose arguments.
-BandRun = namedtuple("BandRun", "band label how cells")
-
-
-def record_band(run, solved, forward, ident, seconds, allow):
-    """Gate the band, then log it. Order matters: the ratio is recorded
-    whether or not it passes, so a refused run still says how far past
-    the cliff it went."""
-    ratio = divergence_ratio(solved, forward)
-    if run is not None:
-        run.stage("%s/%s" % (ident.band, ident.label), seconds,
-                  cells=ident.cells, operator=ident.how,
-                  norm_ratio=None if ratio is None else round(ratio, 2))
-    return check_divergence(solved, forward, ident.band, ident.label,
-                            allow=allow)
-
-
-#: A band carrying less than this share of the field at the probe points
-#: is not scored there. Its relative error would be the ratio of two
-#: negligible numbers, which is noise wearing four significant figures:
-#: saguaro's `coarse` band reported 4,359,160 on the top-down slice
-#: before this existed. That is not a band that failed, it is a band
-#: that is not present where we are looking.
-#:
-#: A domain of validity rather than a tuned constant — one part in a
-#: thousand of the field is well below any band this pipeline cares
-#: about (Red Rock's smallest, `coarse`, still carries enough to score
-#: at 1.43) and well above the numerical floor.
-SIGNAL_FLOOR = 1e-3
-
-
-def rel_err(got, want, floor=0.0):
-    """Relative error, or None when there is nothing to be relative to.
-
-    Two ways that happens, and only the first was handled before. A band
-    with no splats near a slice gives an exactly zero referee. A band
-    with a FEW distant splats gives a nearly zero one, and dividing by
-    it produces a number that looks like a catastrophic failure and is
-    actually an absence of signal. Both are missing measurements, not
-    scores of zero and not scores of 4e6.
-    """
-    scale = float(np.linalg.norm(want))
-    if scale <= floor:
-        return None
-    return float(np.linalg.norm(got - want) / scale)
-
-
-#: What a setting is scored against: the two error functions and the
-#: forward-encoding baselines each is measured against. Bundled because
-#: report_setting took six positional arguments and adding per-band
-#: scoring to it would have taken eight.
-Referee = namedtuple("Referee", "err band_err base band_base")
-
-
-def band_errors(bundles, books, slices, band_truth):
-    """Each band scored against its OWN ground truth.
-
-    The aggregate is dominated by whichever band holds the splats — on
-    Red Rock `xfine` holds 542,122 of 546,638 — so a band can be
-    destroyed by three orders of magnitude while the aggregate
-    IMPROVES. That is not hypothetical: it is keep=0.55 on Red Rock, and
-    it is why slice error alone was never an acceptance test.
-
-    `decode_slice` and `exact_slice` both already restrict to a band
-    list, and the bands partition the splats, so this costs one extra
-    decode pass in total rather than one per band.
-
-    A band too faint at these points to score is reported as absent
-    rather than as a number — see SIGNAL_FLOOR.
-    """
-    out = {b[0]: [] for b in BANDS if bundles.get(b[0])}
-    for n, (pts, _) in slices:
-        # the bands partition the splats, so their truths sum to the
-        # whole field at these points — which is what "a share of the
-        # field" is measured against
-        floor = SIGNAL_FLOOR * float(np.linalg.norm(
-            sum(band_truth[n][b[0]][:, 0] for b in BANDS)))
-        for b in BANDS:
-            if b[0] not in out:
-                continue
-            out[b[0]].append(
-                rel_err(decode_slice(pts, bundles, books, bands=[b])[:, 0],
-                        band_truth[n][b[0]][:, 0], floor))
-    return out
 
 
 def report_band_error(name, got, base):
@@ -618,11 +242,22 @@ def report_setting(lab, cells, ref, also_shrink, run):
                  100 * (a[1] - e[1]) / a[1]))
 
 
+def synthetic_scene():
+    """Seeded sparse fixture, available without capture files."""
+    rng = np.random.default_rng(42)
+    mu = rng.uniform(0.35, 0.65, (12, 3)).astype(np.float32)
+    scales = np.full(12, 0.012, np.float32)
+    cov = np.broadcast_to(np.eye(3) * scales[0] ** 2, (12, 3, 3)).copy()
+    return (SplatScene(mu, cov.astype(np.float32), np.ones((12, 1), np.float32)),
+            scales, np.ones(3, np.float32))
+
+
 def main(path, settings, also_shrink=False, run=None,
-         allow_divergence=False):
+         allow_divergence=False, dim=DIM):
     t0 = time.time()
-    scene, smax, box = build_scene(path, verbose=False)
-    books = band_codebooks(np.random.default_rng(42))
+    scene, smax, box = (synthetic_scene() if path == "synthetic"
+                        else build_scene(path, verbose=False))
+    books = band_codebooks(np.random.default_rng(42), dim=dim)
     fwd_bundles, members = encode_bands(scene, smax, books, verbose=False)
 
     w = scene.amp[:, 0]
@@ -638,67 +273,21 @@ def main(path, settings, also_shrink=False, run=None,
                             "bands": band_result(referee.band_base)})
         run.stage("forward encode", time.time() - t0)
     report_forward(path, referee, time.time() - t0)
-    # the forward bundles have now been scored and are never read again;
-    # only their cell counts are. At capture scale they are 0.6-1.3 GB.
-    counts = {n: len(c) for n, c in fwd_bundles.items()}
-    # keep a few forward bundles per band as the divergence reference —
-    # a norm baseline costs kilobytes where the full set costs gigabytes
-    fwd_ref = {n: dict(list(c.items())[:64]) for n, c in fwd_bundles.items()}
     del fwd_bundles
-
-    labels = [label_of(st) for st in settings]
-    ana = {lab: {} for lab in labels}
-    for name, _cap, cell in BANDS:
-        if not counts.get(name):
-            for lab in labels:
-                ana[lab][name] = {}
-            continue
-        freqs, _rho, weights = books[name]
-        fd = freqs.astype(np.float64)
-        s = (cell / 2) / 2                       # the width that won per-cell
-        geom = BandGeom(cell, s, freqs, fd, weights)
-        solver = BandSolver(build_gram(fd, s))
-        chunk = cell_chunk(scene.channels, freqs.shape[0])
-        for i, (st, lab) in enumerate(zip(settings, labels)):
-            M, how = solver.operator(st)
-            if i == len(settings) - 1:
-                # Release the Gram and its eigenvectors BEFORE the solves.
-                # BandSolver retains them so a sweep can share them, which
-                # is the whole point — but on the last setting that is
-                # 537 MB per retained array held through every per-cell
-                # solve for nothing. Measured on saguaro: retaining them
-                # cost 5.63 GB peak against main's 5.05 GB, and releasing
-                # here recovers 0.35 of that 0.58 — landing at 5.28 GB,
-                # still 4.5% above main. The per-process peak is NOT where
-                # this file wins; a 3-setting sweep peaks at 5.00 GB in one
-                # process where three processes cost about 15 GB.
-                solver.close()
-            print("  %-7s %d cells, d=%d, %s, chunk=%d  (%.0fs)"
-                  % (name, counts[name], freqs.shape[0], how, chunk,
-                     time.time() - t0), flush=True)
-            t_band = time.time()
-            ana[lab][name] = solve_band(M, scene, members[name], geom, chunk)
-            # records the stage AND gates it; a killed run's last stage
-            # therefore says exactly how far it got. #80 extracted that
-            # into record_band and left the original call behind, so
-            # every stage was written twice until this run's telemetry
-            # showed the pairs.
-            record_band(run, ana[lab][name], fwd_ref.get(name, {}),
-                        BandRun(name, lab, how, counts[name]),
-                        time.time() - t_band, allow_divergence)
-            del M
-        del solver
-
-    for lab in labels:
-        report_setting(lab, ana[lab], referee, also_shrink, run)
+    for setting in settings:
+        lab = label_of(setting)
+        cells = project_cells(scene, members, books,
+                              setting=setting,
+                              allow_divergence=allow_divergence)
+        report_setting(lab, cells, referee, also_shrink, run)
     print("  total %.0fs" % (time.time() - t0))
 
 
 def parse_settings(argv):
     """Back-compatible: a positional keep_frac and --tikhonov still work.
     --sweep keep=a,b / --sweep eps=a,b / --sweep tikhonov=a,b add
-    settings that SHARE the band Gram instead of each needing its own
-    process. keep and eps additionally share one eigendecomposition."""
+    settings evaluated sequentially through project_cells. Each call builds
+    its own Gram; use BandSolver directly to reuse a Gram across settings."""
     settings, rest = [], []
     i = 0
     while i < len(argv):
@@ -718,7 +307,8 @@ def parse_settings(argv):
         else:
             i += 1
     if not settings:
-        settings = [("keep", float(rest[1]) if len(rest) > 1 else 1.0)]
+        settings = ([("keep", float(rest[1]))] if len(rest) > 1
+                    else [("eps", 1e-3)])
     return rest[0], settings
 
 
@@ -732,10 +322,17 @@ if __name__ == "__main__":
                            force="--force-memory" in argv) as run:
             report_spectrum(run=run)
         sys.exit(0)
+    dim = DIM
+    if "--dim" in argv:
+        index = argv.index("--dim")
+        dim = int(argv[index + 1])
+        del argv[index:index + 2]
+    if "--synthetic" in argv:
+        argv[argv.index("--synthetic")] = "synthetic"
     path, settings = parse_settings(argv)
     with runlog.record(path.split("/")[-1],
-                       need_gb=estimate_gb(len(settings)),
+                       need_gb=estimate_gb(len(settings)) * (dim / DIM) ** 2,
                        force="--force-memory" in argv) as run:
         run.result(forward=None)          # replaced once the baseline lands
         main(path, settings, also_shrink="--shrink" in argv, run=run,
-             allow_divergence="--allow-divergence" in argv)
+             allow_divergence="--allow-divergence" in argv, dim=dim)

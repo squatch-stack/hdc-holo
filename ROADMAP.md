@@ -57,41 +57,15 @@ six of eight closed. Claims still go through SDK.md's log first.
   arXiv note written and 0.3.0 on PyPI. Submission is
   [#59](https://github.com/squatch-stack/hdc-holo/issues/59), owner action.
 
+- **Analytic L2 projection for per-cell fits** ([#2](https://github.com/squatch-stack/hdc-holo/issues/2)) —
+  closed in this tree: opt-in `holo.projection.project_cells`, threshold
+  default and tighter norm gate, with forward-failed bands excluded.
+  The existing bit-identity tests now import the library directly.
+  [docs/projection.md](docs/projection.md) carries the measured cliff,
+  limited capture evidence and open adaptive-cell composition question.
+
 **Open.**
 
-- **Analytic L2 projection for per-cell fits** ([#2](https://github.com/squatch-stack/hdc-holo/issues/2)) —
-  works, and deliberately unpromoted. It is the largest lever measured
-  (+59.3% on saguaro at keep=0.55, against the shipped keep=0.25's
-  +38.0%), but the truncation is a knife edge: one step further, at 0.70,
-  it is 37x WORSE than not projecting at all, and the edge moves with the
-  capture. A fixed default is either conservative or catastrophic, and
-  the failure is silent in the decode. **The path to promotion is
-  automatic truncation selection**, and the signal it would use already
-  exists — the solved/forward norm ratio separates working from broken by
-  18x, and `run_projection_pipeline.py` checks it after every band —
-  now as a refusal rather than a warning. Two instruments landed since:
-  the referee scores every band separately (the aggregate is dominated
-  by whichever band holds the splats, so it could not see a destroyed
-  one), and `--spectrum` shows *why* the edge moves — `keep` is a rank
-  fraction, and at d=8192 one setting spans a factor of 7e8 in what it
-  actually regularises across the four bands. Truncating at a threshold
-  instead now IS measured, and it reframed the issue: the aggregate
-  gain is entirely `xfine` (99.2% of the splats), the shipped setting
-  degrades the `fine` band by a quarter, and the divergence gate passed
-  it because the gate's limit was calibrated against catastrophe rather
-  than against degradation. `eps=1e-3` damages no band and gives up
-  half the headline gain. The second capture has now confirmed it: the
-  same norm ratio costs the same on saguaro as on Red Rock (1.32 and
-  1.33 cost 24.6% and 29.4% of `fine`), so the limit belongs near 1.2
-  rather than 20, and `eps=1e-4` is a wash on the aggregate while
-  saving ~25 points of `fine` on both. `lidar-dense` turned out to be
-  structurally silent (one band), but applying the knee across all three
-  captures answers a better question: the shipped `keep=0.25` is refused
-  on both multi-band captures, and `eps=1e-3` is the only setting that
-  passes everywhere with a positive aggregate and no band damaged.
-  Promoting that pair — the tighter limit and the threshold default —
-  is a deliberate change to a public surface and is the open decision.
-  Details in [docs/fit.md](docs/fit.md).
 - **Occlusion research spike** ([#5](https://github.com/squatch-stack/hdc-holo/issues/5)) —
   untouched, and unrelated to everything else in this milestone. Alpha
   compositing is outside linear superposition (a documented failure

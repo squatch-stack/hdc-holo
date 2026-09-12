@@ -32,6 +32,7 @@ or theory, (b) a deterministic test, and (c) a documented failure mode.**
 | Attribute/record payloads on splats (`what_is_at`, `where_is`) | `holo/attribute_field.py` | SNR cliff table; class-filter renders (`out/attribute_field.png`) |
 | CRDT replication incl. attributed scenes + records (Loro) | `holo/crdt.py`, `examples/live_sync.py` | convergence tests; bit-identical merges; TCP demo |
 | Ridge-fitting holograms (bundle = RFF weight vector) | `holo/fit.py` | fitted beats forward-encoded ~70x held-out (`out/fit_photo.png`) |
+| Analytic L2 cell projection (opt-in) | `holo/projection.py`, `holo.fit.project_cells` | bit-identity and gate tests in `tests/test_projection.py`; defaults and failure modes in [docs/projection.md](docs/projection.md) |
 | Closed-form X-ray rendering (projection-slice) | `holo/render.py`, `examples/run_real_scene.py` | trefoil 5-7% RMSE; real-scene renders vs analytic mip |
 | Real-capture pipeline (.splat / .spz v2 loaders, crop, clamp) | `holo/capture.py` | byte-verified parsers (synthetic round-trip tests); `results/real_scan-tucson*.png`, `results/real_train*.png` |
 | Phase-only / quantized storage (2x/8x/16x) | `holo/phase.py` | round-trip similarity tests |

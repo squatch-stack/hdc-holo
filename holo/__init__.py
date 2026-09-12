@@ -69,7 +69,7 @@ from .denoise import percentile_threshold, shrink
 from .dispatch import BandedDispatcher, FastNGramProfiler, NearEnoughDispatcher
 from .fhrr import FHRR, ItemMemory, Permutation
 from .field import GaussianSplatField
-from .fit import FrequencyBands, HoloRegressor
+from .fit import FrequencyBands, HoloRegressor, project_cells
 from .fsm import HoloFSM
 from .graph import HoloGraph
 from .hashmap import HoloMap
@@ -175,6 +175,7 @@ __all__ = [
                    "null_share",
                    "percentile_threshold",
                    "phasor_bundle",
+                   "project_cells",
                    "query",
                    "render",
                    "render_mip",
