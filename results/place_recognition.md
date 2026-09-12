@@ -375,3 +375,89 @@ severe thread overhead; the single-thread run above completed the full
 suite. Ruff is clean and quality reports `lint debt: 50 (baseline 50)`.
 `holo-facts check --strict` reports `1 FAIL, 25 WARN`, with
 `tests.count` the only failure.
+
+## Sub-map tiles on the corpus (2026-09-12, RTX 5090)
+
+`--tile 8 --dim 8192 --yaws 4 --grid 24 --whiten 1 --prefilter 8 --min-mass 0.02
+--scrambles 12`, all twelve captures, 1168 of 16250 tile pairs scored after the
+radial pre-filter. A first attempt at `--tile 6 --yaws 8 --grid 32` died on the
+GPU's launch watchdog and a second was silent for forty minutes; `tile_matrix`
+now reports progress and this is the affordable setting.
+
+Tiles per capture at 8 scene units with 2% minimum mass:
+
+| capture | tiles |
+|---|---:|
+| brook-2 | 1 |
+| brook | 1 |
+| cannon | 1 |
+| oak | 27 |
+| rr-cairn | 1 |
+| rr | 36 |
+| rlib-cannon | 1 |
+| rlib | 27 |
+| saguaro | 1 |
+| spring | 1 |
+| wc-gun | 1 |
+| wc | 48 |
+
+Eight of the twelve captures yield **one tile** — the object scans, the crops
+and both station captures fit inside one 8-unit tile — so for them the
+"tile" is the whole capture again. Only the four wide parents are tiled.
+
+Capture-level scores (max over tile pairs; — = no pair survived the pre-filter):
+
+```
+        brook-  brook cannon    oak rr-cai     rr rlib-c   rlib saguar spring wc-gun     wc
+brook-2      -      -      -      -      -  0.170      -  0.190      -      -      -  0.123
+brook        -      -      -  0.254      -  0.117      -      -      -      -      -  0.176
+cannon       -      -      -  0.679      -      -      -      -      -      -      -  0.119
+oak          -  0.240  0.680      -      -  0.304      -      -      -      -      -  0.340
+rr-cairn     -      -      -  0.289      -  0.921      -  0.274      -      -      -      -
+rr           -  0.104  0.168  0.299  0.921      -      -  0.324      -  0.146  0.131  0.143
+rlib-can     -      -      -      -      -      -      -  0.559      -      -      -      -
+rlib     0.185      -      -      -      -  0.147  0.509      -  0.036      -  0.244  0.283
+saguaro      -      -      -      -      -  0.076      -  0.336      -      -      -  0.223
+spring       -      -      -      -      -      -      -      -      -      -      -  0.111
+wc-gun       -      -      -      -      -  0.125      -  0.037      -      -      -  0.659
+wc           -  0.094      -  0.263      -  0.151      -  0.297  0.171      -  0.659      -
+```
+
+| query | rank-1 | best positive | best negative | above null |
+|---|---|---|---|---|
+| 1 brook | no | — | 0.240 | — |
+| 4 rr-cairn | yes | 0.921 | — | 273σ |
+| 5 rr | yes | 0.921 | 0.304 | 273σ |
+| 9 spring | no | — | 0.146 | — |
+| 10 wc-gun | yes | 0.659 | 0.244 | 192σ |
+| 11 wc | yes | 0.659 | 0.340 | 192σ |
+
+Phase-surrogate null over 144 draws: tile 0.039 ± 0.002 (max 0.049),
+capture 0.042 ± 0.003 (max 0.049).
+
+- **The crop pairs are found, both directions**, at 99–273 σ (cairn ↔
+  redrock 0.921, gun ↔ wilsons-creek 0.659): a crop is a subset of its
+  parent, so its one tile matches a parent tile exactly. That is sub-map
+  localisation working, and it is not evidence about place recognition
+  across captures.
+- **The one true re-capture is not scored at all** in the corpus run: the
+  radial pre-filter never paired station with springhouse.
+- Run alone without the pre-filter (`--prefilter 0`, both captures, both
+  directions): station ↔ springhouse scores **0.107 / 0.082 at E=8** (one
+  tile each — the whole captures) and **0.078 / 0.073 at E=4** (eight tiles
+  for the yard, one for the interior), 11–18 σ above a null whose maximum
+  is 0.051. A real, weak signal — and smaller than the 0.24–0.34 that
+  unrelated wide captures score against each other in the matrix above,
+  so in the corpus it would not rank first.
+
+## Conclusion, restated
+
+Tiles of fixed physical size do what the frame-rule finding predicted for
+sub-maps: exact sub-regions are found at their offsets, at any distractor
+count tried. They do not turn the corpus into a place-recognition positive:
+the interior ↔ yard pair correlates at twice the null and a third of the
+cross-talk between unrelated wide captures. The bar (6/6 at ≥ 3 σ) is not
+met — 4/6, and the four are the trivial ones. The descriptor's ceiling on
+this corpus is the same one the object lane found: at d=8192 a whitened
+spectral bundle scores compact mass before it scores arrangement.
+
