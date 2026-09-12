@@ -1370,3 +1370,73 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
     `bench/locality.py`, `tests/test_locality.py`,
     `results/error_locality.md`; the sweep tools take the refactor after
     the joined-encoder lane lands.
+
+- **Five research lanes landed in one day, each as a bench tool with a
+  results note and a test file, none promoted** (2026-09-12; PRs #99,
+  #100, #101, #102, #103; the file matrix claimed above). Every lane
+  was built by a Codex worker against a written brief and reviewed,
+  gated and committed here; every number below is from this host or the
+  5090 unless marked synthetic. What each found:
+
+  - *Error locality* (`bench/locality.py`, `results/error_locality.md`).
+    The worst-fraction share and the per-cell enrichment ranking now
+    live in one pure-NumPy module any field evaluation can call. The
+    honest null for "share of squared error in the worst 1%" is not 1%:
+    for iid Gaussian residuals the χ²₁ tail carries 8.45% at f=1% and
+    1.27% at f=0.1%, computed in closed form. Constant-magnitude
+    random-sign noise is the null that gives exactly f, and the tests
+    use both. One repo-wide lesson: `sweep_row_fields` is pinned
+    byte-for-byte to the sweep's inline formula, and that pin failed on
+    Linux CI in the eighth digit because NumPy 2 keeps a float32 norm
+    divided by a Python float in float32 while the module divided in
+    float64; the module now uses the sweep's expression verbatim.
+  - *Resonator factorization* (`holo/resonator.py`,
+    `bench/resonator_sweep.py`, `out/resonator_cliff.png`; synthetic).
+    Renner et al.'s what-is-where resonator (arXiv:2208.12880) replicated
+    with `AttributeSplatField.pos` as the fractional-power key: 100%
+    one-object and 84.67% three-object recovery at d=4096 over 50
+    trials (5.1 and 6.2 accepted iterations on average); recovery
+    crosses 50% between load 9.75 and 11.4 in units of
+    n_obj·Π n_j / d, one cliff across grids; 411 accepted incorrect
+    tuples in the sweep, so `converged=True` is not `correct`. The sign
+    convention between `attribute_field` (e^{+iWp}) and `spectral`
+    (e^{−iw·μ}) is pinned by a translation round-trip test. Stage 1 on
+    real captures (crop bundles as the identity codebook, translation
+    grid as the position factor) is not yet written.
+  - *Place recognition* (`bench/place_recognition.py`; synthetic 9/9
+    rank-1). Phase correlation through the shift theorem is the
+    descriptor score, because the bundle is translation-covariant and
+    raw cosine is not a descriptor. The first real run on the 5090
+    (wilsons-creek, its gun crop, cannon) found two things before any
+    result: the scramble null scored 0.80–0.999 against its own source
+    (permuting positions among 400k similar splats is the same scene),
+    and `build_scene`'s per-capture re-centring put the crop and its
+    parent in cubes of 4.0 and 40.4 units. Follow-up lane: the null is
+    now a phase surrogate (random phases, identical magnitudes — the
+    control's exact null) and `--frame` encodes every path in one
+    capture's cube. The 12-scene matrix is the next measurement.
+  - *Operator bench* (`bench/operator_bench.py`,
+    `results/operator_bench.md`). HyperSpace's (arXiv:2604.15113)
+    "HRR needs half the memory" is a same-d statement; at equal bytes
+    the comparison is FHRR at d/2 against HRR at d. NumPy corner at
+    d=1024, K=1000: cleanup 6.905 ms FHRR vs 6.970 ms HRR; recovery at
+    50% of nominal capacity 60/256 for FHRR at d/2 against 65/256 for
+    HRR at d, leaning against the equal-d-artefact hypothesis on one
+    tiny CPU point. HyperSpace's repository link returned 404, so the
+    operator definitions are ours. The first CUDA run refused itself:
+    the checksum was a signed sum of zero-mean scores, so float32 GEMM
+    rounding read as a 1.7e-5 failure; sum of absolute values now.
+    GPU matrix pending on that fix.
+  - *Quantised phase below the nibble* (`bench/quant_lowbit.py`,
+    D2 in `bench/precision_battery.py`, `results/quant_lowbit.md`).
+    The measurement needs no packer: bytes are `ceil(d·bits/8)` per
+    stream. On two captures (cannon, Wilson's Creek, 24 xfine cells
+    each) D1's trend holds down to four bits — 8/8 at d → 4/4 at 2d is
+    −24% and −29% at 16 KB/cell — and stops there: 2/2 at 4d is 2.3×
+    and 1.8× worse than 4/4 at 2d, one-bit magnitudes exceed 1.0, the
+    asymmetric 1/3 and 2/6 splits do not help, shrink-then-quantise
+    hurts everywhere on real cells (it is a ~0.25 drift there), and
+    p99.9 clipping is a wash. Phase-only with HP's exact codes and the
+    best scalar gain decodes at 40–246× the field at any bit depth: a
+    spectral bundle's magnitudes are its Gaussian envelope. No `HQ`
+    packer; D1's "monotonically" has its upper limit at four bits.
