@@ -21,7 +21,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from bench.change_detection import drift
-from bench.locality import locality_report
 from holo.capture import (
     BANDS,
     band_codebooks,
@@ -32,6 +31,7 @@ from holo.capture import (
 )
 from holo.crdt import HAVE_LORO, HoloReplica, unpack_bundle
 from holo.fhrr import FHRR
+from holo.locality import locality_report
 from holo.spectral import SplatScene
 
 if HAVE_LORO:

@@ -75,6 +75,7 @@ the shared frequencies, inflating sigma by ~1.5-3x over the i.i.d. law.
 | Page | Technique | Implementation |
 |---|---|---|
 | [core.md](core.md) | FHRR algebra, codewords, cleanup | `holo/fhrr.py` |
+| [resonator.md](resonator.md) | iterative identity / position factorization | `holo/resonator.py` |
 | [structures.md](structures.md) | classical data structures as holograms | `holo/hashmap.py` … `holo/sdm.py` |
 | [backend.md](backend.md) | NumPy / MLX-Metal dispatch | `holo/accel.py` |
 
@@ -86,6 +87,7 @@ the shared frequencies, inflating sigma by ~1.5-3x over the i.i.d. law.
 | [spatial.md](spatial.md) | covariance bands + spatial chunking | `holo/spatial.py` |
 | [spectral.md](spectral.md) | spectral encoder + mixture codebooks | `holo/spectral.py` |
 | [attributes.md](attributes.md) | attribute & record payloads on splats | `holo/attribute_field.py` |
+| [locality.md](locality.md) | worst-fraction error share and per-cell enrichment | `holo/locality.py` |
 | [real-scenes.md](real-scenes.md) | real-capture pipeline (.splat/.spz) | `holo/capture.py` |
 | [baselines.md](baselines.md) | fidelity per byte vs per-splat codecs | `examples/run_baseline_table.py` |
 | [figures.md](figures.md) | how every figure regenerates | `tests/test_figures.py` |

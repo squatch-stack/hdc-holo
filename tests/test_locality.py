@@ -1,12 +1,15 @@
 """Separate spike concentration from Gaussian and constant-magnitude nulls."""
 
+import json
 from math import exp, pi, sqrt
+from pathlib import Path
 from statistics import NormalDist
 
 import numpy as np
 import pytest
 
-from bench.locality import (
+from holo.locality import (
+    LocalityReport,
     enrichment,
     error_shares,
     locality_report,
@@ -140,3 +143,28 @@ def test_invalid_fractions_and_membership_are_rejected():
             enrichment(np.ones(2), membership)
     with pytest.raises(ValueError):
         enrichment([-1., 1.], [0, 1])
+
+
+def test_sweep_row_fields_round_trip_recorded_gpu_row():
+    """Pin serialized diagnostic keys and digits without capture files.
+
+    The JSON stores rounded diagnostics, not probe arrays; arithmetic precision
+    is covered separately by test_sweep_row_fields_match_the_inline_formula.
+    """
+    path = Path(__file__).resolve().parents[1] / "results" / "gpu_sweep.json"
+    row = json.loads(path.read_text())[0]
+    for key in ("top_down", "side"):
+        report = LocalityReport(
+            rel_l2=row["err"][key],
+            norm_truth=row[f"norm_{key}"],
+            fill=row[f"fill_{key}"],
+            peak_ratio=row[f"peak_ratio_{key}"],
+            shares={0.01: row[f"err_share_1pct_{key}"],
+                    0.001: row[f"err_share_01pct_{key}"]},
+            null_shares={}, cells=None, reading="localised",
+        )
+        actual = sweep_row_fields(report, key)
+        expected = {f"{prefix}_{key}": row[f"{prefix}_{key}"] for prefix in (
+            "norm", "fill", "err_share_1pct", "err_share_01pct", "peak_ratio")}
+        assert json.dumps(actual, sort_keys=True) == json.dumps(
+            expected, sort_keys=True)
