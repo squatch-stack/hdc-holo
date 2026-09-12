@@ -148,3 +148,5 @@ consumers branching off it. The mermaid diagram in
 [README.md](README.md) is the content; it needs redrawing as a vector
 figure. That is drawing work rather than conversion work, which is why
 it is named here rather than approximated.
+
+| `out/place/similarity.png` | Phase correlation and radial power control for three synthetic places (12 descriptors). | `python -m bench.place_recognition /tmp/place.json --synthetic 3 --numpy --dim 512 --grid 9 --yaws 4 --scrambles 4 --figure out/place/similarity.png` |
