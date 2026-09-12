@@ -1642,3 +1642,19 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   - `paper/2026-09-results` — the paper catches up (§7 cost at the knee,
     §8 related work, §9 limitations), owner-reviewed before merge.
     Files: `paper/draft.md`, `paper/main.tex` (generated).
+- **A tile's before ↔ after correlation is the first change signal that
+  lands on a real capture** (2026-09-12; `bench/change_detection.py
+  --tile`, `results/change_detection.md` "Tiles (captures)"). With both
+  captures on one lattice anchored at the frame's `crop_box`, a changed
+  tile is one whose whitened self-correlation drops below its drift null
+  by 3σ over the retained tiles. Cannon inserted into research-library at
+  E=4: IoU 0.50 / 0.43 / 0.40 / 0.25 against the tile-quantised truth
+  at σ_pos 0 / 0.05 / 0.1 / 0.2, with 2 / 3 / 1 / 0 false tiles, where
+  the primitive baseline gives 0.57 / 0.50 / 0.25 / 0.00; the whole-cube
+  difference map never exceeded 0.15 on synthetic data. E=8 has eight
+  tiles, no null spread, and is perfect then blind — a lattice that small
+  does not calibrate. The two removal cases could not be built: the gun
+  and cairn files are separate 480,000-cap subsamples of their parents
+  (0.49 and 0.64 of their positions coincide), not subsets, so
+  `remove_subset` refuses them; a crop cut from the parent file is the
+  follow-up.
