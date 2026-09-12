@@ -1536,3 +1536,15 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
     with one new per-capture table computed from the sweep JSON. Files:
     `bench/storage_position.py`, `tests/test_storage_position.py`,
     `results/storage_position.md`.
+
+- **Block scaling cuts two-bit error by a third and the knee still
+  does not move** (2026-09-12; D3 in `bench/precision_battery.py`,
+  `results/quant_lowbit.md`; two captures on the 5090 host). A shared
+  8-bit scale per block of 16 magnitudes (u8 fraction of the vector
+  max, which beat the MX-style power-of-two exponent in every row)
+  takes 2/2 at 4d from 0.2688 / 0.2432 to 0.1774 / 0.1702 on cannon /
+  Wilson's Creek at 16 KB per cell — still 51% / 28% worse than 4/4 at
+  2d. On captures block scaling does not improve 4/4 (a wash at 16 KB,
+  +8% at 8 and 32 KB), unlike the synthetic fixture's 31%: the
+  coherent-crosstalk floor is what a finer magnitude grid runs into.
+  One-bit magnitudes stay at ≈ 1.0. No `HQ` packer; D1's limit stands.
