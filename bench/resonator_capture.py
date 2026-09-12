@@ -19,6 +19,7 @@ import itertools
 import json
 from pathlib import Path
 from time import perf_counter
+from unittest.mock import patch
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,6 +30,7 @@ from bench.place_recognition import (
     fingerprint,
     translation_grid,
 )
+from holo.capture import ALPHA_MIN, load_scene_file, weighted_quantile
 from holo.fhrr import FHRR
 from holo.resonator import deflate, factorize_all, grid_codebook
 from holo.spectral import (
@@ -44,16 +46,18 @@ def _rms(v):
     return np.sqrt(np.mean(np.abs(v) ** 2, axis=-1, keepdims=True))
 
 
-def _center(scene, freqs, sigma):
+def _center(scene, freqs, sigma, flatten="none"):
     centroid = np.average(scene.mu, axis=0, weights=scene.amp[:, 0])
-    code = translate_bundle(fingerprint(scene, freqs, sigma)[None], freqs, -centroid)[0]
+    code = translate_bundle(
+        fingerprint(scene, freqs, sigma, flatten)[None], freqs, -centroid
+    )[0]
     return code, centroid
 
 
-def object_codeword(path, lo, extent, freqs, sigma_units):
+def object_codeword(path, lo, extent, freqs, sigma_units, flatten="none"):
     """Encode a crop in its parent's cube, then remove its alpha centroid."""
     scene, _, _ = build_scene_fixed(path, lo, extent)
-    return _center(scene, freqs, sigma_units / extent)
+    return _center(scene, freqs, sigma_units / extent, flatten)
 
 
 def position_codebooks(freqs, values):
@@ -338,7 +342,7 @@ def composite(bundles, shifts, freqs):
     )
 
 
-def synthetic_fixture(dim=4096, seed=0, objects=3, extras=0):
+def synthetic_fixture(dim=4096, seed=0, objects=3, extras=0, flatten="none"):
     """Distinct 40-80-splat clusters and diffuse 20%-mass background."""
     rng = np.random.default_rng(seed)
     # Recognition blur at an eighth of the object size (objects span
@@ -356,7 +360,7 @@ def synthetic_fixture(dim=4096, seed=0, objects=3, extras=0):
         mu -= np.average(mu, axis=0, weights=scene.amp[:, 0])
         center = rng.uniform(0.18, 0.82, 3)
         scene = SplatScene((mu + center).astype(np.float32), scene.cov, scene.amp)
-        code, center = _center(scene, freqs, sigma)
+        code, center = _center(scene, freqs, sigma, flatten)
         crops.append(scene)
         codes.append(code)
         if k < objects:
@@ -373,7 +377,7 @@ def synthetic_fixture(dim=4096, seed=0, objects=3, extras=0):
         *(np.concatenate([getattr(c, a) for c in parts]) for a in ("mu", "cov", "amp"))
     )
     return {
-        "S": fingerprint(parent, freqs, sigma),
+        "S": fingerprint(parent, freqs, sigma, flatten),
         "identity": np.array(codes),
         "freqs": freqs,
         "truth": truth,
@@ -506,7 +510,7 @@ def _query(
     }
 
 
-def _jittered_instances(base, freqs, sigma, jitter, rng):
+def _jittered_instances(base, freqs, sigma, jitter, rng, flatten="none"):
     size = float(np.ptp(base.mu, axis=0).max())
     training = []
     for _ in range(2):
@@ -515,13 +519,15 @@ def _jittered_instances(base, freqs, sigma, jitter, rng):
             base.cov,
             base.amp * rng.uniform(0.8, 1.2, base.amp.shape),
         )
-        training.append(_center(variant, freqs, sigma)[0])
+        training.append(_center(variant, freqs, sigma, flatten)[0])
     return training
 
 
-def _prototype_experiment(fixture, seed, grid_size=32):
+def _prototype_experiment(fixture, seed, grid_size=32, flatten="none"):
     rng = np.random.default_rng(seed)
-    foreign_scene = synthetic_fixture(len(fixture["freqs"]), seed + 1, 1)["crops"][0]
+    foreign_scene = synthetic_fixture(
+        len(fixture["freqs"]), seed + 1, 1, flatten=flatten
+    )["crops"][0]
     grid = translation_grid(grid_size, 0.5) + 0.5
     rows = []
     for jitter in (0.05, 0.1, 0.2):
@@ -532,9 +538,10 @@ def _prototype_experiment(fixture, seed, grid_size=32):
                 fixture["sigma"],
                 jitter,
                 rng,
+                flatten,
             )
             foreign = _jittered_instances(
-                foreign_scene, fixture["freqs"], fixture["sigma"], jitter, rng
+                foreign_scene, fixture["freqs"], fixture["sigma"], jitter, rng, flatten
             )
             searches = prototype_search(
                 fixture["S"],
@@ -646,17 +653,20 @@ def run_synthetic(
     **options,
 ):
     """Report failures as well as successes; no truth enters the solver."""
+    flatten = options.pop("flatten", "none")
     coarse_sigma = options.pop("coarse_sigma", None)
     if options:
         raise TypeError(f"unknown synthetic options: {sorted(options)}")
     started = perf_counter()
     rows = []
     for objects in (1, 2, 3):
-        fixture = synthetic_fixture(dim, seed, objects, extras=4)
+        fixture = synthetic_fixture(dim, seed, objects, extras=4, flatten=flatten)
         rng = np.random.default_rng(seed + 100)
-        distractor = synthetic_fixture(dim, seed + 100, 1)
+        distractor = synthetic_fixture(dim, seed + 100, 1, flatten=flatten)
         # Re-encode the unrelated parent on the SAME frequencies.
-        other = fingerprint(distractor["parent"], fixture["freqs"], fixture["sigma"])
+        other = fingerprint(
+            distractor["parent"], fixture["freqs"], fixture["sigma"], flatten
+        )
         additions = [
             composite([other], [rng.uniform(-0.3, 0.3, 3)], fixture["freqs"])
             for _ in range(8)
@@ -708,9 +718,9 @@ def run_synthetic(
                 }
                 rows.append(row)
     first_two = fixture["identity"][:2]
-    bg = fingerprint(fixture["background"], fixture["freqs"], fixture["sigma"])
+    bg = fingerprint(fixture["background"], fixture["freqs"], fixture["sigma"], flatten)
     parents = [
-        fingerprint(c, fixture["freqs"], fixture["sigma"]) + bg / 2
+        fingerprint(c, fixture["freqs"], fixture["sigma"], flatten) + bg / 2
         for c in fixture["crops"][:2]
     ]
     shifts = np.array([[0, 0, 0], [0.1, 0, 0]])
@@ -719,7 +729,7 @@ def run_synthetic(
         {"k": t["k"], "t": (np.array(t["t"]) + shift).tolist()}
         for t, shift in zip(fixture["truth"][:2], shifts)
     ]
-    cliff = synthetic_fixture(1024, seed, 6)
+    cliff = synthetic_fixture(1024, seed, 6, flatten=flatten)
     result = {
         "settings": {
             "dim": dim,
@@ -740,7 +750,7 @@ def run_synthetic(
         },
         "truth": fixture["truth"],
         "rows": rows,
-        "prototype": _prototype_experiment(fixture, seed + 200, grid_size),
+        "prototype": _prototype_experiment(fixture, seed + 200, grid_size, flatten),
         "composite_truth": composite_truth,
         "composite": what_is_where(
             combined,
@@ -835,14 +845,20 @@ def _capture(args):
     sigma = args.sigma_units or float(np.ptp(crop.mu, axis=0).max() * extent / 8)
     rng = np.random.default_rng(args.seed)
     freqs = sample_frequencies(args.dim, 3, extent / sigma, rng)
-    pairs = [object_codeword(p, lo, extent, freqs, sigma) for p in args.crop]
+    pairs = [
+        object_codeword(p, lo, extent, freqs, sigma, args.flatten) for p in args.crop
+    ]
     external = [
-        _external_parent(p, c, freqs, extent, sigma)[1] for p, c in args.candidate
+        _external_parent(p, c, freqs, extent, sigma, args.flatten)[1]
+        for p, c in args.candidate
     ]
     identity = np.array([*[c for c, _ in pairs], *external])
-    signal = fingerprint(scene, freqs, sigma / extent)
+    signal = fingerprint(scene, freqs, sigma / extent, args.flatten)
     truth = [{"k": k, "t": t.tolist()} for k, (_, t) in enumerate(pairs)]
-    others = [_external_parent(p, p, freqs, extent, sigma)[0] for p in args.distractor]
+    others = [
+        _external_parent(p, p, freqs, extent, sigma, args.flatten)[0]
+        for p in args.distractor
+    ]
     additions = (
         [
             composite([others[i % len(others)]], [rng.uniform(-0.3, 0.3, 3)], freqs)
@@ -918,15 +934,15 @@ def _capture(args):
     return result
 
 
-def _external_parent(parent, crop, freqs, extent, sigma):
+def _external_parent(parent, crop, freqs, extent, sigma, flatten="none"):
     lo, own_extent = crop_box(parent)
     scene, _, _ = build_scene_fixed(parent, lo, own_extent)
     obj, _, _ = build_scene_fixed(crop, lo, own_extent)
     ratio = own_extent / extent
     scaled = [SplatScene(s.mu * ratio, s.cov * ratio**2, s.amp) for s in (scene, obj)]
     return (
-        fingerprint(scaled[0], freqs, sigma / extent),
-        _center(scaled[1], freqs, sigma / extent)[0],
+        fingerprint(scaled[0], freqs, sigma / extent, flatten),
+        _center(scaled[1], freqs, sigma / extent, flatten)[0],
     )
 
 
@@ -934,7 +950,8 @@ def _capture_association(args, signal, identity, freqs, extent, sigma):
     if args.instances:
         lo, _ = crop_box(args.parent)
         training = [
-            object_codeword(p, lo, extent, freqs, sigma)[0] for p in args.instances
+            object_codeword(p, lo, extent, freqs, sigma, args.flatten)[0]
+            for p in args.instances
         ]
         searches = prototype_search(
             signal,
@@ -943,7 +960,9 @@ def _capture_association(args, signal, identity, freqs, extent, sigma):
             translation_grid(args.grid, 0.5) + 0.5,
             sigma / extent,
         )
-        target = object_codeword(args.crop[0], lo, extent, freqs, sigma)[1]
+        target = object_codeword(args.crop[0], lo, extent, freqs, sigma, args.flatten)[
+            1
+        ]
         return {
             "prototype": _prototype_errors(searches, target),
             "composite": {"status": "not run: source parent required"},
@@ -953,7 +972,10 @@ def _capture_association(args, signal, identity, freqs, extent, sigma):
             "prototype": {"status": "not run: supply two --instance PARENT CROP"},
             "composite": {"status": "not run: source parent required"},
         }
-    sources = [_external_parent(p, c, freqs, extent, sigma) for p, c in args.instance]
+    sources = [
+        _external_parent(p, c, freqs, extent, sigma, args.flatten)
+        for p, c in args.instance
+    ]
     proto = prototype([c for _, c in sources]) * float(_rms(identity[0])[0])
     dictionary = np.vstack([proto, identity[1:]])
     association = analogy(
@@ -977,7 +999,7 @@ def _capture_association(args, signal, identity, freqs, extent, sigma):
         sigma / extent,
     )
     lo, _ = crop_box(args.parent)
-    target = object_codeword(args.crop[0], lo, extent, freqs, sigma)[1]
+    target = object_codeword(args.crop[0], lo, extent, freqs, sigma, args.flatten)[1]
     _prototype_errors(association["correlation"], target)
     combined = composite([signal, sources[0][0]], [[0, 0, 0], args.shift], freqs)
     recovered = what_is_where(
@@ -1003,14 +1025,18 @@ def _capture_association(args, signal, identity, freqs, extent, sigma):
     }
 
 
-def comparison_trials(dim=4096, seed=0, trials=30):
+def comparison_trials(dim=4096, seed=0, trials=30, flatten="none"):
     """Two objects, four unused identities; independent seeded parents.
 
     Eight samples per local axis and an eight-point baseline coarse axis
     keep this CPU regression small. Joint correctness uses max(fine step, sigma / 2).
     """
     rows = [
-        _query(synthetic_fixture(dim, seed + i, 2, extras=4), values=8, baseline_size=8)
+        _query(
+            synthetic_fixture(dim, seed + i, 2, extras=4, flatten=flatten),
+            values=8,
+            baseline_size=8,
+        )
         for i in range(trials)
     ]
     return {
@@ -1055,11 +1081,146 @@ def _validate_args(parser, args):
         parser.error("synthetic fixtures and capture inputs are alternatives")
 
 
+def flatten_composite_fixture(dim=4096, seed=0):
+    """Two related arrangements, equal covariances, and a 10:1 alpha ratio.
+
+    Independent training jitter supplies two light-class instances; two
+    independently sampled arrangements supply the foreign prototype.
+    """
+    rng = np.random.default_rng(seed)
+    sigma = 0.025
+    freqs = sample_frequencies(dim, 3, 1 / sigma, rng)
+    shape = rng.uniform(-0.09, 0.09, (64, 3))
+    shape -= shape.mean(axis=0)
+    centers = np.array([[0.25, 0.5, 0.5], [0.75, 0.5, 0.5]])
+    shapes = [shape, shape + rng.normal(0, 0.025, shape.shape)]
+    shapes.extend(shape + rng.normal(0, 0.004, shape.shape) for _ in range(2))
+    shapes.extend(rng.uniform(-0.09, 0.09, shape.shape) for _ in range(2))
+    scenes = []
+    for i, points in enumerate(shapes):
+        mu = points - points.mean(axis=0) + centers[int(i == 1)]
+        cov = np.tile(np.eye(3) * 0.004**2, (len(points), 1, 1))
+        amp = np.full((len(points), 1), 10.0 if i == 1 else 1.0)
+        scenes.append(SplatScene(mu, cov, amp))
+    parent = SplatScene(
+        *(
+            np.concatenate([getattr(s, key) for s in scenes[:2]])
+            for key in ("mu", "cov", "amp")
+        )
+    )
+    return parent, scenes, centers, freqs, sigma
+
+
+def composite_discrimination(parent, scenes, centers, freqs, sigma, mode, grid):
+    """Six probes; report distance to each candidate after an unrestricted search."""
+    codes = [_center(s, freqs, sigma, mode)[0] for s in scenes]
+    probes = [
+        prototype(codes[2:4]),
+        codes[2],
+        codes[3],
+        prototype(codes[4:6]),
+        codes[1],
+        codes[0],
+    ]
+    labels = [
+        "light prototype",
+        "light instance 1",
+        "light instance 2",
+        "foreign prototype",
+        "heavy itself",
+        "light itself",
+    ]
+    signal = fingerprint(parent, freqs, sigma, mode)
+    rows = one_shot_baseline(signal, np.array(probes), freqs, grid)
+    for row, label in zip(rows, labels):
+        distances = np.linalg.norm(np.asarray(row["t_hat"]) - centers, axis=1)
+        row.update(
+            probe=label,
+            distance_light=float(distances[0]),
+            distance_heavy=float(distances[1]),
+            nearer="light" if distances[0] < distances[1] else "heavy",
+        )
+    return rows
+
+
+def _composite_test(args):
+    if args.synthetic:
+        parent, scenes, centers, freqs, sigma = flatten_composite_fixture(
+            args.dim, args.seed
+        )
+    else:
+        lo, extent = crop_box(args.parent)
+        sigma = (args.sigma_units or 0.5) / extent
+        freqs = sample_frequencies(
+            args.dim, 3, 1 / sigma, np.random.default_rng(args.seed)
+        )
+
+        def in_frame(path, target=None):
+            pos, scale, rgba, quat = load_scene_file(path)
+            if target is not None:
+                keep = rgba[:, 3] >= ALPHA_MIN
+                alpha = rgba[keep, 3]
+                center = np.array(
+                    [weighted_quantile(pos[keep, i], alpha, 0.5) for i in range(3)]
+                )
+                pos = pos - center + lo + np.asarray(target) * extent
+            with patch(
+                "bench.place_recognition.load_scene_file",
+                return_value=(pos, scale, rgba, quat),
+            ):
+                return build_scene_fixed(path, lo, extent)[0]
+
+        light = in_frame(args.crop[0])
+        heavy = in_frame(args.other_object, [0.2, 0.5, 0.2])
+        scenes = [
+            light,
+            heavy,
+            *[in_frame(p, [0.5, 0.5, 0.5]) for p in [*args.instances, *args.foreign]],
+        ]
+        centers = np.array(
+            [np.average(s.mu, axis=0, weights=s.amp[:, 0]) for s in scenes[:2]]
+        )
+        parts = [in_frame(args.parent), heavy]
+        parent = SplatScene(
+            *(
+                np.concatenate([getattr(s, key) for s in parts])
+                for key in ("mu", "cov", "amp")
+            )
+        )
+    modes = ("none", "voxel", "log") if args.synthetic else (args.flatten,)
+    return {
+        "settings": {
+            "dim": args.dim,
+            "seed": args.seed,
+            "sigma": sigma,
+            "grid": args.grid,
+            "synthetic": args.synthetic,
+        },
+        "centers": centers.tolist(),
+        "discrimination": {
+            mode: composite_discrimination(
+                parent,
+                scenes,
+                centers,
+                freqs,
+                sigma,
+                mode,
+                translation_grid(args.grid, 0.5) + 0.5,
+            )
+            for mode in modes
+        },
+    }
+
+
 def main(argv=None):
     """Run on a seeded fixture or a parent with crops in its original frame."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
     parser.add_argument("parent", nargs="?")
+    parser.add_argument("--flatten", choices=("none", "voxel", "log"), default="none")
+    parser.add_argument("--composite-test", action="store_true")
+    parser.add_argument("--other-object")
+    parser.add_argument("--foreign", nargs=2)
     parser.add_argument("--synthetic", action="store_true")
     parser.add_argument("--trials", type=int, default=0)
     parser.add_argument(
@@ -1095,9 +1256,20 @@ def main(argv=None):
     _validate_args(parser, args)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if args.trials:
-        result = comparison_trials(args.dim, args.seed, args.trials)
+        result = comparison_trials(args.dim, args.seed, args.trials, args.flatten)
         args.output.write_text(json.dumps(result, indent=2) + "\n")
         print(json.dumps(result))
+        return result
+    if args.composite_test:
+        if not args.synthetic and not (
+            args.other_object and args.instances and args.foreign
+        ):
+            parser.error(
+                "capture composite needs --other-object, --instances, --foreign"
+            )
+        result = _composite_test(args)
+        args.output.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
+        print(json.dumps(result, indent=2))
         return result
     result = (
         run_synthetic(
@@ -1110,10 +1282,13 @@ def main(argv=None):
             grid_size=args.grid,
             band_floor=args.band_floor,
             coarse_sigma=args.coarse_sigma,
+            flatten=args.flatten,
         )
         if args.synthetic
         else _capture(args)
     )
+    if args.flatten != "none":
+        result["settings"]["flatten"] = args.flatten
     if args.figure and not args.synthetic:
         _figure(result, args.figure)
     args.output.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
