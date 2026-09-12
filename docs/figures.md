@@ -38,6 +38,7 @@ source and no search recovers the link.
 
 | figure | regenerate with |
 |---|---|
+| `resonator_cliff.png` | `python -m bench.resonator_sweep` |
 | `real_redrock.png`, `real_redrock_xray.png` | `python -m examples.run_real_scene data/iphone/redrock.ply` |
 | `real_scan-tucson.png`, `real_scan-tucson_xray.png` | `python -m examples.run_real_scene data/scan-tucson.spz` |
 | `real_train.png`, `real_train_xray.png` | `python -m examples.run_real_scene data/train.splat` |
