@@ -101,12 +101,14 @@ def _cleanup(Qr, Mr, chunk, Qi=None, Mi=None):
         if Qi is not None:
             scores = scores + Qi @ Mi[lo:lo + chunk].T
         s = _host(scores)
-        total += float(s.sum(dtype=np.float64))
+        total += float(np.abs(s).sum(dtype=np.float64))
         ix = s.argmax(axis=1)
         val = s[np.arange(len(s)), ix]
         better = val > best
         ids[better] = lo + ix[better]
         best = np.maximum(best, val)
+    # Absolute values: a signed sum of zero-mean scores cancels and turns
+    # float32 GEMM rounding into a false verification failure.
     return {'argmax': ids, 'scores': best, 'checksum': total}
 
 
@@ -184,7 +186,8 @@ def _clock(fn, reps):
                 'argmax_histogram': np.bincount(result['argmax']).tolist()}
     arrays = result if isinstance(result, tuple) else (result,)
     return {'seconds': best,
-            'checksum': sum(float(_host(a).sum(dtype=np.float64)) for a in arrays)}
+            'checksum': sum(float(np.abs(_host(a)).sum(dtype=np.float64))
+                            for a in arrays)}
 
 
 def _sync_result(result):
