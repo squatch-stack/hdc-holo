@@ -947,3 +947,110 @@ def test_exact_xray_fix_does_not_move_reported_errors():
     assert abs(err_naive - err_fixed) < 1e-4, (
         f"reported error moves by {abs(err_naive - err_fixed):.2e} — "
         "committed X-ray measurements would need re-deriving")
+
+
+def _scattered_parent(tmp_path, n=300, seed=7):
+    """A lossless parent file with splats spread over a known cube."""
+    from holo.capture import save_ply
+    rng = np.random.default_rng(seed)
+    pos = rng.uniform(-2, 2, (n, 3))
+    scale = rng.uniform(0.01, 0.3, (n, 3))
+    rgba = np.concatenate([rng.uniform(0, 1, (n, 3)),
+                           rng.uniform(0.02, 0.99, (n, 1))], axis=1)
+    q = rng.normal(size=(n, 4))
+    q /= np.linalg.norm(q, axis=1, keepdims=True)
+    p = tmp_path / "parent.ply"
+    save_ply(str(p), pos, scale, rgba, q)
+    return str(p), pos, scale, rgba
+
+
+def test_crop_scene_file_writes_a_true_subset(tmp_path):
+    """Every splat of the crop is a splat of the parent, unchanged.
+
+    The property the gallery's exports do NOT have: each of those is an
+    independent 480k subsample, so a crop and a parent share half their
+    positions and no primitive-level difference is meaningful.
+    """
+    from holo.capture import crop_scene_file, load_ply
+    parent, pos, scale, rgba = _scattered_parent(tmp_path)
+    lo, extent = np.array([-1.0, -1.0, -1.0]), np.array([2.0, 2.0, 2.0])
+    out = tmp_path / "crop.ply"
+    n = crop_scene_file(parent, lo, extent, str(out))
+    cpos, cscale, crgba, _ = load_ply(str(out))
+    expected = np.all((pos >= lo) & (pos <= lo + extent), axis=1)
+    assert n == len(cpos) == int(expected.sum()) > 0
+    assert np.allclose(np.sort(cpos, axis=0),
+                       np.sort(pos[expected], axis=0), atol=1e-5)
+    assert np.allclose(np.sort(cscale, axis=0),
+                       np.sort(scale[expected], axis=0), atol=1e-6)
+    assert np.allclose(np.sort(crgba, axis=0),
+                       np.sort(rgba[expected], axis=0), atol=1e-5)
+
+
+def test_crop_scene_file_selects_by_centre_inclusively(tmp_path):
+    """A splat exactly on a face is kept; one just outside is not —
+    the same rule `cell_mask` applies, which is why a crop's edge is
+    soft rather than clipped."""
+    from holo.capture import crop_scene_file, load_ply, save_ply
+    pos = np.array([[0.0, 0.0, 0.0], [1.0, 0.5, 0.5], [1.001, 0.5, 0.5]])
+    save_ply(str(tmp_path / "p.ply"), pos, np.full((3, 3), 0.05),
+             np.full((3, 4), 0.5), np.tile([1.0, 0, 0, 0], (3, 1)))
+    n = crop_scene_file(str(tmp_path / "p.ply"), [0, 0, 0], [1, 1, 1],
+                        str(tmp_path / "c.ply"))
+    cpos, _, _, _ = load_ply(str(tmp_path / "c.ply"))
+    assert n == 2
+    assert np.isclose(cpos[:, 0].max(), 1.0, atol=1e-5)
+
+
+def test_crop_scene_file_honours_alpha_min_and_refuses_an_empty_box(tmp_path):
+    from holo.capture import crop_scene_file, load_ply
+    parent, pos, _, rgba = _scattered_parent(tmp_path)
+    lo, extent = np.array([-3.0, -3.0, -3.0]), np.array([6.0, 6.0, 6.0])
+    out = tmp_path / "opaque.ply"
+    n = crop_scene_file(parent, lo, extent, str(out), alpha_min=0.5)
+    cpos, _, crgba, _ = load_ply(str(out))
+    assert n == len(cpos) == int((rgba[:, 3] >= 0.5).sum()) < len(pos)
+    assert crgba[:, 3].min() >= 0.5
+    with pytest.raises(ValueError, match="selects no splats"):
+        crop_scene_file(parent, [100, 100, 100], [1, 1, 1],
+                        str(tmp_path / "none.ply"))
+    with pytest.raises(ValueError, match="extent must be positive"):
+        crop_scene_file(parent, lo, [1, 0, 1], str(tmp_path / "flat.ply"))
+
+
+def test_bbox_of_cuts_its_own_region_out_of_the_parent(tmp_path):
+    """bbox_of(crop) -> crop_scene_file(parent) recovers the crop: the
+    round trip that makes a removal case constructible."""
+    from holo.capture import bbox_of, crop_scene_file, load_ply
+    parent, pos, _, _ = _scattered_parent(tmp_path)
+    lo, extent = np.array([-2.0, -2.0, -2.0]), np.array([3.0, 3.0, 3.0])
+    first = tmp_path / "region.ply"
+    crop_scene_file(parent, lo, extent, str(first))
+    blo, bextent = bbox_of(str(first))
+    again = tmp_path / "again.ply"
+    n = crop_scene_file(parent, blo, bextent, str(again))
+    a, _, _, _ = load_ply(str(first))
+    b, _, _, _ = load_ply(str(again))
+    assert n == len(a) == len(b)
+    assert np.allclose(np.sort(a, axis=0), np.sort(b, axis=0), atol=1e-5)
+    # and the crop partitions the parent: the box selects the crop and
+    # its complement is everything else, with nothing counted twice.
+    # Compare against the parent AS LOADED — the file is float32 and a
+    # splat on the recovered face is decided by the stored value.
+    ppos, _, _, _ = load_ply(parent)
+    inside = np.all((ppos >= blo) & (ppos <= blo + bextent), axis=1)
+    assert int(inside.sum()) == len(a)
+    assert len(a) + int((~inside).sum()) == len(ppos) == len(pos)
+
+
+def test_crop_scene_file_writes_spz_when_asked(tmp_path):
+    """The suffix picks the format; spz is quantization-lossy by design."""
+    from holo.capture import crop_scene_file, load_spz
+    parent, pos, _, _ = _scattered_parent(tmp_path)
+    out = tmp_path / "crop.spz"
+    n = crop_scene_file(parent, [-1, -1, -1], [2, 2, 2], str(out))
+    cpos, _, _, _ = load_spz(str(out))
+    assert n == len(cpos)
+    inside = np.all((pos >= -1) & (pos <= 1), axis=1)
+    assert np.allclose(np.sort(cpos, axis=0),
+                       np.sort(pos[inside], axis=0), atol=1.5 / (1 << 12))

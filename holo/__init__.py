@@ -40,7 +40,9 @@ from . import (
 from .attribute_field import AttributeSplatField
 from .capture import (
                    band_codebooks,
+                   bbox_of,
                    build_scene,
+                   crop_scene_file,
                    decode_slice,
                    encode_bands,
                    exact_slice,
@@ -128,8 +130,10 @@ __all__ = [
                    "SplatScene",
                    "backend",
                    "band_codebooks",
+                   "bbox_of",
                    "build_scene",
                    "core",
+                   "crop_scene_file",
                    "decode_field",
                    "decode_field_phasor",
                    "decode_slice",

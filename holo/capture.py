@@ -582,6 +582,73 @@ def quat_to_rot(q):
 # Crop, normalize, clamp
 # ---------------------------------------------------------------------------
 
+def crop_scene_file(parent, lo, extent, out, alpha_min=None, version=3):
+    """Write the splats of `parent` that lie inside a box to a new file.
+
+    The result is a genuine SUBSET of the parent's primitives: the same
+    positions, scales, rotations and colours, selected by their centres.
+    That is worth a function because the obvious alternative is not a
+    subset. Each capture the gallery ships is its own 480,000-splat
+    subsample of a trained model, so an exported "crop" and its
+    "parent" agree on only 49-64% of their positions (measured on the
+    gun and the cairn, `results/change_detection.md`) and no
+    primitive-level difference between two such files means anything.
+    A removal case is constructible only from a crop cut this way.
+
+    `lo` and `extent` are in the parent's own world units as the
+    loaders report them (y-up, linear colour), so they compose with
+    `crop_box` and with any bounding box read off another file. The
+    box is inclusive at both ends; splats straddling a face are kept
+    or dropped by their centre alone, which is the same rule
+    `cell_mask` applies and the reason a crop's rendered edge is soft.
+
+    The output format follows the suffix: `.spz` goes through
+    `save_spz` and is therefore quantization-lossy (positions to a
+    2^-12 grid), `.ply` through `save_ply` and is lossless. Use `.ply`
+    when the crop is a referee and `.spz` when it is a fixture.
+
+    Returns the number of splats written.
+    """
+    pos, scale, rgba, quat = load_scene_file(parent)
+    lo = np.asarray(lo, dtype=np.float32)
+    extent = np.asarray(extent, dtype=np.float32)
+    if extent.ndim == 0:
+        extent = np.repeat(extent, 3)
+    if np.any(extent <= 0):
+        raise ValueError("extent must be positive in every axis")
+    keep = np.all((pos >= lo) & (pos <= lo + extent), axis=1)
+    if alpha_min is not None:
+        keep &= rgba[:, 3] >= alpha_min
+    if not keep.any():
+        raise ValueError(
+            "the box selects no splats of %s — check the frame: `lo` and "
+            "`extent` are in the parent's world units, not normalized" % parent)
+    args = (pos[keep], scale[keep], rgba[keep], quat[keep])
+    if str(out).endswith(".ply"):
+        save_ply(out, *args)
+    else:
+        save_spz(out, *args, version=version)
+    return int(keep.sum())
+
+
+def bbox_of(path, alpha_min=None):
+    """The axis-aligned bounds of a capture, as `(lo, extent)`.
+
+    The pair `crop_scene_file` takes, so the bounds of one file cut the
+    matching region out of another: read the gun's box, cut it from its
+    parent, and the difference of the two files is exactly the gun.
+    `alpha_min` drops transparent splats before measuring, which is
+    what keeps a halo of near-invisible floaters from inflating the box.
+    """
+    pos, _, rgba, _ = load_scene_file(path)
+    if alpha_min is not None:
+        pos = pos[rgba[:, 3] >= alpha_min]
+        if not len(pos):
+            raise ValueError("no splat of %s passes alpha_min" % path)
+    lo = pos.min(axis=0)
+    return lo.astype(np.float32), (pos.max(axis=0) - lo).astype(np.float32)
+
+
 def weighted_quantile(v, w, q):
     """Weighted quantile on the midpoint grid.
 

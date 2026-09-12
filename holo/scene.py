@@ -13,7 +13,9 @@ decode straight from the cell bundles.
 from .attribute_field import AttributeSplatField
 from .capture import (
                       band_codebooks,
+                      bbox_of,
                       build_scene,
+                      crop_scene_file,
                       decode_slice,
                       encode_bands,
                       exact_slice,
@@ -34,7 +36,9 @@ __all__ = [
                       "AttributeSplatField",
                       "ColorSplatField",
                       "band_codebooks",
+                      "bbox_of",
                       "build_scene",
+                      "crop_scene_file",
                       "decode_slice",
                       "encode_bands",
                       "exact_slice",
