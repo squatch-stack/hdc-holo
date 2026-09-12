@@ -461,3 +461,258 @@ met — 4/6, and the four are the trivial ones. The descriptor's ceiling on
 this corpus is the same one the object lane found: at d=8192 a whitened
 spectral bundle scores compact mass before it scores arrangement.
 
+
+## Flattened (synthetic)
+
+Seed 0, NumPy CPU, d=4096. `flatten(scene, sigma, mode)` uses voxel
+side sigma and summed peak alpha (not integrated Gaussian mass). `voxel`
+assigns unit alpha to each positive-mass voxel; `log` assigns
+`log1p(M / median_positive_M)`. Only alpha changes, before mass-preserving
+`render_mip`; geometry and other channels are retained. `none` returns the
+same scene object and the default frozen JSON regression is unchanged.
+These definitions are ours. No scipy or custom spectral kernels are used.
+
+**This is a tradeoff, not a general descriptor repair.** Voxel flattening
+removes the heavy object's advantage in the composite and reduces the
+unrelated core/halo score. But it also promotes faint background to support:
+the existing fixture's scrambled copies rise from about 0.10–0.17 to
+0.90–0.93 against their bases. Scrambling preserves occupied positions while
+moving alpha/covariance labels, so removing alpha distinctions deliberately
+makes this negative much less distinguishable. All nine known-partner
+queries still rank first in this small fixture; that is not a capture claim.
+
+**Crop retention fails the 0.9 bar for an alpha-dominant, support-small crop.**
+The first twelve bright landmarks of `synthetic_scene` against their full
+160-splat parent score 0.999941 / 0.263885 / 0.892563 for none / voxel / log.
+Recovered offsets are [0,0,0] / [0.00375,0,0] / [0,0,0]. Thus location is
+retained, but high similarity is not. The voxel score is not indistinguishable
+from the roughly 0.04 phase null; it is a major similarity loss, not proof
+that no arrangement remains. The separate support-dominant regression crop
+(160 of 163 equal-alpha, equal-covariance splats) stays above 0.9 in all
+three modes. Passing that control does not erase the bright-crop regression.
+`bright_crop` in the study JSON records the harder control explicitly.
+
+Uniform unit-alpha-per-voxel fields are unchanged up to rounding. Other
+uniform fields change by a global amplitude scale; normalized correlation
+is preserved. A dense blob plus a faint identical copy has a faint/heavy
+raw peak ratio below 0.2, versus 0.9–1.1 after voxel flattening (seeded test,
+d=2048). Voxels use a fixed origin: noninteger shifts and yaw can change
+occupancies. The shifted same-place scores below expose that small loss.
+Covariance determinants still weight integrated mass after flattening;
+this experiment does not claim covariance-independent pure occupancy.
+
+### Existing place fixture, three modes
+
+Full ordered matrices, PHAT whiten=1, four yaw hypotheses, grid 9, limit
+0.12, sigma=0.025. Labels 0–3 are place0 base/shift/yaw/scramble;
+4–7 and 8–11 repeat that order for place1 and place2. Rows are references,
+columns are queries. Translation of shifted copies is [0.07,-0.04,0.03].
+Rounding below is to three decimals; the JSON retains full precision.
+
+none:
+
+| ref/query | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 1.000 | 0.998 | 1.000 | 0.136 | 0.127 | 0.128 | 0.127 | 0.095 | 0.108 | 0.104 | 0.108 | 0.144 |
+| 1 | 0.998 | 1.000 | 0.998 | 0.136 | 0.098 | 0.122 | 0.098 | 0.113 | 0.108 | 0.107 | 0.108 | 0.094 |
+| 2 | 1.000 | 0.998 | 1.000 | 0.166 | 0.128 | 0.128 | 0.128 | 0.081 | 0.089 | 0.087 | 0.089 | 0.167 |
+| 3 | 0.136 | 0.151 | 0.136 | 1.000 | 0.123 | 0.154 | 0.123 | 0.145 | 0.121 | 0.122 | 0.121 | 0.119 |
+| 4 | 0.125 | 0.113 | 0.125 | 0.120 | 1.000 | 0.998 | 1.000 | 0.166 | 0.112 | 0.112 | 0.112 | 0.097 |
+| 5 | 0.125 | 0.109 | 0.125 | 0.161 | 0.998 | 1.000 | 0.998 | 0.166 | 0.113 | 0.112 | 0.113 | 0.093 |
+| 6 | 0.127 | 0.098 | 0.127 | 0.121 | 1.000 | 0.998 | 1.000 | 0.129 | 0.125 | 0.125 | 0.125 | 0.103 |
+| 7 | 0.088 | 0.116 | 0.088 | 0.142 | 0.166 | 0.166 | 0.166 | 1.000 | 0.139 | 0.139 | 0.139 | 0.133 |
+| 8 | 0.085 | 0.088 | 0.085 | 0.121 | 0.125 | 0.125 | 0.125 | 0.121 | 1.000 | 0.998 | 1.000 | 0.098 |
+| 9 | 0.088 | 0.088 | 0.088 | 0.121 | 0.125 | 0.125 | 0.125 | 0.121 | 0.998 | 1.000 | 0.998 | 0.126 |
+| 10 | 0.108 | 0.108 | 0.108 | 0.111 | 0.133 | 0.134 | 0.133 | 0.117 | 1.000 | 0.998 | 1.000 | 0.099 |
+| 11 | 0.157 | 0.109 | 0.157 | 0.117 | 0.098 | 0.095 | 0.098 | 0.122 | 0.099 | 0.118 | 0.099 | 1.000 |
+
+voxel:
+
+| ref/query | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 1.000 | 0.988 | 1.000 | 0.926 | 0.054 | 0.054 | 0.054 | 0.057 | 0.071 | 0.068 | 0.071 | 0.065 |
+| 1 | 0.988 | 1.000 | 0.988 | 0.918 | 0.061 | 0.054 | 0.061 | 0.059 | 0.068 | 0.068 | 0.068 | 0.063 |
+| 2 | 1.000 | 0.986 | 1.000 | 0.925 | 0.065 | 0.059 | 0.065 | 0.058 | 0.067 | 0.057 | 0.067 | 0.072 |
+| 3 | 0.926 | 0.918 | 0.926 | 1.000 | 0.051 | 0.050 | 0.051 | 0.055 | 0.072 | 0.059 | 0.072 | 0.071 |
+| 4 | 0.064 | 0.064 | 0.064 | 0.060 | 1.000 | 0.987 | 1.000 | 0.902 | 0.084 | 0.084 | 0.084 | 0.081 |
+| 5 | 0.064 | 0.062 | 0.064 | 0.061 | 0.987 | 1.000 | 0.987 | 0.892 | 0.084 | 0.084 | 0.084 | 0.081 |
+| 6 | 0.071 | 0.067 | 0.071 | 0.071 | 1.000 | 0.982 | 1.000 | 0.901 | 0.060 | 0.053 | 0.060 | 0.058 |
+| 7 | 0.063 | 0.060 | 0.063 | 0.058 | 0.902 | 0.892 | 0.902 | 1.000 | 0.083 | 0.083 | 0.083 | 0.079 |
+| 8 | 0.067 | 0.054 | 0.067 | 0.059 | 0.068 | 0.061 | 0.068 | 0.057 | 1.000 | 0.998 | 1.000 | 0.914 |
+| 9 | 0.053 | 0.055 | 0.053 | 0.047 | 0.066 | 0.061 | 0.066 | 0.063 | 0.998 | 1.000 | 0.998 | 0.911 |
+| 10 | 0.068 | 0.068 | 0.068 | 0.068 | 0.084 | 0.084 | 0.084 | 0.083 | 1.000 | 0.998 | 1.000 | 0.917 |
+| 11 | 0.072 | 0.055 | 0.072 | 0.059 | 0.069 | 0.065 | 0.069 | 0.060 | 0.914 | 0.911 | 0.914 | 1.000 |
+
+log:
+
+| ref/query | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 1.000 | 0.997 | 1.000 | 0.261 | 0.102 | 0.103 | 0.102 | 0.089 | 0.084 | 0.083 | 0.084 | 0.109 |
+| 1 | 0.997 | 1.000 | 0.997 | 0.261 | 0.093 | 0.099 | 0.093 | 0.101 | 0.085 | 0.085 | 0.085 | 0.093 |
+| 2 | 1.000 | 0.997 | 1.000 | 0.276 | 0.094 | 0.094 | 0.094 | 0.082 | 0.084 | 0.087 | 0.084 | 0.115 |
+| 3 | 0.261 | 0.261 | 0.261 | 1.000 | 0.106 | 0.107 | 0.106 | 0.114 | 0.104 | 0.104 | 0.104 | 0.108 |
+| 4 | 0.097 | 0.105 | 0.097 | 0.099 | 1.000 | 0.997 | 1.000 | 0.301 | 0.108 | 0.093 | 0.108 | 0.098 |
+| 5 | 0.097 | 0.091 | 0.097 | 0.126 | 0.997 | 1.000 | 0.997 | 0.300 | 0.112 | 0.112 | 0.112 | 0.098 |
+| 6 | 0.102 | 0.092 | 0.102 | 0.089 | 1.000 | 0.997 | 1.000 | 0.267 | 0.114 | 0.094 | 0.114 | 0.104 |
+| 7 | 0.082 | 0.100 | 0.082 | 0.121 | 0.301 | 0.300 | 0.301 | 1.000 | 0.109 | 0.109 | 0.109 | 0.107 |
+| 8 | 0.080 | 0.083 | 0.080 | 0.106 | 0.104 | 0.103 | 0.104 | 0.103 | 1.000 | 0.998 | 1.000 | 0.239 |
+| 9 | 0.082 | 0.083 | 0.082 | 0.106 | 0.094 | 0.103 | 0.094 | 0.102 | 0.998 | 1.000 | 0.998 | 0.239 |
+| 10 | 0.084 | 0.096 | 0.084 | 0.095 | 0.108 | 0.112 | 0.108 | 0.104 | 1.000 | 0.998 | 1.000 | 0.264 |
+| 11 | 0.099 | 0.086 | 0.099 | 0.108 | 0.099 | 0.098 | 0.099 | 0.091 | 0.239 | 0.239 | 0.239 | 1.000 |
+
+### Wide-block proxy
+
+Two independently drawn captures each contain 160 core splats drawn from
+N([0.5,0.5,0.5], 0.008² I), plus 160 halo splats uniform in [0.1,0.9]³.
+Core alpha is 10, halo alpha 1; all Gaussian scales are 0.004. Geometry RNG
+seed is 400. This deliberately isolates a compact alpha-dominant core and
+is not a fitted model of the captures. Same grid and sigma, no yaw search.
+
+| mode | unrelated whitened score | offset |
+|---|---:|---|
+| none | 0.999628 | [0.0, 0.0, 0.0] |
+| voxel | 0.264316 | [0.0, 0.00375, 0.0] |
+| log | 0.969003 | [0.0, 0.0, 0.0] |
+
+Log retains enough core dominance that its score stays close to one.
+Voxel reduces the block substantially but leaves a score above the fixture's
+phase null. It is a partial improvement, not elimination of cross-talk.
+
+Reproduce all three matrices, proxy, bright-crop control and figure:
+
+```sh
+OPENBLAS_NUM_THREADS=1 HDC_BACKEND=numpy MPLCONFIGDIR=/tmp/flatten-mpl \
+  .venv/bin/python -m bench.place_recognition /tmp/flatten-place.json \
+  --synthetic 3 --numpy --dim 4096 --grid 9 --limit 0.12 --yaws 4 \
+  --scrambles 4 --whiten 1 --flatten-study \
+  --figure out/place/flatten-synthetic.png
+```
+
+`--flatten-study` runs all three modes on identical seeded inputs; an ordinary
+run takes `--flatten none|voxel|log`. Every yaw, scrambled-null and tile
+fingerprint receives the selected mode. Tile selection and radial prefilter
+rules are unchanged. Four null draws here are a smoke calibration, not a
+reliable real-capture significance estimate.
+
+![Density-flattened place matrices and core/halo proxy](../out/place/flatten-synthetic.png)
+
+### Exact maintainer capture commands (not run here)
+
+Run in a shell with `SCENES` pointing at the capture directory. The helper
+installs the existing CUDA dispatcher before importing either tool and
+executes tools as modules. No new backend is implemented.
+
+```sh
+cuda_module() {
+  .venv/bin/python -c 'import runpy, sys; import bench.cuda_backend as cb; cb.install(); module = sys.argv.pop(1); runpy.run_module(module, run_name="__main__")' "$@"
+}
+for mode in none voxel log; do
+  cuda_module bench.place_recognition "/tmp/flatten-wide-$mode.json" \
+    "$SCENES/wilsons-creek.spz" "$SCENES/redrock.spz" \
+    --dim 8192 --sigma 0.025 --grid 48 --limit 0.25 --yaws 16 \
+    --scrambles 24 --whiten 1 --flatten "$mode"
+done
+cuda_module bench.place_recognition /tmp/flatten-tiles-corpus.json \
+  "$SCENES/brookline-station-2.spz" "$SCENES/brookline-station.spz" \
+  "$SCENES/cannon.spz" "$SCENES/oak.spz" "$SCENES/redrock-cairn.spz" \
+  "$SCENES/redrock.spz" "$SCENES/research-library-cannon.spz" \
+  "$SCENES/research-library.spz" "$SCENES/saguaro.spz" \
+  "$SCENES/springhouse-outside.spz" "$SCENES/wilsons-creek-gun.spz" \
+  "$SCENES/wilsons-creek.spz" --tile 8 --dim 8192 --yaws 4 --grid 24 \
+  --whiten 1 --prefilter 8 --min-mass 0.02 --scrambles 12 --flatten voxel \
+  --partner 1 9 --partner 4 5 --partner 10 11
+for mode in none voxel log; do
+  cuda_module bench.place_recognition "/tmp/flatten-springhouse-$mode.json" \
+    "$SCENES/brookline-station.spz" "$SCENES/springhouse-outside.spz" \
+    --tile 8 --dim 8192 --yaws 4 --grid 24 --whiten 1 --prefilter 0 \
+    --min-mass 0.02 --scrambles 12 --flatten "$mode" --partner 0 1
+  cuda_module bench.place_recognition "/tmp/flatten-parent-crop-$mode.json" \
+    "$SCENES/wilsons-creek.spz" "$SCENES/wilsons-creek-gun.spz" \
+    --frame "$SCENES/wilsons-creek.spz" --dim 8192 --sigma 0.025 \
+    --yaws 4 --grid 48 --whiten 1 --scrambles 24 --flatten "$mode" --partner 0 1
+done
+```
+
+The last control must accompany any capture positive: the synthetic
+bright-crop regression means flattening cannot be presumed harmless.
+No real captures or GPU were available here. Claims/quality registries and
+other lanes' diagnostics were left unchanged.
+
+### Flatten lane validation
+
+Pre-flight: `/private/tmp/wt-flatten/holo/__init__.py` (rechecked at completion).
+Final full suite: `3 failed, 548 passed, 9 skipped in 68.34s (0:01:08)`.
+All three failures are claim tests caused solely by `tests.count`:
+registry 398 versus derived 410. Strict facts: `1 FAIL, 25 WARN`, with
+`tests.count` the only FAIL. Updating claims is outside this lane.
+Final combined lane suite: `89 passed in 30.84s`; slowest test 2.72 s.
+Separate file checks before the final bright-crop reporting test:
+place 30 passed in 1.90 s; resonator 58 passed in 20.95 s.
+The existing test files and notes retain their original contents as exact
+prefixes; all tests and result sections were appended. The frozen legacy
+JSON regression passed untouched. Ruff: `All checks passed!` for all four
+lane Python files. Quality: `lint debt: 50 (baseline 50)`. Diff whitespace
+check is clean. The figure was visually inspected and registered.
+
+```sh
+OPENBLAS_NUM_THREADS=1 HDC_BACKEND=numpy MPLCONFIGDIR=/tmp/flatten-mpl \
+  .venv/bin/python -m pytest tests -q --durations=5
+OPENBLAS_NUM_THREADS=1 HDC_BACKEND=numpy MPLCONFIGDIR=/tmp/flatten-mpl \
+  .venv/bin/python -m pytest tests/test_place_recognition.py tests/test_resonator_capture.py -q --durations=5
+.venv/bin/ruff check bench/place_recognition.py bench/resonator_capture.py tests/test_place_recognition.py tests/test_resonator_capture.py
+HDC_BACKEND=numpy .venv/bin/holo-quality check
+HDC_BACKEND=numpy .venv/bin/holo-facts check --strict
+```
+
+No commits, pushes, branch changes, installs or changes outside the permitted
+file matrix. Capture results are pending; both the composite positive and
+the bright-crop similarity regression need to be tested on those captures.
+
+## Flattened (captures)
+
+Run on the 5090 on 2026-09-12 with the "Exact maintainer capture
+commands" above (the tile runs invoked through `from
+bench.place_recognition import main`, because `runpy.run_module` with
+`run_name="__main__"` breaks the tool's own `patch(__name__ +
+".load_scene_file")` inside `tile_scenes`; the whole-capture runs are as
+written). Phase-surrogate null 0.036–0.040 ± 0.003 (max 0.047) in every
+run. The prediction in the module docstring was tested on the three
+faces of the mass-core ceiling and failed on all three.
+
+| pair (setting) | none | voxel | log |
+|---|---|---|---|
+| wilsons-creek ↔ redrock, whole capture, grid 48, 16 yaws (the wide-capture block) | **0.823** at offset ~0 | 0.110 / 0.119, offset wanders to [−0.03, −0.18, −0.06] | 0.139 / 0.137, offset wanders to [0.20, −0.09, 0.25] |
+| wilsons-creek ↔ gun, parent's cube (the crop control) | **0.878** at [−0.003, 0.001, 0.003] | 0.170, offset [0.17, −0.11, 0.24] | 0.183 / 0.186, offset [0.03, 0.00, 0.00] |
+| station ↔ springhouse, E=8 tiles, one tile each (the true re-capture) | 0.078 (15σ above null) | 0.149 (41σ) | 0.101 (23σ) |
+
+**The block collapses, and so does the crop.** Voxel flattening takes
+the unrelated pair from 0.82 to 0.11 — the number the lane was built to
+move — but it takes the gun in its parent's cube from 0.88 to 0.17 with
+the offset wandering a quarter of the cube, which is the failure the
+brief said to say loudly: the descriptor has nothing left. The
+synthetic bright-crop regression (0.9999 → 0.264) was the warning. Log
+flattening keeps the crop's offset but not its score (0.18) and does
+not keep the block down any better (0.14 vs 0.11).
+
+**The springhouse pair rises, and that is cross-talk, not
+recognition.** 0.078 → 0.149 under voxel looks like the re-capture
+surfacing, until the twelve-capture tile matrix at E=8 with
+`--flatten voxel` (400 s on the GPU) is read beside the raw one from
+"Sub-map tiles on the corpus": rank-1 is 0 of 6 (raw: 4 of 6), the crop
+pairs fall from 0.921 and 0.659 to 0.105 and 0.148 / 0.178, and the best
+*unrelated* pairs rise to 0.314 (redrock ↔ station), 0.323
+(research-library ↔ wilsons-creek) and 0.273 (research-library-cannon ↔
+wilsons-creek-gun). Every capture's best match under voxel flattening is
+a wrong one, and springhouse's 0.149 sits under all of them. Turning
+mass into support makes every capture look like every other capture's
+support: it equalises the cores away and leaves the halos, and the halos
+of different places correlate at 0.2–0.3 whitened. The synthetic note's
+"promotes faint background to support" is exactly this on captures.
+
+What this settles: the mass-core ceiling is not lifted by re-weighting
+the alpha channel before the blur, in either form tried. The whitened
+score of a d=8192 spectral bundle needs the compact mass to have a
+signal at all; remove the mass and there is no arrangement signal
+underneath it to reveal. Sub-map tiles at E=4–8 with the *raw*
+fingerprint remain the working localiser, and the re-capture question
+stays open at 0.08–0.11.

@@ -53,6 +53,15 @@ divided by its magnitude, so only phase votes and the peak measures
 arrangement alone. It also trades away every magnitude, which is the
 radial control's whole content, so whitened and raw scores answer
 different questions and the results note reports both.
+
+Prediction tested here: voxel alpha equalisation preserves a unit-mass uniform
+field, balances dense/faint copies, lets a light object find itself beside a
+heavy competitor, and retains crop localisation in a shared parent cube.
+These are our voxel-support definitions, not a reproduction of prior art.
+Equal alpha per voxel does not equal integrated Gaussian mass when covariances
+vary. Voxel boundaries also make reweighting translation/yaw dependent.
+The bright-landmark crop control loses high similarity under voxel weighting,
+although its location and the support-dominant crop control survive.
 """
 
 import argparse
@@ -63,6 +72,7 @@ from pathlib import Path
 from time import perf_counter
 from unittest.mock import patch
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from holo import accel
@@ -139,11 +149,43 @@ def phase_surrogate(fp, rng):
     return (fp * np.exp(1j * phases)).astype(np.complex64)
 
 
-def fingerprint(scene, freqs, sigma_rec):
+def flatten(scene, sigma, mode="none"):
+    """Equalise voxel alpha before blur; preserve geometry and other channels.
+
+    A uniform field is preserved up to a global scale (exactly for unit alpha
+    per occupied voxel). Log weights use the median positive voxel alpha mass.
+    Nonpositive-mass voxels have zero alpha. The input is never mutated.
+    """
+    if mode == "none":
+        return scene
+    if mode not in ("voxel", "log"):
+        raise ValueError("flatten mode must be none, voxel or log")
+    if not np.isfinite(sigma) or sigma <= 0:
+        raise ValueError("sigma must be finite and positive")
+    if not np.isfinite(scene.mu).all() or not np.isfinite(scene.amp[:, 0]).all():
+        raise ValueError("positions and alpha must be finite")
+    _, inverse = np.unique(np.floor(scene.mu / sigma), axis=0, return_inverse=True)
+    inverse = inverse.reshape(-1)  # NumPy 2.0 axis-wise inverse shape compatibility.
+    mass = np.bincount(inverse, weights=scene.amp[:, 0]).astype(np.float64)
+    positive = mass > 0
+    target = np.ones_like(mass)
+    if mode == "log" and positive.any():
+        target = np.log1p(np.maximum(mass, 0) / np.median(mass[positive]))
+    weight = np.divide(target, mass, out=np.zeros_like(mass), where=positive)
+    amp = scene.amp.astype(np.result_type(scene.amp.dtype, np.float32), copy=True)
+    amp[:, 0] = scene.amp[:, 0] * weight[inverse]
+    return SplatScene(scene.mu, scene.cov, amp)
+
+
+_flatten_scene = flatten
+
+
+def fingerprint(scene, freqs, sigma_rec, flatten="none"):
     """Encode only alpha after mass-preserving blur at recognition resolution."""
     if not np.isfinite(sigma_rec) or sigma_rec <= 0:
         raise ValueError("sigma_rec must be finite and positive")
     alpha = SplatScene(scene.mu, scene.cov, scene.amp[:, :1])
+    alpha = _flatten_scene(alpha, sigma_rec, flatten)
     return spectral_bundle(render_mip(alpha, sigma_rec), freqs)[0]
 
 
@@ -303,8 +345,9 @@ def _inputs(args, rng):
     return scenes, labels, groups
 
 
-def _yaw_fingerprints(scene, angles, freqs, sigma):
-    return np.stack([fingerprint(yaw_scene(scene, t), freqs, sigma) for t in angles])
+def _yaw_fingerprints(scene, angles, freqs, sigma, flatten="none"):
+    return np.stack([fingerprint(yaw_scene(scene, t), freqs, sigma, flatten)
+                     for t in angles])
 
 
 def _calibrate(scenes, fps, yaw_fps, angles, freqs, grid, args, rng):
@@ -315,7 +358,7 @@ def _calibrate(scenes, fps, yaw_fps, angles, freqs, grid, args, rng):
             candidates = phase_surrogate(yaw_fps[i], rng)
         else:
             candidates = _yaw_fingerprints(scramble(scenes[i], rng), angles,
-                                           freqs, args.sigma)
+                                           freqs, args.sigma, args.flatten)
         samples.append(_best_yaw(fps[i], candidates, freqs, grid, args.whiten)[0])
     return {"null": args.null, "samples": samples, "mean": float(np.mean(samples)),
             "sigma": float(np.std(samples)), "p95": float(np.percentile(samples, 95)),
@@ -394,11 +437,11 @@ def tile_scenes(path, tile, overlap, min_mass, alpha_min=ALPHA_MIN):
     return tiles
 
 
-def tile_fingerprints(tiles, freqs, sigma_box, angles):
+def tile_fingerprints(tiles, freqs, sigma_box, angles, flatten="none"):
     """Encode every tile with the run's single physical-resolution codebook."""
     if not tiles:
         return np.empty((0, len(angles), len(freqs)), np.complex64)
-    return np.stack([_yaw_fingerprints(s, angles, freqs, sigma_box)
+    return np.stack([_yaw_fingerprints(s, angles, freqs, sigma_box, flatten)
                      for _, s, _ in tiles])
 
 
@@ -617,7 +660,7 @@ def _run_tiles(args):
     sigma_box = sigma_units / args.tile
     freqs = sample_frequencies(args.dim, 3, 1 / sigma_box, rng)
     fps = tile_fingerprints([t for ts in captures for t in ts],
-                            freqs, sigma_box, angles)
+                            freqs, sigma_box, angles, args.flatten)
     matrix = tile_matrix(fps, owners, freqs, translation_grid(args.grid, args.limit),
                          args.whiten, args.prefilter, rng, args.scrambles)
     partners = args.partner or ([(0, 1)] if truth is not None else [])
@@ -672,8 +715,6 @@ def _display_tiles(result, figure):
 
 
 def _tile_figure(result, figure):
-    import matplotlib.pyplot as plt
-
     hits = np.full((len(result["labels"]), len(result["labels"])), np.nan)
     for row in result["tile_retrieval"]:
         hits[row["partner"], row["query"]] = row["hit_fraction"]
@@ -697,6 +738,8 @@ def _parser():
     parser.add_argument("output", type=Path)
     parser.add_argument("paths", nargs="*")
     parser.add_argument("--synthetic", type=int, default=3)
+    parser.add_argument("--flatten", choices=("none", "voxel", "log"), default="none")
+    parser.add_argument("--flatten-study", action="store_true")
     parser.add_argument("--sigma", type=float, default=0.025)
     parser.add_argument("--yaws", type=int, default=16)
     parser.add_argument("--grid", type=int, default=48)
@@ -757,8 +800,6 @@ def _display(result, figure):
     for report in result["retrieval"]:
         print("Known partner:", json.dumps(report))
     if figure is not None:
-        import matplotlib.pyplot as plt
-
         fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
         for ax, key in zip(axes, ("scores", "radial")):
             im = ax.imshow(result[key], vmin=0, vmax=1)
@@ -777,8 +818,8 @@ def _run(args):
     freqs = sample_frequencies(args.dim, 3, 1 / args.sigma, rng)
     grid = translation_grid(args.grid, args.limit)
     angles = np.arange(args.yaws) * (2 * np.pi / args.yaws)
-    fps = np.stack([fingerprint(s, freqs, args.sigma) for s in scenes])
-    yaw_fps = np.stack([_yaw_fingerprints(s, angles, freqs, args.sigma)
+    fps = np.stack([fingerprint(s, freqs, args.sigma, args.flatten) for s in scenes])
+    yaw_fps = np.stack([_yaw_fingerprints(s, angles, freqs, args.sigma, args.flatten)
                         for s in scenes])
     scores, offsets = similarity_matrix(fps, freqs, grid, yaw_fps, args.whiten)
     power = np.stack([radial_power(fp, freqs) for fp in fps])
@@ -799,6 +840,68 @@ def _run(args):
                               "does not change a scene."}
 
 
+def flatten_crop_control(dim=4096, seed=0):
+    """Bright landmark crop in the existing faint-background synthetic parent.
+
+    Unlike the support-dominant regression crop, this crop contains only the
+    first twelve bright landmarks: it dominates alpha, but not occupied space.
+    """
+    rng = np.random.default_rng(seed)
+    parent = synthetic_scene(rng)
+    crop = SplatScene(parent.mu[:12], parent.cov[:12], parent.amp[:12])
+    freqs = sample_frequencies(dim, 3, 40, rng)
+    grid = translation_grid(9, 0.12)
+    result = {}
+    for mode in ("none", "voxel", "log"):
+        score, offset = correlate(
+            fingerprint(crop, freqs, 0.025, mode),
+            fingerprint(parent, freqs, 0.025, mode), freqs, grid, whiten=1)
+        result[mode] = {"score": score, "offset": offset.tolist()}
+    return result
+
+
+def flatten_study(args):
+    """Existing place fixture plus independently arranged dense-core halos."""
+    matrices = {}
+    for mode in ("none", "voxel", "log"):
+        settings = argparse.Namespace(**vars(args))
+        settings.flatten = mode
+        matrices[mode] = _run(settings)
+    rng = np.random.default_rng(args.seed + 400)
+    captures = []
+    for _ in range(2):
+        core = rng.normal(0.5, 0.008, (160, 3))
+        halo = rng.uniform(0.1, 0.9, (160, 3))
+        mu = np.concatenate([core, halo])
+        cov = np.tile(np.eye(3) * 0.004**2, (len(mu), 1, 1))
+        amp = np.concatenate([np.full((160, 1), 10.0), np.ones((160, 1))])
+        captures.append(SplatScene(mu, cov, amp))
+    freqs = sample_frequencies(args.dim, 3, 1 / args.sigma, rng)
+    grid = translation_grid(args.grid, args.limit)
+    proxy = {}
+    for mode in matrices:
+        codes = [fingerprint(s, freqs, args.sigma, mode) for s in captures]
+        score, offset = correlate(*codes, freqs, grid, whiten=1)
+        proxy[mode] = {"score": score, "offset": offset.tolist()}
+    return {"settings": {"dim": args.dim, "seed": args.seed},
+            "place": matrices, "wide_proxy": proxy,
+            "bright_crop": flatten_crop_control(args.dim, args.seed)}
+
+
+def _flatten_figure(result, path):
+    fig, axes = plt.subplots(1, 4, figsize=(16, 4), constrained_layout=True)
+    for ax, (mode, matrix) in zip(axes[:3], result["place"].items()):
+        im = ax.imshow(matrix["scores"], vmin=0, vmax=1)
+        ax.set(title=mode, xlabel="query", ylabel="reference")
+    fig.colorbar(im, ax=list(axes[:3]), shrink=0.7)
+    proxy = result["wide_proxy"]
+    axes[3].bar(list(proxy), [row["score"] for row in proxy.values()])
+    axes[3].set(title="Unrelated core + halo", ylabel="Whitened peak", ylim=(0, 1))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
 def main(argv=None):
     """Write reproducible scores and matched-search null calibration as JSON."""
     parser = _parser()
@@ -807,14 +910,24 @@ def main(argv=None):
     if args.paths and args.lo is None and args.tile is None:
         print("Per-capture crop normalization: use --lo and --extent for a shared "
               "physical frame; these scores cannot establish metric alignment.")
+    run = flatten_study if args.flatten_study else _run
+    if args.flatten_study and (args.paths or args.tile):
+        parser.error("--flatten-study requires the non-tile synthetic fixture")
     if args.numpy:
         with patch.object(accel, "active", return_value=False):
-            result = _run(args)
+            result = run(args)
     else:
-        result = _run(args)
+        result = run(args)
+    if args.flatten != "none":
+        result["settings"]["flatten"] = args.flatten
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
-    _display(result, args.figure)
+    if args.flatten_study:
+        print(json.dumps(result))
+        if args.figure:
+            _flatten_figure(result, args.figure)
+    else:
+        _display(result, args.figure)
     return result
 
 
