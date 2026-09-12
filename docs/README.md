@@ -97,6 +97,7 @@ the shared frequencies, inflating sigma by ~1.5-3x over the i.i.d. law.
 | Page | Technique | Implementation |
 |---|---|---|
 | [fit.md](fit.md) | ridge-fitting holograms from data | `holo/fit.py` |
+| [projection.md](projection.md) | opt-in analytic L2 cell projection | `holo/projection.py` |
 | [render.md](render.md) | closed-form X-ray rendering | `holo/render.py` |
 
 **Applications**
