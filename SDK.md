@@ -1563,3 +1563,15 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   frame-rule finding from the object side. Not promoted; the note says
   what a decisive version needs (mass-normalised codewords, balanced
   candidates).
+
+- **Sub-map tiles localise exact sub-regions and still do not make the
+  corpus a place-recognition positive** (2026-09-12;
+  `results/place_recognition.md`, 5090). 8-unit tiles at σ_rec in scene
+  units, whitened, four yaws: both crop pairs found in both directions
+  (0.92, 0.66; 99–273 σ), the station ↔ springhouse re-capture at
+  0.08–0.11 alone — twice the null's maximum and a third of what
+  unrelated wide captures score against each other — and never paired
+  by the radial pre-filter in the corpus run. Eight of twelve captures
+  fit in one tile. 4/6 against a 6/6 bar, and the four are the trivial
+  ones. Not promoted; the ceiling is the object lane's: at d=8192 a
+  whitened bundle scores compact mass before arrangement.

@@ -277,3 +277,187 @@ whole-capture descriptor. That is the next lane.
 
 Figures: `out/place/similarity-corpus.png` (raw) and
 `out/place/similarity-corpus-whitened.png`.
+
+## Sub-map tiles (synthetic)
+
+The additive `--tile` branch uses fixed physical tile edges and one
+codebook for the run: `sigma_box = sigma_units / tile`. Tiles cover each
+capture's mass-centred crop cube; their mass threshold is a fraction of
+the entire capture's alpha mass (including alpha below the loader floor).
+Overlapping tiles can have mass shares summing above one. The existing
+non-tile computation and JSON schema are unchanged.
+
+Seed 0, a three-cell landmark world, two overlapping capture cubes and
+one unrelated world; the second capture has origin offset [1, 0, 0],
+yaw π/2 and an additional local translation [0.04, -0.03, 0.02] in scene
+units. Each capture retains two tiles. Each tile contains 160 landmarks
+with equal alpha, random positions and heterogeneous covariances.
+Landmark IDs, independent of descriptors, identify one exact shared tile
+pair. This is a controlled localisation fixture, not evidence for real
+re-captures.
+
+| query | capture rank-1 | best positive | best negative | separation | above capture null | partner tile hits / all query tiles |
+|---|---|---|---|---|---|---|
+| world/left | yes | 0.997755 | 0.092701 | 139.74σ | 141.14σ | 1/2 (50%) |
+| world/right-yawed | yes | 0.997674 | 0.086565 | 140.67σ | 141.13σ | 1/2 (50%) |
+
+| tile-level ground truth | result |
+|---|---|
+| exact shared tiles ranked first | 2/2 directed queries |
+| forward winning inverse yaw | 3π/2 |
+| expected forward offset (tile units) | [-0.02000, -0.03000, 0.04000] |
+| recovered forward offset (tile units) | [-0.01875, -0.03000, 0.04125] |
+| maximum coordinate error | 0.001250; below half the coarse grid step, 0.015 |
+| largest unrelated capture score, either direction | 0.092701; 1.40σ above capture-null mean |
+
+The 50% tile hit fractions include the non-overlapping half of each
+capture. Among query tiles with an exact partner, retrieval is 100%.
+A partner-*capture* hit does not by itself establish an exact tile match;
+the JSON reports the landmark-ID checks separately.
+
+| calibration / cost | measurement |
+|---|---|
+| tile phase null: mean ± σ; p95; maximum | 0.077585 ± 0.008052; 0.090659; 0.096543 |
+| capture phase null: mean ± σ; p95; maximum | 0.083608 ± 0.006477; 0.093658; 0.096543 |
+| null draws | 24 tile maxima; 12 capture maxima |
+| ordered tile pairs scored / possible | 12 / 24 (50%) |
+| yaw hypotheses per scored pair | 4 |
+| CPU computation runtime, excluding figure rendering | 36.035 s |
+
+For every query tile, radial-power cosine retains the best two database
+tiles, excluding its own capture. All query yaw descriptors participate
+in the radial comparison. Translation invariance is exact to rounding;
+yaw invariance is only approximate for the finite sampled codebook.
+This preserves the existing module's caveat rather than claiming exact
+pose invariance. Prefiltering can miss partners; `--prefilter 0` scores
+all cross-capture pairs.
+
+Four phase-surrogate draws per query retain its magnitudes and hence
+its selected candidate set. Each draw repeats the maximum over those
+database tiles, yaws and refined translations. The capture null also
+maximises over the capture's query tiles. These calibration definitions
+are ours. Pair counts exclude null work: this run also evaluates 48
+surrogate tile pairs, each with four yaws. Null σ is empirical and based
+on a small seeded sample; the large synthetic separation is not a
+real-capture significance claim. Runtime varies with CPU contention.
+
+Reproduce the table and figure from the repository root:
+
+```sh
+HDC_BACKEND=numpy MPLCONFIGDIR=/tmp/submap-mpl .venv/bin/python -m bench.place_recognition /tmp/submap-tiles.json --synthetic 3 --numpy --tile 1 --overlap 0 --dim 1024 --grid 5 --limit 0.06 --yaws 4 --scrambles 4 --whiten 1 --prefilter 2 --figure out/place/tiles-synthetic.png
+```
+
+Figure: `out/place/tiles-synthetic.png` (capture matrix and all-query-tile
+partner hit fractions). The JSON includes tile origins, mass shares,
+owners, masked tile/capture matrices, best pairs, offsets, yaw indices,
+both null distributions and the exact synthetic ground truth.
+Offsets are in tile units after the winning query yaw; multiply by the
+tile edge for scene units. Null entries mean masked or unscored pairs.
+
+Real captures and an RTX 5090 are unavailable in this worktree. The
+maintainer's corpus runs remain `--tile 6` and `--tile 10`, `--yaws 8`,
+`--grid 32`, `--whiten 1`, with all twelve sorted captures and
+`--partner 1 9 --partner 4 5 --partner 10 11`. The unchanged bar is all
+six known-partner queries at rank 1 and at least 3σ above the calibrated
+null. A negative would be the springhouse/station interior-versus-yard
+pair remaining inside the null at tile level too. No corpus conclusion
+is inferred from this synthetic result.
+
+Validation: `OPENBLAS_NUM_THREADS=1 HDC_BACKEND=numpy .venv/bin/python -m
+pytest tests -q` completed with `3 failed, 357 passed, 9 skipped in 26.32s`.
+All three failures are the expected `tests.count` claim drift (321 in
+the registry, 328 in the tree); updating claims is outside this lane.
+The targeted file passed all 20 tests in 1.78 s with one BLAS thread,
+including the frozen pre-lane JSON computation and forbidden-tile-path
+guards. Its slowest new test took 0.22 s. The initial unrestricted-BLAS
+full-suite run was interrupted in the existing resonator tests after
+severe thread overhead; the single-thread run above completed the full
+suite. Ruff is clean and quality reports `lint debt: 50 (baseline 50)`.
+`holo-facts check --strict` reports `1 FAIL, 25 WARN`, with
+`tests.count` the only failure.
+
+## Sub-map tiles on the corpus (2026-09-12, RTX 5090)
+
+`--tile 8 --dim 8192 --yaws 4 --grid 24 --whiten 1 --prefilter 8 --min-mass 0.02
+--scrambles 12`, all twelve captures, 1168 of 16250 tile pairs scored after the
+radial pre-filter. A first attempt at `--tile 6 --yaws 8 --grid 32` died on the
+GPU's launch watchdog and a second was silent for forty minutes; `tile_matrix`
+now reports progress and this is the affordable setting.
+
+Tiles per capture at 8 scene units with 2% minimum mass:
+
+| capture | tiles |
+|---|---:|
+| brook-2 | 1 |
+| brook | 1 |
+| cannon | 1 |
+| oak | 27 |
+| rr-cairn | 1 |
+| rr | 36 |
+| rlib-cannon | 1 |
+| rlib | 27 |
+| saguaro | 1 |
+| spring | 1 |
+| wc-gun | 1 |
+| wc | 48 |
+
+Eight of the twelve captures yield **one tile** — the object scans, the crops
+and both station captures fit inside one 8-unit tile — so for them the
+"tile" is the whole capture again. Only the four wide parents are tiled.
+
+Capture-level scores (max over tile pairs; — = no pair survived the pre-filter):
+
+```
+        brook-  brook cannon    oak rr-cai     rr rlib-c   rlib saguar spring wc-gun     wc
+brook-2      -      -      -      -      -  0.170      -  0.190      -      -      -  0.123
+brook        -      -      -  0.254      -  0.117      -      -      -      -      -  0.176
+cannon       -      -      -  0.679      -      -      -      -      -      -      -  0.119
+oak          -  0.240  0.680      -      -  0.304      -      -      -      -      -  0.340
+rr-cairn     -      -      -  0.289      -  0.921      -  0.274      -      -      -      -
+rr           -  0.104  0.168  0.299  0.921      -      -  0.324      -  0.146  0.131  0.143
+rlib-can     -      -      -      -      -      -      -  0.559      -      -      -      -
+rlib     0.185      -      -      -      -  0.147  0.509      -  0.036      -  0.244  0.283
+saguaro      -      -      -      -      -  0.076      -  0.336      -      -      -  0.223
+spring       -      -      -      -      -      -      -      -      -      -      -  0.111
+wc-gun       -      -      -      -      -  0.125      -  0.037      -      -      -  0.659
+wc           -  0.094      -  0.263      -  0.151      -  0.297  0.171      -  0.659      -
+```
+
+| query | rank-1 | best positive | best negative | above null |
+|---|---|---|---|---|
+| 1 brook | no | — | 0.240 | — |
+| 4 rr-cairn | yes | 0.921 | — | 273σ |
+| 5 rr | yes | 0.921 | 0.304 | 273σ |
+| 9 spring | no | — | 0.146 | — |
+| 10 wc-gun | yes | 0.659 | 0.244 | 192σ |
+| 11 wc | yes | 0.659 | 0.340 | 192σ |
+
+Phase-surrogate null over 144 draws: tile 0.039 ± 0.002 (max 0.049),
+capture 0.042 ± 0.003 (max 0.049).
+
+- **The crop pairs are found, both directions**, at 99–273 σ (cairn ↔
+  redrock 0.921, gun ↔ wilsons-creek 0.659): a crop is a subset of its
+  parent, so its one tile matches a parent tile exactly. That is sub-map
+  localisation working, and it is not evidence about place recognition
+  across captures.
+- **The one true re-capture is not scored at all** in the corpus run: the
+  radial pre-filter never paired station with springhouse.
+- Run alone without the pre-filter (`--prefilter 0`, both captures, both
+  directions): station ↔ springhouse scores **0.107 / 0.082 at E=8** (one
+  tile each — the whole captures) and **0.078 / 0.073 at E=4** (eight tiles
+  for the yard, one for the interior), 11–18 σ above a null whose maximum
+  is 0.051. A real, weak signal — and smaller than the 0.24–0.34 that
+  unrelated wide captures score against each other in the matrix above,
+  so in the corpus it would not rank first.
+
+## Conclusion, restated
+
+Tiles of fixed physical size do what the frame-rule finding predicted for
+sub-maps: exact sub-regions are found at their offsets, at any distractor
+count tried. They do not turn the corpus into a place-recognition positive:
+the interior ↔ yard pair correlates at twice the null and a third of the
+cross-talk between unrelated wide captures. The bar (6/6 at ≥ 3 σ) is not
+met — 4/6, and the four are the trivial ones. The descriptor's ceiling on
+this corpus is the same one the object lane found: at d=8192 a whitened
+spectral bundle scores compact mass before it scores arrangement.
+
