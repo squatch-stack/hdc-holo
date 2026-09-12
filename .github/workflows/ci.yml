@@ -46,7 +46,13 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
-      - run: pip install -e '.[dev,quality]'
+      # crdt carries loro. Without it tests/test_crdt.py, test_orset.py and
+      # test_live_sync.py skip at module level -- 43 tests that reported
+      # success by not running, on the replication surface a whole research
+      # wedge rests on. A skip is not a pass; install the extra.
+      - run: pip install -e '.[dev,quality,crdt]'
+      - name: Replication tests must actually run, not skip
+        run: python -c "import holo.crdt as c; assert c.HAVE_LORO, 'loro is missing so the CRDT suite would skip silently'"
       - name: Backend must be the NumPy fallback
         run: python -c "from holo import backend; assert backend.backend_name() == 'numpy', backend.backend_name()"
       - run: python -m pytest tests/ -q
