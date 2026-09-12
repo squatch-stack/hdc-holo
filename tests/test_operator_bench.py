@@ -63,14 +63,14 @@ def test_checksums_are_deterministic_at_fixed_seed():
 
 
 def test_equal_bytes_rows_exist():
-    rows = run_matrix('numpy', 32, 13, 7, 1, 1)['accuracy']
+    rows = run_matrix('numpy', 32, 13, 7, 1, 1)['accuracy']['rows']
     assert set(rows) == {'FHRR@d', 'FHRR@d/2', 'HRR@d'}
     # The same-d control necessarily uses twice the bytes of the matched pair.
     assert rows['FHRR@d/2']['bytes_per_codeword'] == (
         rows['HRR@d']['bytes_per_codeword'])
     assert rows['FHRR@d']['bytes_per_codeword'] == (
         2 * rows['HRR@d']['bytes_per_codeword'])
-    assert rows['FHRR@d/2']['N'] == rows['HRR@d']['N'] == 8
+    assert rows['FHRR@d/2']['N'] == rows['HRR@d']['N'] == [1, 1, 1, 2, 4]
 
 
 def test_bind_and_spatial_kernels():
@@ -117,3 +117,67 @@ def test_cli_verification_and_bad_checksum(tmp_path):
     b = {'operators': {'cleanup': {'checksum': 1.01}}}
     with pytest.raises(ValueError, match='verification failed'):
         _verify(a, b)
+
+
+@pytest.fixture(scope='module')
+def load_curve():
+    return run_matrix('numpy', 1024, 13, 7, 1, 1)['accuracy']
+
+
+def test_all_three_rows_share_n_at_every_load(load_curve):
+    assert load_curve['loads'] == [0.02, 0.05, 0.1, 0.2, 0.5]
+    for row in load_curve['rows'].values():
+        assert row['N'] == [5, 13, 26, 51, 128]
+        assert len(row['top1']) == len(load_curve['loads'])
+
+
+def test_top1_is_high_at_low_load_and_non_increasing(load_curve):
+    for row in load_curve['rows'].values():
+        assert row['top1'][0] >= 0.9
+        assert np.all(np.diff(row['top1']) <= 0.02)
+
+
+def test_predicted_bytes_for_d32768_fit_26gb_with_capped_items_at_q1024():
+    # The d=32768 column is measured with Q=1024 queries: at Q=4096 the
+    # query planes alone exceed the budget (20.6 GB at K=100), so the
+    # cap on bundled items is necessary but not sufficient on its own.
+    for k in (100, 1000):
+        assert predict_bytes(32768, k, 1024, max_items=4096) < 26e9
+    # The codebook planes are held whole (16 (K+Q) d bytes), so K=10^4 at
+    # d=32768 still refuses; streaming the codebook is a separate change.
+    assert predict_bytes(32768, 10000, 1024, max_items=4096) > 26e9
+    assert predict_bytes(32768, 100, 4096, max_items=4096) > 12e9
+
+def test_capped_byte_formula():
+    assert predict_bytes(32768, 10000, 4096) == 41407973376
+    assert predict_bytes(32768, 10000, 4096, max_items=32768) > (
+        predict_bytes(32768, 10000, 4096))
+
+
+def test_max_items_caps_n():
+    curve = run_matrix('numpy', 64, 13, 7, 1, 1,
+                       loads=(0.02, 0.5, 1.0), max_items=3)['accuracy']
+    assert curve['loads'] == [0.02, 0.5, 1.0]
+    for row in curve['rows'].values():
+        assert row['N'] == [1, 3, 3]
+        assert row['top1'][1] == row['top1'][2]
+
+
+def test_cli_loads_and_max_items(tmp_path):
+    report = main(['--d', '32', '--K', '3', '--Q', '2', '--reps', '1',
+                   '--loads', '0.1,0.5', '--max-items', '2', '--verify',
+                   '--out', str(tmp_path / 'curve.json')])
+    curve = report['runs'][0]['accuracy']
+    assert curve['loads'] == [0.1, 0.5]
+    for row in curve['rows'].values():
+        assert row['N'] == [1, 2]
+    assert report['verification'][0]['status'] == 'passed'
+
+
+@pytest.mark.parametrize('loads,max_items', [
+    ((), 3), ((float('nan'),), 3), ((float('inf'),), 3),
+    ((0,), 3), ((-0.1,), 3), ((0.1,), 0), ((0.1,), 1.5),
+])
+def test_invalid_curve_parameters(loads, max_items):
+    with pytest.raises(ValueError):
+        run_matrix('numpy', 32, 13, 7, 1, 1, loads, max_items)
