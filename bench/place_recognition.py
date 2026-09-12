@@ -33,6 +33,15 @@ Real captures must share coordinates; --lo X Y Z --extent E fixes their cube.
 Known real partners can be supplied as repeated --partner I J (zero-based).
 Offsets[i,j] locate query j after the winning yaw relative to reference i;
 they are normalized units, and need multiplying by extent for physical units.
+
+Position scrambling is a weak null on real captures: on the 5090 with
+wilsons-creek, its gun crop and cannon (8192-d, 4 yaws), scrambled copies
+scored 0.80-0.999 against their own source, because permuting positions
+among 400k similar splats leaves the density field nearly unchanged. The
+default null is therefore the phase surrogate (random phases, identical
+magnitudes): it shares the radial control exactly and has no arrangement,
+so it measures precisely what phase correlation adds. --null scramble
+keeps the old model for synthetic scenes with distinct landmarks.
 """
 
 import argparse
@@ -51,6 +60,7 @@ from holo.capture import (
     load_scene_file,
     quat_to_rot,
     render_mip,
+    weighted_quantile,
 )
 from holo.spectral import (
     SplatScene,
@@ -85,6 +95,34 @@ def build_scene_fixed(path, lo, extent, alpha_min=ALPHA_MIN, s_lo=S_LO,
     amp = np.concatenate([alpha, alpha * rgba[:, :3]], axis=1).astype(np.float32)
     box = ((hi - lo) / extent).astype(np.float32)
     return SplatScene(pos, cov, amp), scale.max(axis=1), box
+
+
+def crop_box(path, alpha_min=ALPHA_MIN, crop_quantile=0.75, crop_margin=1.2):
+    """Return build_scene's mass-centred cube as (lo, extent) for a capture.
+
+    build_scene computes the cube and does not return it. Recomputing it
+    lets a crop be encoded in its parent's frame (--frame parent.spz)
+    without retyping the rounded numbers build_scene prints.
+    """
+    pos, _, rgba, _ = load_scene_file(path)
+    keep = rgba[:, 3] >= alpha_min
+    pos, a = pos[keep], rgba[keep, 3]
+    center = np.array([weighted_quantile(pos[:, i], a, 0.5) for i in range(3)])
+    radius = weighted_quantile(np.abs(pos - center).max(axis=1), a, crop_quantile)
+    return center - crop_margin * radius, float(2 * crop_margin * radius)
+
+
+def phase_surrogate(fp, rng):
+    """Randomise every phase and keep every magnitude.
+
+    This is the null that shares the radial control exactly and has no
+    arrangement at all, which is what phase correlation is supposed to add.
+    Position scrambling is not that null on a capture: permuting positions
+    among 400k similar splats leaves the density field nearly unchanged.
+    """
+    fp = np.asarray(fp)
+    phases = rng.uniform(-np.pi, np.pi, fp.shape)
+    return (fp * np.exp(1j * phases)).astype(np.complex64)
 
 
 def fingerprint(scene, freqs, sigma_rec):
@@ -212,11 +250,16 @@ def synthetic_scene(rng):
 def _inputs(args, rng):
     scenes, labels, groups = [], [], []
     if args.paths:
+        lo, extent = args.lo, args.extent
+        if args.frame is not None:
+            lo, extent = crop_box(args.frame)
+            print(f"frame from {Path(args.frame).name}: cube of {extent:.4f} "
+                  f"scene units at {np.round(lo, 4)}")
         for path in args.paths:
-            if args.lo is None:
+            if lo is None:
                 scene, _, _ = build_scene(path)
             else:
-                scene, _, _ = build_scene_fixed(path, args.lo, args.extent)
+                scene, _, _ = build_scene_fixed(path, lo, extent)
             scenes.append(scene)
             labels.append(Path(path).name)
             groups.append(len(groups))
@@ -237,14 +280,17 @@ def _yaw_fingerprints(scene, angles, freqs, sigma):
     return np.stack([fingerprint(yaw_scene(scene, t), freqs, sigma) for t in angles])
 
 
-def _calibrate(scenes, fps, angles, freqs, grid, args, rng):
+def _calibrate(scenes, fps, yaw_fps, angles, freqs, grid, args, rng):
     samples = []
     for m in range(args.scrambles):
         i = m % len(scenes)
-        candidates = _yaw_fingerprints(scramble(scenes[i], rng), angles,
-                                       freqs, args.sigma)
+        if args.null == "phase":
+            candidates = phase_surrogate(yaw_fps[i], rng)
+        else:
+            candidates = _yaw_fingerprints(scramble(scenes[i], rng), angles,
+                                           freqs, args.sigma)
         samples.append(_best_yaw(fps[i], candidates, freqs, grid)[0])
-    return {"samples": samples, "mean": float(np.mean(samples)),
+    return {"null": args.null, "samples": samples, "mean": float(np.mean(samples)),
             "sigma": float(np.std(samples)), "p95": float(np.percentile(samples, 95)),
             "max": float(np.max(samples)), "count": len(samples)}
 
@@ -288,6 +334,11 @@ def _parser():
     parser.add_argument("--numpy", action="store_true")
     parser.add_argument("--figure", type=Path)
     parser.add_argument("--lo", type=float, nargs=3)
+    parser.add_argument("--frame", help="capture whose mass-centred cube frames "
+                        "every path (a crop in its parent's frame)")
+    parser.add_argument("--null", choices=("phase", "scramble"), default="phase",
+                        help="noise model for calibration: phase-randomised "
+                        "fingerprints (default) or position scrambling")
     parser.add_argument("--extent", type=float)
     parser.add_argument("--partner", type=int, nargs=2, action="append", default=[])
     return parser
@@ -301,6 +352,8 @@ def _validate(parser, args):
         parser.error("--sigma and --limit must be finite and positive")
     if (args.lo is None) != (args.extent is None):
         parser.error("--lo and --extent must be supplied together")
+    if args.frame is not None and args.lo is not None:
+        parser.error("--frame and --lo/--extent are alternatives")
     n = len(args.paths) if args.paths else 4 * args.synthetic
     if any(i == j or min(i, j) < 0 or max(i, j) >= n for i, j in args.partner):
         parser.error("--partner requires distinct valid descriptor indices")
@@ -340,7 +393,7 @@ def _run(args):
     scores, offsets = similarity_matrix(fps, freqs, grid, yaw_fps)
     power = np.stack([radial_power(fp, freqs) for fp in fps])
     power /= np.maximum(np.linalg.norm(power, axis=1, keepdims=True), 1e-30)
-    noise = _calibrate(scenes, fps, angles, freqs, grid, args, rng)
+    noise = _calibrate(scenes, fps, yaw_fps, angles, freqs, grid, args, rng)
     return {"labels": labels, "scores": scores.tolist(), "offsets": offsets.tolist(),
             "radial": (power @ power.T).tolist(), "noise": noise,
             "retrieval": _retrieval(scores, groups, args.partner, noise["sigma"]),
@@ -348,6 +401,7 @@ def _run(args):
                          "grid": args.grid, "limit": args.limit,
                          "yaws": args.yaws, "angles": angles.tolist(),
                          "lo": args.lo, "extent": args.extent,
+                         "frame": args.frame, "null": args.null,
                          "numpy": args.numpy, "synthetic": not bool(args.paths)},
             "control_caveat": "Translation exact to rounding; finite-sample yaw "
                               "invariance approximate. Permuting equal splats "
