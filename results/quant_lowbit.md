@@ -441,3 +441,163 @@ case 0.39 s). The full suite reports `3 failed, 419 passed, 9 skipped in
 `1 FAIL, 25 WARN`, with `tests.count` the sole FAIL. Updating that
 registry and its cites is outside this lane and left to the maintainer.
 The original D2 functions, existing tests, and prior results are intact.
+
+## D3 on real cells (2026-09-12, two captures)
+
+Same command with `--experiment D3 --capture`, on the 5090 host in NumPy,
+`cell_scenes("xfine", 24)` on `cannon.spz` and `wilsons-creek.spz` —
+the same cells D2 measured. `ref` is the same-run `quant_polar`
+reference at the vector scale; `block` is the block length; d is
+reduced so the scale bytes fit the payload budget.
+
+Cannon — median relative reconstruction error (305 s, 2.52 GB):
+
+```
+     B       d   m/p block     e8m0       u8      ref
+  8192    4096   8/8     0        -        -   0.2026
+  8192    7936   4/4    32   0.1721   0.1655        -
+  8192    8192   4/4     0        -        -   0.1727
+  8192   14560   2/2    16   0.2299   0.2076        -
+  8192   15360   2/2    32   0.2564   0.2390        -
+  8192   15360   1/3    32   0.7017   0.6211        -
+  8192   15872   2/2    64   0.2880   0.2459        -
+  8192   29120   1/1    32   1.0213   0.9617        -
+ 16384    8192   8/8     0        -        -   0.1556
+ 16384   15872   4/4    32   0.1219   0.1192        -
+ 16384   16384   4/4     0        -        -   0.1175
+ 16384   29120   2/2    16   0.2077   0.1774        -
+ 16384   30720   2/2    32   0.2269   0.2001        -
+ 16384   30720   1/3    32   0.6986   0.6146        -
+ 16384   31744   2/2    64   0.2590   0.2246        -
+ 16384   58240   1/1    32   1.0220   0.9714        -
+ 32768   16384   8/8     0        -        -   0.1055
+ 32768   31744   4/4    32   0.0888   0.0863        -
+ 32768   32768   4/4     0        -        -   0.0940
+ 32768   58240   2/2    16   0.1850   0.1545        -
+ 32768   61440   2/2    32   0.2083   0.1692        -
+ 32768   61440   1/3    32   0.6930   0.6271        -
+ 32768   63488   2/2    64   0.2449   0.1995        -
+ 32768  116480   1/1    32   1.0262   0.9768        -
+```
+
+Cannon — median drift against the unquantised decode at the same d (305 s, 2.52 GB):
+
+```
+     B       d   m/p block     e8m0       u8      ref
+  8192    4096   8/8     0        -        -   0.0121
+  8192    7936   4/4    32   0.0643   0.0558        -
+  8192    8192   4/4     0        -        -   0.0673
+  8192   14560   2/2    16   0.1993   0.1752        -
+  8192   15360   2/2    32   0.2318   0.1998        -
+  8192   15360   1/3    32   0.6949   0.6282        -
+  8192   15872   2/2    64   0.2637   0.2171        -
+  8192   29120   1/1    32   1.0058   0.9567        -
+ 16384    8192   8/8     0        -        -   0.0058
+ 16384   15872   4/4    32   0.0454   0.0393        -
+ 16384   16384   4/4     0        -        -   0.0478
+ 16384   29120   2/2    16   0.1817   0.1504        -
+ 16384   30720   2/2    32   0.2098   0.1786        -
+ 16384   30720   1/3    32   0.6855   0.6163        -
+ 16384   31744   2/2    64   0.2492   0.2038        -
+ 16384   58240   1/1    32   1.0250   0.9699        -
+ 32768   16384   8/8     0        -        -   0.0040
+ 32768   31744   4/4    32   0.0350   0.0299        -
+ 32768   32768   4/4     0        -        -   0.0377
+ 32768   58240   2/2    16   0.1735   0.1426        -
+ 32768   61440   2/2    32   0.2003   0.1657        -
+ 32768   61440   1/3    32   0.6908   0.6230        -
+ 32768   63488   2/2    64   0.2393   0.1937        -
+ 32768  116480   1/1    32   1.0198   0.9704        -
+```
+
+Wilson's Creek — median relative reconstruction error (662 s, 2.31 GB):
+
+```
+     B       d   m/p block     e8m0       u8      ref
+  8192    4096   8/8     0        -        -   0.2464
+  8192    7936   4/4    32   0.1995   0.1971        -
+  8192    8192   4/4     0        -        -   0.2067
+  8192   14560   2/2    16   0.2309   0.2175        -
+  8192   15360   2/2    32   0.2547   0.2342        -
+  8192   15360   1/3    32   0.7227   0.6304        -
+  8192   15872   2/2    64   0.2711   0.2460        -
+  8192   29120   1/1    32   1.0643   0.9531        -
+ 16384    8192   8/8     0        -        -   0.1882
+ 16384   15872   4/4    32   0.1415   0.1395        -
+ 16384   16384   4/4     0        -        -   0.1329
+ 16384   29120   2/2    16   0.1939   0.1702        -
+ 16384   30720   2/2    32   0.2142   0.1942        -
+ 16384   30720   1/3    32   0.6727   0.5906        -
+ 16384   31744   2/2    64   0.2372   0.2059        -
+ 16384   58240   1/1    32   1.0337   0.9525        -
+ 32768   16384   8/8     0        -        -   0.1235
+ 32768   31744   4/4    32   0.0982   0.0942        -
+ 32768   32768   4/4     0        -        -   0.1019
+ 32768   58240   2/2    16   0.1734   0.1477        -
+ 32768   61440   2/2    32   0.1923   0.1641        -
+ 32768   61440   1/3    32   0.6599   0.5783        -
+ 32768   63488   2/2    64   0.2175   0.1875        -
+ 32768  116480   1/1    32   1.0383   0.9435        -
+```
+
+Wilson's Creek — median drift against the unquantised decode at the same d (662 s, 2.31 GB):
+
+```
+     B       d   m/p block     e8m0       u8      ref
+  8192    4096   8/8     0        -        -   0.0101
+  8192    7936   4/4    32   0.0678   0.0592        -
+  8192    8192   4/4     0        -        -   0.0705
+  8192   14560   2/2    16   0.2000   0.1790        -
+  8192   15360   2/2    32   0.2237   0.1957        -
+  8192   15360   1/3    32   0.6704   0.5882        -
+  8192   15872   2/2    64   0.2432   0.2143        -
+  8192   29120   1/1    32   1.0295   0.9362        -
+ 16384    8192   8/8     0        -        -   0.0066
+ 16384   15872   4/4    32   0.0504   0.0452        -
+ 16384   16384   4/4     0        -        -   0.0476
+ 16384   29120   2/2    16   0.1684   0.1458        -
+ 16384   30720   2/2    32   0.1999   0.1725        -
+ 16384   30720   1/3    32   0.6559   0.5797        -
+ 16384   31744   2/2    64   0.2216   0.1895        -
+ 16384   58240   1/1    32   1.0345   0.9452        -
+ 32768   16384   8/8     0        -        -   0.0040
+ 32768   31744   4/4    32   0.0370   0.0313        -
+ 32768   32768   4/4     0        -        -   0.0386
+ 32768   58240   2/2    16   0.1579   0.1315        -
+ 32768   61440   2/2    32   0.1844   0.1505        -
+ 32768   61440   1/3    32   0.6563   0.5738        -
+ 32768   63488   2/2    64   0.2103   0.1778        -
+ 32768  116480   1/1    32   1.0362   0.9432        -
+```
+
+### What the real cells say
+
+- **The knee stays at four bits, on captures as on the fixture.** The
+  best sub-nibble point, 2/2 with block 16 and u8 scales, is 0.1774
+  (cannon) and 0.1702 (Wilson's Creek) at 16 KB against 0.1175 and
+  0.1329 for 4/4 at the vector scale — 51% and 28% worse. Block scaling
+  cuts 2/2's error by about a third from D2's 0.2688 / 0.2432, which is
+  the largest single improvement in the ladder, and it is not enough.
+- **Block scaling does not move 4/4 on captures.** The synthetic
+  fixture showed 31% (0.0970 → 0.0667); the captures show a wash at
+  16 KB (0.1192 vs 0.1175; 0.1395 vs 0.1329) and +8% at 8 KB and 32 KB
+  (0.1655 vs 0.1727, 0.0863 vs 0.0940; 0.1971 vs 0.2067, 0.0942 vs
+  0.1019). Capture bundles carry the coherent-crosstalk floor, and a
+  finer magnitude grid below it buys nothing.
+- **One-bit magnitudes are still worse than reporting zero** (≈ 1.0)
+  and 1/3 sits at 0.58–0.63: below four bits the magnitude stream is
+  the whole problem, with or without a block scale.
+- **u8 beats e8m0 in every matched row** (a linear 8-bit fraction of the
+  vector max against a power-of-two exponent), and **smaller blocks
+  win** (16 > 32 > 64) at two bits; both effects are a few percent.
+  Drift follows error in every row.
+
+### Decision, restated
+
+No `HQ` packer. D1's "monotonically" keeps its upper limit at four bits
+per field; block scaling is worth carrying only as the 2/2 fallback
+rate point (a third cheaper in error than the vector scale) if a
+sub-nibble tier is ever needed, and the tier that would justify a
+packer — 2-bit magnitudes within a few percent of 4-bit — did not
+appear on either capture.
+
