@@ -510,6 +510,68 @@ def d1_rank_vs_bits():
     return out
 
 
+@experiment("D2", "D", 2.0, 14,
+            "sub-nibble polar quantisation at three equal-byte budgets")
+def d2_lowbit(synthetic=False):
+    """Extend D1 below the nibble floor using analytic rates, not a packer.
+
+    All 84 settings share the same 24 cells, and settings at a given d
+    share one codebook and raw decode. Error is relative to the exact
+    field; drift is relative to that d's unquantised decode, including
+    shrinkage when enabled. The common 17-byte header is extra to each
+    payload budget. Run the synthetic CLI via bench.quant_lowbit.
+    """
+    from bench.quant_lowbit import LADDER, candidates, synthetic_cells
+    from holo.capture import BANDS, S_LO
+    from holo.spectral import (
+        decode_field,
+        eval_scene_exact,
+        sample_frequencies,
+        spectral_bundle,
+    )
+
+    cells, _half = (synthetic_cells() if synthetic
+                    else cell_scenes("xfine", 24))
+    if len(cells) != 24:
+        raise ValueError("D2 requires 24 cells")
+    _, cap, _cell = BANDS[0]
+    n_comp = 3 + max(2, round(np.log2(cap / S_LO)))
+    rho = list(1.0 / np.geomspace(S_LO, cap, n_comp))
+    grid = {}
+    for factor in (0.5, 1, 2):
+        for d, mbits, pbits in LADDER:
+            grid.setdefault(int(d * factor), []).append(
+                (int(16384 * factor), mbits, pbits))
+    truth = [eval_scene_exact(local, pts)[:, 0] for local, pts in cells]
+    if any(np.linalg.norm(t) == 0 for t in truth):
+        raise ValueError("D2 requires nonzero truth in every cell")
+    out = {"fixture": "synthetic" if synthetic else "capture",
+           "ncells": len(cells), "dropped_points": [],
+           "fixture_seed": 7, "frequency_seed": 42, "gamma": 0.5,
+           "probe_counts": [len(pts) for _, pts in cells]}
+    for d, configs in sorted(grid.items()):
+        freqs = sample_frequencies(d, 3, rho, np.random.default_rng(42))
+        errors, drifts, raw_errors = [], [], []
+        for (local, pts), exact in zip(cells, truth):
+            bundle = spectral_bundle(local, freqs)[0].astype(np.complex64)
+            rows, vectors = candidates(bundle, configs)
+            decoded = decode_field(vectors, freqs, rho, pts, chunk=128)
+            raw = decoded[:, 0]
+            errors.append([rel(est, exact) for est in decoded[:, 1:].T])
+            drifts.append([rel(est, raw) for est in decoded[:, 1:].T])
+            raw_errors.append(rel(raw, exact))
+        for i, row in enumerate(rows):
+            row.update(median_rel_err=float(np.median(np.array(errors)[:, i])),
+                       median_drift=float(np.median(np.array(drifts)[:, i])),
+                       raw_median_rel_err=float(np.median(raw_errors)))
+            key = ("B=%d/d=%d/m=%d/p=%d/%s/shrink=%s" %
+                   (row["payload_budget"], d, row["mbits"], row["pbits"],
+                    row["scale_rule"], row["shrink"]))
+            out[key] = row
+        print("    D2 d=%d: %d settings, 24 cells" % (d, len(rows)), flush=True)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
