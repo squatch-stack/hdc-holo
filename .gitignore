@@ -2,7 +2,14 @@
 __pycache__/
 .pytest_cache/
 .DS_Store
-data/
+# data/ holds real captures and is not tracked -- except the two small
+# crops every lane opens on, which are cut from their parents by
+# `crop_scene_file` and are genuine SUBSETS of a real capture, so a lane
+# can run its first pass on real data at d=2048 on a laptop. The rule is
+# `data/*` rather than `data/`: git does not descend into an excluded
+# directory, so a negation inside one never fires.
+data/*
+!data/fixtures/
 .venv/
 __pycache__/
 hdc_holo.egg-info/

@@ -1674,3 +1674,59 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   evidence had shown the trade (bright crop 0.9999 → 0.26) beside the
   positive. Whole-capture bundles at d=8192 score compact mass or
   nothing; raw sub-map tiles at E=4–8 stay the working localiser.
+
+- **Crops cut from their parents, and two of them small enough to
+  commit** (2026-09-12; `holo.capture.crop_scene_file` / `bbox_of`,
+  `data/fixtures/`). The gallery's captures are each an independent
+  480,000-splat subsample of a trained model, so a gallery "crop" and
+  its "parent" share 0.488 and 0.638 of the crop's positions (gun
+  against Wilson's Creek, cairn against redrock) and
+  the difference between the two files is two draws, not an object —
+  which is why two of three real change-detection cases could not be
+  built. `crop_scene_file` selects a parent's own primitives by a box
+  and writes them unchanged; `bbox_of` reads the box off another file,
+  so the pair is the two lines that make a removal case. Two subsets of
+  real captures now ship in-repo (49,077 and 57,536 splats, under a
+  megabyte each, 2,024 and 6,005 cells at d=2048, 8 s and 14 s on a
+  laptop) so a lane's first pass runs on real data before it asks for
+  the GPU. Six synthetic ladders failed to transfer to captures this
+  year; that is what these are for.
+
+- **CLAIMED: after the ceiling — merge, promote, publish** (opened
+  2026-09-12). The 2026-09-12 burst asked whether one whole-capture
+  vector can recognise, from six directions, and the answer is no with
+  the mechanism understood. None of the three wedges in
+  `docs/related-work.md` ever asked that: wedge 1 needs payloads bound
+  to positions plus localisation, which works on real captures; wedge 2
+  needs no recognition at all. The geometric-identity family is closed
+  on this corpus. New rule for these lanes, from the burst's one
+  process failure — thirty PRs, five registered claims, zero
+  promotions: **each lane states the number that ends it before the
+  tool exists**, and names the wedge it serves.
+  - `research/capture-merge` — two replicas encode overlapping regions
+    of one capture and delta-sync. Wedge 2. Kills: the best read-time
+    merge rule must hold overlap-band slice error within **1.25×** the
+    worse single half, or the overlap is unmergeable without
+    correspondence and the wedge narrows to owner-partitioned cells;
+    merge time must be flat in splats-per-cell over 10×–100×
+    (**fitted slope < 0.1**) or the O(d) claim is dead; the byte
+    crossover occupancy is reported whatever it is, and the wedge
+    sentence is rewritten to it — a bundle is 16 KB at the knee where
+    its median cell is ~660 B of SPZ, so the honest claim is state flat
+    in contributions and merge without correspondence, not fewer wire
+    bytes. Files: `bench/merge_capture.py`, its test,
+    `results/merge_capture.md`, `out/merge/`.
+  - `sdk/locality`, `sdk/resonator`, `sdk/docs-debt` — promotion lanes
+    for work whose measurements are already done. No new numbers.
+  - `sdk/adaptive-cells` — adaptive cells and the matched referee as
+    **opt-in** kwargs (`budget=0` bit-identical to today). The twelve
+    captures go 17.1–176.7% → 4.5–28.4% top-down with no scene
+    regressing, at 3.6× the cells; a default flip would move every
+    registered capture error and `storage.knee_vs_spz`, so it is a
+    separate decision with its own corpus re-run.
+  - `sdk/projection` — the analytic L2 projection at the decided
+    `eps=1e-3` and norm-ratio gate 1.2, opt-in. Closes ROADMAP #2.
+  - `paper/2026-09-honest` — §9 is one experiment behind the log, the
+    abstract promises view synthesis that §1 disclaims, and the four
+    "UNVERIFIED" references were resolved on 2026-08-27. Nothing is
+    published or sent.
