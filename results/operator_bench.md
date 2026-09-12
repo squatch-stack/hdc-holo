@@ -125,8 +125,10 @@ python -m holo.facts.cli check --strict
 
 The measured NumPy verification corners (K=1000, d=256 and 1024) have zero
 relative checksum differences for all six operators across repeat runs. Verification
-uses float64 sums and a 2e-6 relative threshold; any nonfinite or excessive
-difference fails. Memory-refused verification corners are explicitly marked refused,
+uses float64 sums of absolute values and a 2e-6 relative threshold; any nonfinite
+or excessive difference fails. The sum is of absolute values because a signed sum
+of near-zero-mean scores cancels: the first CUDA run on the 5090 failed the cleanup
+corner at 1.7e-5 with every element agreeing to float32 rounding. Memory-refused verification corners are explicitly marked refused,
 not passed. These CPU self-checks do not validate another backend. CUDA/Metal were
 unavailable, so GPU rows remain a template. CUDA refuses `CUPY_TF32=1`.
 Full per-query argmax histograms and checksums are in the gitignored JSON output.
