@@ -1730,3 +1730,53 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
     abstract promises view synthesis that §1 disclaims, and the four
     "UNVERIFIED" references were resolved on 2026-08-27. Nothing is
     published or sent.
+
+- **Two replicas of one capture: addition is the wrong merge rule in an
+  overlap, the merge stays flat, and the byte claim was a cell-size
+  choice all along** (2026-09-12; `bench/merge_capture.py`,
+  `results/merge_capture.md`; the real in-repo crop at d=2048, two Loro
+  peers exchanging real deltas). Wedge 2's sentence was "merge cost
+  O(d), independent of splat count", and this lane split it in three
+  and gave each part a number.
+  - **Overlap.** Peers encode the shared band twice, so `merged()`'s
+    sum doubles that mass: 1.268 relative error in the band against
+    0.314 (mean over a container's writers) and 0.308 (owner, lowest
+    peer id) — four times the error of encoding the region once, and
+    both alternatives land at or below the halves' own quality. The
+    criterion was 1.25x the worse half and owner gives **0.892**, so it
+    holds. Both rules read only the shards a peer already has: the
+    writer set is the key set, so neither needs agreement.
+  - **Misalignment.** With peer B drifted before it encodes, owner is
+    flat to within 0.007 across σ_pos 0 → 0.2 where mean degrades by
+    half. Summing *improves* with drift (1.268 → 0.344) because drift
+    decorrelates the doubled mass — a rule that looks better as its
+    inputs get worse, logged as a warning rather than a result.
+  - **Time.** Over a 250x span of splats per dirty cell the log-log
+    slope of apply time is -0.002 raw and -0.011 HG-8. A merge costs
+    what the vectors cost. **The O(d) claim survives.**
+  - **State.** Live shard bytes are exactly flat in the number of
+    contributions — 65,548 raw and 16,460 HG-8 at K=1 and at K=16 —
+    while the primitives those contributions describe grow linearly.
+    This is the claim the wedge should lead with.
+  - **Bytes.** The crossover is a constant of the format, not the
+    lattice: **749 splats per cell at HG-8** (2,980 raw), within one
+    splat across the whole occupancy span. So the byte question has no
+    single answer — 22.5x SPZ at 33 splats per cell, 0.09x at 8,310 —
+    and the cheap end is the end where a cell is far past its crosstalk
+    budget. Pairing bytes against fidelity across the cell ladder is
+    the measurement this lane did not run.
+  - **What it does not show:** the two halves come from one
+    optimisation, so their primitives agree by construction. Two
+    devices reconstructing the same wall can still overturn the overlap
+    result, and that needs the purpose-built capture.
+
+- **43 replication tests were reporting success by not running**
+  (2026-09-12; `.github/workflows/ci.yml`). `loro` ships in the `crdt`
+  extra, which no CI job installed and which was absent locally, so
+  `tests/test_crdt.py`, `tests/test_orset.py` and
+  `tests/test_live_sync.py` skipped at module level on every run — on
+  the one module a whole research wedge rests on. Found by a lane that
+  could not execute. CI now installs the extra and asserts `HAVE_LORO`
+  before the suite, so the skip cannot come back silently. Same family
+  as the codecs that corrupted above 16 bits and the band that dropped
+  splats: the failure said nothing at all.
