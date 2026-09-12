@@ -73,10 +73,25 @@ from .fit import FrequencyBands, HoloRegressor
 from .fsm import HoloFSM
 from .graph import HoloGraph
 from .hashmap import HoloMap
+from .locality import (
+    LocalityReport,
+    enrichment,
+    error_shares,
+    locality_report,
+    null_share,
+    sweep_row_fields,
+)
 from .ngram import NGramEncoder
 from .orset import ORHoloMap, ORStore, ORStrokeScene
 from .record import RecordSpace
 from .render import exact_projection, render_orthographic, view_bundle
+from .resonator import (
+    ResonatorResult,
+    deflate,
+    factorize_all,
+    grid_codebook,
+    resonator,
+)
 from .sdm import SparseDistributedMemory
 from .sequence import HoloStack, SequenceMemory
 from .sketch import FrequencySketch, MembershipFilter
@@ -111,6 +126,7 @@ __all__ = [
                    "HoloReplica",
                    "HoloStack",
                    "ItemMemory",
+                   "LocalityReport",
                    "MembershipFilter",
                    "MultiBandSplatField",
                    "NGramEncoder",
@@ -125,6 +141,7 @@ __all__ = [
                    "ReplicatedHoloMap",
                    "ReplicatedRecordSpace",
                    "ReplicatedSplatScene",
+                   "ResonatorResult",
                    "SequenceMemory",
                    "SparseDistributedMemory",
                    "SplatScene",
@@ -138,17 +155,24 @@ __all__ = [
                    "decode_field_phasor",
                    "decode_slice",
                    "decode_weights",
+                   "deflate",
                    "denoise",
                    "encode",
                    "encode_bands",
+                   "enrichment",
+                   "error_shares",
                    "exact_projection",
                    "exact_slice",
                    "exact_xray",
+                   "factorize_all",
                    "fit",
+                   "grid_codebook",
                    "load_ply_sh",
                    "load_scene_file",
                    "load_splat",
                    "load_spz",
+                   "locality_report",
+                   "null_share",
                    "percentile_threshold",
                    "phasor_bundle",
                    "query",
@@ -156,6 +180,7 @@ __all__ = [
                    "render_mip",
                    "render_orthographic",
                    "render_xray",
+                   "resonator",
                    "sample_frequencies",
                    "save_ply",
                    "save_sog",
@@ -165,6 +190,7 @@ __all__ = [
                    "spectral_bundle",
                    "storage",
                    "structures",
+                   "sweep_row_fields",
                    "sync",
                    "translate_bundle",
                    "view_bundle",

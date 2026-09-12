@@ -14,6 +14,13 @@ from .graph import HoloGraph
 from .hashmap import HoloMap
 from .ngram import NGramEncoder
 from .record import RecordSpace
+from .resonator import (
+    ResonatorResult,
+    deflate,
+    factorize_all,
+    grid_codebook,
+    resonator,
+)
 from .sdm import SparseDistributedMemory
 from .sequence import HoloStack, SequenceMemory
 from .sketch import FrequencySketch, MembershipFilter
@@ -30,6 +37,11 @@ __all__ = [
                        "NGramEncoder",
                        "NearEnoughDispatcher",
                        "RecordSpace",
+                       "ResonatorResult",
                        "SequenceMemory",
                        "SparseDistributedMemory",
+                       "deflate",
+                       "factorize_all",
+                       "grid_codebook",
+                       "resonator",
 ]

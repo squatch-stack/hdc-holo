@@ -30,26 +30,40 @@ from .capture import (
                       save_spz,
 )
 from .color import ColorSplatField
+from .locality import (
+    LocalityReport,
+    enrichment,
+    error_shares,
+    locality_report,
+    null_share,
+    sweep_row_fields,
+)
 from .sog import save_sog
 
 __all__ = [
                       "AttributeSplatField",
                       "ColorSplatField",
+                      "LocalityReport",
                       "band_codebooks",
                       "bbox_of",
                       "build_scene",
                       "crop_scene_file",
                       "decode_slice",
                       "encode_bands",
+                      "enrichment",
+                      "error_shares",
                       "exact_slice",
                       "exact_xray",
                       "load_ply_sh",
                       "load_scene_file",
                       "load_splat",
                       "load_spz",
+                      "locality_report",
+                      "null_share",
                       "render_mip",
                       "render_xray",
                       "save_ply",
                       "save_sog",
                       "save_spz",
+                      "sweep_row_fields",
 ]

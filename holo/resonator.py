@@ -13,6 +13,10 @@ see python -m bench.resonator_sweep for the reproducible capacity experiment.
 Contrary to the initial brief, torchhd functional.py has a resonator step,
 but restricts it to MAPTensor (checked on GitHub 2026-09-12); it does not
 implement this complex FHRR loop.
+The implementation is proven on synthetic bindings and negative on spectral
+bundles of real captures; see results/resonator_capture.md. Near capacity,
+ulp-scale arithmetic variation can change terminal argmax readouts. Tests use
+stable small grids; see docs/resonator.md for the budget and failure modes.
 FTO caveat supplied for this research prototype: US patent 12,014,263 covers
 VSA encoding of continuous spaces; this is research-only.
 """

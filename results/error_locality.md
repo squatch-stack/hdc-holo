@@ -4,7 +4,7 @@
 L2 with 91% / 32% of squared error in the worst 1% / 0.1% of pixels;
 cannon's side slice is 150.3% with only 16% / 3%. Similar headlines,
 opposite diagnoses: concentrated cell failures versus broad herringbone.
-`bench.locality` makes the diagnostic reusable with NumPy alone. It retains
+`holo.locality` makes the diagnostic reusable with NumPy alone. It retains
 truth norm, occupied fraction, and peak ratio alongside relative L2, so a
 small denominator or sparse reference remains visible. It preserves the
 existing sweep's five diagnostic keys and rounding without changing either
@@ -56,14 +56,14 @@ a filtered reference also changes the task, so its error should be labelled.
 
 ```python
 import numpy as np
-from bench.locality import locality_report, sweep_row_fields
+from holo.locality import locality_report, sweep_row_fields
 truth = np.ones(10_000)
 recon = truth + np.random.default_rng(19).normal(0, 0.01, truth.size)
 report = locality_report(truth, recon, np.repeat(np.arange(10), 1000))
 print(truth.size, report.reading, report.cells[0], sweep_row_fields(report, "demo"))
 ```
 
-Validation: `python -m ruff check bench/locality.py tests/test_locality.py`,
+Validation: `python -m ruff check holo/locality.py tests/test_locality.py`,
 `python -m pytest tests/test_locality.py -q`, `python -m pytest tests -q`,
 `python -m holo.quality.cli check`, and `python -m holo.facts.cli check --strict`.
 Checks passed: 14 focused tests; full suite 255 passed, 9 skipped in 60.27 s;
