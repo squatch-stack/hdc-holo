@@ -104,7 +104,15 @@ git push github --delete <lane>/<topic>
 ```
 
 Rebase inside the worktree as well (`git -C <wt> rebase github/main`),
-where a conflict cannot disturb anyone else's files.
+where a conflict cannot disturb anyone else's files. Landing sequence
+(run the last three lines inside the worktree, after new tests are tracked):
+
+```sh
+git -C <wt> rebase github/main          # SDK.md and figures.md merge by union
+holo-facts supersede tests.count --auto  # one valid chain, whatever the merge left
+HDC_BACKEND=numpy .venv/bin/python -m pytest tests -q
+git push --force-with-lease
+```
 
 Use `env -C` for anything that imports `holo`, not `PYTHONPATH`: the
 shared `.venv` installs the package through an editable *meta-path
