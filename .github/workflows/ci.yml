@@ -52,7 +52,7 @@ jobs:
       # wedge rests on. A skip is not a pass; install the extra.
       - run: pip install -e '.[dev,quality,crdt]'
       - name: Replication tests must actually run, not skip
-        run: python -c "from holo.crdt import HAVE_LORO; assert HAVE_LORO, 'loro missing: the CRDT suite would skip silently'"
+        run: python -c "import holo.crdt as c; assert c.HAVE_LORO, 'loro is missing so the CRDT suite would skip silently'"
       - name: Backend must be the NumPy fallback
         run: python -c "from holo import backend; assert backend.backend_name() == 'numpy', backend.backend_name()"
       - run: python -m pytest tests/ -q
