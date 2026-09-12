@@ -59,6 +59,12 @@ CITES = [
     ("CryoSplat", "chen2025cryosplat"),
     ("R2-Gaussian", "zha2024r2gaussian"),
     ("HyperSpace", "snyder2026hyperspace"),
+    # §8's replications paragraph (2026-09-12).
+    ("Renner et al.", "renner2024resonator"),
+    ("Yeung et al.", "yeung2026cleanup"),
+    ("Langenegger et al.", "langenegger2023factorizer"),
+    ("Spectral Prefiltering of Neural Fields", "yaldiz2025prefilter"),
+    ("Knapp and Carter", "knapp1976gcc"),
     # §8's demand-side lines (2026-09-04 sweep). Named directly in the
     # prose, so proper-noun anchors suffice.
     ("LangSplat", "qin2023langsplat"),
