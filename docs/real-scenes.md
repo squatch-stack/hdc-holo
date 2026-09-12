@@ -171,6 +171,42 @@ against a pixel-integrated target where the sharp-vs-sharp pair gives
 18.1%, since blurring concentrates each splat's spectrum for the
 codebook (the mechanism behind the X-ray mip encode).
 
+**Opt-in matched encoding.** `matched_referee(scene, smax, bands=None,
+pix=PIX)` returns the blurred scene, widened maximum scales, and widened
+band caps. It uses the same equal-variance Gaussian approximation to a
+box pixel as `footprint_blur`; this is not exact box integration.
+Transforming both scales and caps by `sqrt(x*x + sigma*sigma)` preserves
+the band indices because that function is strictly increasing for positive
+scales. Cell sizes and input arrays are unchanged.
+
+```python
+from holo.capture import (
+    decode_slice, encode_bands, exact_slice, matched_referee,
+)
+
+# Reuse existing codebooks to reproduce the committed sweep.
+blurred, widened, bands = matched_referee(scene, smax)
+bundles, members = encode_bands(
+    blurred, widened, books, bands, budget=1/64)
+field = decode_slice(points, bundles, books, bands)
+truth = exact_slice(points, blurred, members, bands)
+```
+
+Do not pass `footprint` again when scoring the already blurred scene.
+Calling the helper is opt-in; ordinary encoding and the sharp referee keep
+their current behavior. [Adaptive cells](spatial.md) are independent and
+also opt-in, with a budget expressed as a fraction of dimension.
+
+The committed twelve-capture sweep reports oak top-down error 4.5% and
+Wilson's Creek top-down error 28.4% with both fixes; the combined
+median top-down gain is 2.9x. The matched referee alone has median side
+gain 1.29x. Both fixes give a top-down range of 4.5-28.4%, at 3.6x the cells
+corpus-wide; springhouse cell ratio is 81x. These are the existing capture
+measurements, not a new experiment or a guarantee for other scenes.
+Evidence: [sweep findings](../results/gpu_sweep.md),
+[both fixes](../results/gpu_sweep_both.json), and
+[matched referee](../results/gpu_sweep_matched.json).
+
 **How precise is the referee?** A ground truth is a measurement too,
 and this one was quietly worse than most of what is scored against it.
 `exact_xray`'s exponent reads `d^T S^-1 d - s^2/q`, and both terms are
