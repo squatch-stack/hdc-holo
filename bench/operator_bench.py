@@ -19,11 +19,11 @@ NumPy FFT internally promotes to double; outputs are cast back to float32.
 Accuracy uses independent random role/item associations: sum bind(role,item),
 unbind each role and clean up against all N stored items. Uniform phasors and
 unit-norm Gaussian HRR items are used; HRR unbind is circular correlation.
-Nominal load is dim for FHRR, dim/2 for HRR; 50% means N=dim/2 and dim/4.
-This explicit convention is not a proven capacity boundary: the sqrt(N/2dim)
-FHRR noise law does not fix top-1 capacity without specifying dictionary size.
+All three rows use N=max(1, min(max_items, round(load * (d // 4)))).
+The default loads are 0.02, 0.05, 0.1, 0.2 and 0.5, capped at 4096 items.
+This nominal convention is ours, not a proven capacity boundary.
 FHRR@d/2 and HRR@d have equal bytes and equal N; FHRR@d is the same-d control
-with twice the bytes and load. Unit phasors have one independent phase, despite
+with twice the bytes and the same N. Unit phasors have one independent phase, despite
 two stored real planes; equal storage alone does not prove equal capacity.
 """
 
@@ -127,18 +127,22 @@ def op_bind_hrr(a, b):
                          n=a.shape[-1]).astype(a.dtype)
 
 
-def predict_bytes(d, K, Q, dtype=np.float32):
+def predict_bytes(d, K, Q, dtype=np.float32, max_items=4096):
     """Conservative live-array budget, including host/device copies and accuracy.
 
     Counts all six resident planes, generation/FFT/trig temporaries, bounded
     score tiles and the largest association experiment. It excludes library
     allocator caches, BLAS workspaces and runtime overhead; not measured RSS.
+    At d=32768, K=10000, Q=4096, float32 and max_items=4096 this predicts
+    41,407,973,376 bytes (41.408 GB), not under 12 GB. The specified capped
+    formula cannot meet that target; even K=100 predicts 20,624,454,144 bytes.
     """
-    if min(d, K, Q) < 1:
-        raise ValueError('d, K and Q must be positive')
+    if min(d, K, Q) < 1 or not isinstance(max_items, int) or max_items < 1:
+        raise ValueError('d, K, Q and integer max_items must be positive')
     s = np.dtype(dtype).itemsize
     return int(s * (16 * (K + Q) * d + 32 * CHUNK * d
-                    + 8 * Q * min(K, CHUNK) + 20 * d * d + 32 * (K + Q)))
+                    + 8 * Q * min(K, CHUNK)
+                    + 20 * d * min(d, max_items) + 32 * (K + Q)))
 
 
 def _planes(rng, n, d):
@@ -146,9 +150,8 @@ def _planes(rng, n, d):
     return np.cos(ph), np.sin(ph)
 
 
-def _accuracy(kind, dim, lib):
+def _accuracy(kind, dim, lib, n):
     rng = np.random.default_rng(SEED + 1)
-    n = max(1, dim // (2 if kind == 'FHRR' else 4))
     if kind == 'FHRR':
         mr, mi = _planes(rng, n, dim)
         rr, ri = _planes(rng, n, dim)
@@ -216,8 +219,12 @@ def _workload(lib, d, K, Q):
     }
 
 
-def run_matrix(backend, d, K, Q, reps, max_gb):
-    predicted = predict_bytes(d, K, Q, np.float32)
+def run_matrix(backend, d, K, Q, reps, max_gb,
+               loads=(0.02, 0.05, 0.1, 0.2, 0.5), max_items=4096):
+    loads = tuple(float(load) for load in loads)
+    if not loads or any(not np.isfinite(load) or load <= 0 for load in loads):
+        raise ValueError('loads must be nonempty, finite and positive')
+    predicted = predict_bytes(d, K, Q, np.float32, max_items)
     if d < 2 or d % 2 or reps < 1 or not np.isfinite(max_gb) or max_gb <= 0:
         raise ValueError('require even d >= 2, reps >= 1 and finite positive max_gb')
     if predicted > max_gb * 1e9:
@@ -230,13 +237,19 @@ def run_matrix(backend, d, K, Q, reps, max_gb):
     ops = _workload(lib, d, K, Q)
     timings = {key: _clock(fn, reps) for key, fn in ops.items()}
     del ops
-    rows = {label: _accuracy(kind, dim, lib) for label, kind, dim in
-            [('FHRR@d', 'FHRR', d), ('FHRR@d/2', 'FHRR', d // 2),
-             ('HRR@d', 'HRR', d)]}
+    counts = [max(1, min(max_items, round(load * (d // 4))))
+              for load in loads]
+    rows = {}
+    for label, kind, dim in [('FHRR@d', 'FHRR', d),
+                             ('FHRR@d/2', 'FHRR', d // 2),
+                             ('HRR@d', 'HRR', d)]:
+        points = [_accuracy(kind, dim, lib, n) for n in counts]
+        rows[label] = {**points[0], 'N': counts.copy(),
+                       'top1': [point['top1'] for point in points]}
     return {'backend': name, 'd': d, 'K': K, 'Q': Q, 'reps': reps,
             'seed': SEED, 'chunk': CHUNK, 'predicted_bytes': predicted,
             'codebook_bytes': 8 * K * d, 'operators': timings,
-            'accuracy': rows}
+            'accuracy': {'loads': list(loads), 'rows': rows}}
 
 
 def _verify(reference, chosen):
@@ -252,9 +265,10 @@ def _verify(reference, chosen):
 
 def _verification_corner(args, d):
     try:
-        ref = run_matrix('numpy', d, 1000, args.Q, args.reps, args.max_gb)
+        ref = run_matrix('numpy', d, 1000, args.Q, args.reps, args.max_gb,
+                         args.loads, args.max_items)
         chosen = run_matrix(args.backend, d, 1000, args.Q,
-                            args.reps, args.max_gb)
+                            args.reps, args.max_gb, args.loads, args.max_items)
     except MemoryError as exc:
         return {'d': d, 'K': 1000, 'status': 'refused', 'reason': str(exc)}
     return {'d': d, 'K': 1000, 'status': 'passed',
@@ -269,15 +283,19 @@ def main(argv=None):
     ap.add_argument('--Q', type=int, default=4096)
     ap.add_argument('--reps', type=int, default=3)
     ap.add_argument('--max-gb', type=float, default=12)
+    ap.add_argument('--loads', default='0.02,0.05,0.1,0.2,0.5')
+    ap.add_argument('--max-items', type=int, default=4096)
     ap.add_argument('--verify', action='store_true')
     ap.add_argument('--out')
     args = ap.parse_args(argv)
+    args.loads = tuple(map(float, args.loads.split(',')))
     report = {'runs': [], 'refused': [], 'verification': []}
     for d in map(int, args.d.split(',')):
         for K in map(int, args.K.split(',')):
             try:
                 report['runs'].append(run_matrix(
-                    args.backend, d, K, args.Q, args.reps, args.max_gb))
+                    args.backend, d, K, args.Q, args.reps, args.max_gb,
+                    args.loads, args.max_items))
             except MemoryError as exc:
                 report['refused'].append({'d': d, 'K': K, 'reason': str(exc)})
         if args.verify:
