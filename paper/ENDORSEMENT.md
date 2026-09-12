@@ -109,17 +109,37 @@ The descriptive sentences are copied from `paper/abstract.txt`.
 - [ ] Select **cs.NE** primary and request **cs.CV** and **cs.RO** only when
   each cross-list is directly justified; complete live endorsement prompts.
 - [ ] Title: **Hypervector Scene Memory: Gaussian Splats in Superposition**.
-- [ ] **Decide the identity question before starting the submission, not
-  during it.** Authors reads **Squatch Stack**, but arXiv's submission
-  history displays the *submitter's* name on the abstract page, and an
-  ORCID iD is a personal identifier linked to a personal record. Neither
-  is something this checklist can decide: it is the one item where the
-  studio's public-identity rule and arXiv's identity rules can conflict,
-  and finding that out mid-submission is how a submission stalls. Confirm
-  (a) what name the account submits under, (b) whether that name appearing
-  publicly is acceptable, and (c) whether to link an ORCID at all — it is
-  optional. Source: [ORCID help](https://info.arxiv.org/help/orcid.html)
-  and [identity](https://info.arxiv.org/help/identity_and_affiliation.html).
+- [ ] **Decide the account name before starting the submission, not
+  during it.** Checked against arXiv's own pages on 2026-09-12:
+
+  - **The submitter's name is public on every abstract page.** The
+    Submission history block reads `From: <Name> [view email]` —
+    verified on a live abstract page, not inferred. Whatever name the
+    account carries is therefore published beside the paper, separately
+    from the Authors field.
+  - **An ORCID is optional.** arXiv "encourage[s] all arXiv authors to
+    link their ORCID iD", which is encouragement, not a requirement.
+    It is linked *through the account* rather than typed into the
+    author list, and the iD then shows on the arXiv user page.
+    Source: [ORCID help](https://info.arxiv.org/help/orcid.html).
+  - **arXiv states a misrepresentation rule, not a legal-name rule.**
+    Its identity policy says "It is a violation of our policies to
+    misrepresent your identity or organizational affiliation" and
+    "Each user may have only one registered arXiv account". The help
+    pages do **not** state that a legal name is required and do **not**
+    address pseudonyms or organisation names either way. Source:
+    [identity and affiliation](https://info.arxiv.org/help/policies/identity_and_affiliation.html).
+
+  So the ambiguity is real and is not resolvable from the documentation.
+  **Ask arXiv user support the one question — whether a studio name may
+  be the registered account name for a self-submitted paper — before
+  starting a submission.** An email costs a day; discovering the answer
+  mid-submission costs the submission.
+
+  ORCID is a separate and sharper question, because ORCID is explicitly
+  an identifier for a *person*. Recommendation for v1: **do not link
+  one.** It is optional, it buys nothing for a first submission, and it
+  is the one field that would tie a personal record to the work.
 - [ ] Paste `paper/abstract.txt` as ASCII plain text without an "Abstract"
   heading and verify it stays under arXiv's 1920-character maximum. The file is
   currently within the limit, and a repository test enforces it.
