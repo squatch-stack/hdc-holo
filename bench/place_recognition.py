@@ -42,6 +42,17 @@ default null is therefore the phase surrogate (random phases, identical
 magnitudes): it shares the radial control exactly and has no arrangement,
 so it measures precisely what phase correlation adds. --null scramble
 keeps the old model for synthetic scenes with distinct landmarks.
+
+The raw cross-power spectrum is dominated by the low-frequency envelope of a
+mass-centred capture: on the 5090 the four wide outdoor parents (oak,
+redrock, research-library, wilsons-creek; 480k splats, 30-40 unit cubes)
+scored 0.70-0.96 against each other at zero offset, and no known partner
+ranked first. That peak is the blob, not the arrangement. --whiten applies
+the PHAT exponent (Knapp & Carter 1976): each component of conj(A)B is
+divided by its magnitude, so only phase votes and the peak measures
+arrangement alone. It also trades away every magnitude, which is the
+radial control's whole content, so whitened and raw scores answer
+different questions and the results note reports both.
 """
 
 import argparse
@@ -154,8 +165,13 @@ def translation_grid(size, limit=0.25):
     return np.stack(np.meshgrid(axis, axis, axis, indexing="ij"), -1).reshape(-1, 3)
 
 
-def correlate(a, b, freqs, grid):
+def correlate(a, b, freqs, grid, whiten=0.0):
     """Find B's translation relative to A; undo the decoder's 1/d scaling.
+
+    whiten is the PHAT exponent: 0 keeps the raw cross-power spectrum, 1
+    divides every component by its magnitude so only phase, i.e.
+    arrangement, votes. Components below 1e-6 of the largest are floored
+    rather than amplified. The score is the peak over its aligned maximum.
 
     A Cartesian grid is recommended. Three 5-per-axis local searches shrink
     the coarse spacing eightfold; singleton axes stay fixed. Zero-energy
@@ -167,10 +183,17 @@ def correlate(a, b, freqs, grid):
         raise ValueError("fingerprints must match the frequency count")
     if grid.ndim != 2 or grid.shape[1] != freqs.shape[1] or not len(grid):
         raise ValueError("grid must be a nonempty (G, spatial dimensions) array")
+    if not 0 <= whiten <= 1:
+        raise ValueError("whiten must lie in [0, 1]")
     norm = float(np.linalg.norm(a) * np.linalg.norm(b))
     if norm == 0:
         return 0.0, grid[0].copy()
-    product = (np.conj(a) * b)[None, :].astype(np.complex64)
+    product = np.conj(a) * b
+    if whiten:
+        mag = np.abs(product)
+        product = product * np.maximum(mag, 1e-6 * mag.max()) ** (-whiten)
+        norm = float(np.abs(product).sum())
+    product = product[None, :].astype(np.complex64)
     values = decode_field_phasor(product, freqs, grid)[:, 0]
     idx = int(np.argmax(values))
     peak, point = float(values[idx]), grid[idx].copy()
@@ -210,13 +233,13 @@ def radial_power(fp, freqs, n_bins=32):
                      where=count > 0).astype(np.float32).ravel()
 
 
-def _best_yaw(a, candidates, freqs, grid):
-    results = [correlate(a, b, freqs, grid) for b in candidates]
+def _best_yaw(a, candidates, freqs, grid, whiten=0.0):
+    results = [correlate(a, b, freqs, grid, whiten) for b in candidates]
     k = int(np.argmax([r[0] for r in results]))
     return results[k][0], results[k][1], k
 
 
-def similarity_matrix(fps, freqs, grid, yaw_fps=None):
+def similarity_matrix(fps, freqs, grid, yaw_fps=None, whiten=0.0):
     """Score all ordered pairs; yaw_fps[j,k] rotates query j by angle k.
 
     Search bounds and discrete rotations can make this matrix asymmetric;
@@ -228,7 +251,8 @@ def similarity_matrix(fps, freqs, grid, yaw_fps=None):
     offsets = np.empty((n, n, 3), np.float32)
     for i, a in enumerate(fps):
         for j in range(n):
-            scores[i, j], offsets[i, j], _ = _best_yaw(a, candidates[j], freqs, grid)
+            scores[i, j], offsets[i, j], _ = _best_yaw(a, candidates[j], freqs,
+                                                       grid, whiten)
     return scores, offsets
 
 
@@ -289,7 +313,7 @@ def _calibrate(scenes, fps, yaw_fps, angles, freqs, grid, args, rng):
         else:
             candidates = _yaw_fingerprints(scramble(scenes[i], rng), angles,
                                            freqs, args.sigma)
-        samples.append(_best_yaw(fps[i], candidates, freqs, grid)[0])
+        samples.append(_best_yaw(fps[i], candidates, freqs, grid, args.whiten)[0])
     return {"null": args.null, "samples": samples, "mean": float(np.mean(samples)),
             "sigma": float(np.std(samples)), "p95": float(np.percentile(samples, 95)),
             "max": float(np.max(samples)), "count": len(samples)}
@@ -334,6 +358,9 @@ def _parser():
     parser.add_argument("--numpy", action="store_true")
     parser.add_argument("--figure", type=Path)
     parser.add_argument("--lo", type=float, nargs=3)
+    parser.add_argument("--whiten", type=float, default=0.0,
+                        help="PHAT exponent: 0 raw cross-power (default), 1 "
+                        "phase-only correlation")
     parser.add_argument("--frame", help="capture whose mass-centred cube frames "
                         "every path (a crop in its parent's frame)")
     parser.add_argument("--null", choices=("phase", "scramble"), default="phase",
@@ -352,6 +379,8 @@ def _validate(parser, args):
         parser.error("--sigma and --limit must be finite and positive")
     if (args.lo is None) != (args.extent is None):
         parser.error("--lo and --extent must be supplied together")
+    if not 0 <= args.whiten <= 1:
+        parser.error("--whiten must lie in [0, 1]")
     if args.frame is not None and args.lo is not None:
         parser.error("--frame and --lo/--extent are alternatives")
     n = len(args.paths) if args.paths else 4 * args.synthetic
@@ -390,7 +419,7 @@ def _run(args):
     fps = np.stack([fingerprint(s, freqs, args.sigma) for s in scenes])
     yaw_fps = np.stack([_yaw_fingerprints(s, angles, freqs, args.sigma)
                         for s in scenes])
-    scores, offsets = similarity_matrix(fps, freqs, grid, yaw_fps)
+    scores, offsets = similarity_matrix(fps, freqs, grid, yaw_fps, args.whiten)
     power = np.stack([radial_power(fp, freqs) for fp in fps])
     power /= np.maximum(np.linalg.norm(power, axis=1, keepdims=True), 1e-30)
     noise = _calibrate(scenes, fps, yaw_fps, angles, freqs, grid, args, rng)
@@ -402,6 +431,7 @@ def _run(args):
                          "yaws": args.yaws, "angles": angles.tolist(),
                          "lo": args.lo, "extent": args.extent,
                          "frame": args.frame, "null": args.null,
+                         "whiten": args.whiten,
                          "numpy": args.numpy, "synthetic": not bool(args.paths)},
             "control_caveat": "Translation exact to rounding; finite-sample yaw "
                               "invariance approximate. Permuting equal splats "

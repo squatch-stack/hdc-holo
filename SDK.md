@@ -1440,3 +1440,20 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
     best scalar gain decodes at 40–246× the field at any bit depth: a
     spectral bundle's magnitudes are its Gaussian envelope. No `HQ`
     packer; D1's "monotonically" has its upper limit at four bits.
+
+- **Place recognition on the twelve captures is a negative, and the
+  reason is an open finding** (2026-09-12; `results/place_recognition.md`;
+  5090 runs). Raw phase correlation ranks 0 of 6 known partners first;
+  PHAT whitening ranks 1 of 6. The four wide outdoor captures (388k–1.16M
+  splats in 30–40 unit cubes) score 0.70–0.96 against each other raw and
+  up to 0.823 whitened — 368σ above a phase-surrogate null of 0.039 —
+  while true pairs sit at 0.08–0.29. Six diagnostics rule out the crop
+  cube, a ground plane, a symmetric envelope, low frequencies alone, a
+  few massive splats and shared splats; the shared phase is in the bulk
+  at all frequencies and is unexplained. Sub-map localisation in a shared
+  frame works (crops found at their true offset at 0.99; parent
+  restricted to the crop's cube 0.90 when dense enough). The one true
+  re-capture (station ↔ springhouse) is not found under any setting.
+  Tool changes that came out of the run: phase-surrogate null (scramble
+  scored 0.999 on captures), `--frame`, `--whiten`. Not promoted.
+

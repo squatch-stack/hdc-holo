@@ -196,3 +196,23 @@ def test_frame_from_reference_matches_build_scene(tmp_path):
     np.testing.assert_allclose(framed.mu, stock.mu, atol=1e-6)
     np.testing.assert_allclose(framed.cov, stock.cov, rtol=1e-5)
     np.testing.assert_allclose(framed.amp, stock.amp)
+
+
+def test_whitened_correlation_finds_the_translated_copy_and_ignores_envelope():
+    rng = np.random.default_rng(11)
+    scene = place.synthetic_scene(rng)
+    freqs = sample_frequencies(1024, 3, 1 / 0.05, rng)
+    grid = place.translation_grid(9, 0.25)
+    fp = place.fingerprint(scene, freqs, 0.05)
+    shift = np.array([0.1, -0.05, 0.05], np.float32)
+    moved = place.fingerprint(SplatScene(scene.mu + shift, scene.cov, scene.amp),
+                              freqs, 0.05)
+    score, t_hat = place.correlate(fp, moved, freqs, grid, whiten=1.0)
+    assert abs(place.correlate(fp, fp, freqs, grid, whiten=1.0)[0] - 1) < 1e-4
+    assert score > 0.5 and np.abs(t_hat - shift).max() <= 0.025
+    # An envelope-only twin (same magnitudes, random phases) scores like noise
+    # under whitening even though its raw correlation shares the blob.
+    twin = place.phase_surrogate(fp, rng)
+    assert place.correlate(fp, twin, freqs, grid, whiten=1.0)[0] < 0.2
+    with pytest.raises(ValueError):
+        place.correlate(fp, fp, freqs, grid, whiten=2.0)
