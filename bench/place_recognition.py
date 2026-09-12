@@ -57,6 +57,8 @@ different questions and the results note reports both.
 
 import argparse
 import json
+import sys
+import time
 from pathlib import Path
 from time import perf_counter
 from unittest.mock import patch
@@ -458,7 +460,12 @@ def tile_matrix(tile_fps, owners, freqs, grid, whiten, prefilter, rng,
     offsets = np.full((n, n, 3), np.nan, np.float32)
     yaws = np.full((n, n), -1, dtype=int)
     samples = np.empty((scrambles, n))
+    started = time.monotonic()
     for j, indices in enumerate(candidates):
+        if j % 25 == 0:
+            elapsed = time.monotonic() - started
+            print(f"tile_matrix: query tile {j}/{n}, {elapsed:.0f} s",
+                  file=sys.stderr, flush=True)
         for i in indices:
             scores[i, j], offsets[i, j], yaws[i, j] = _best_yaw(
                 tile_fps[i, 0], tile_fps[j], freqs, grid, whiten)
