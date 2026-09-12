@@ -46,9 +46,9 @@ measures; the two fixes are independent and compose.
 
 SCOPE, deliberately: the top-down slice only. That is where the
 capacity failure shows, and the X-ray path has its own mip encode and
-its own resolution story (`results/gpu_sweep.md`, finding three). This
-is a measurement, not a proposed SDK change; nothing here is imported
-by the package.
+its own resolution story (`results/gpu_sweep.md`, finding three). The
+algorithms now live in `holo.capture`; this module retains the
+measurement driver and compatibility adapters.
 
 Usage:
     bench/adaptive_cells.py scene.spz [--budget 2048] [--max-level 4]
@@ -62,7 +62,40 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from holo.capture import (
+    _cell_uv_mask as uv_mask_for,
+)
+from holo.capture import (
+    _encode_cells,
+    assign_adaptive,
+)
+from holo.capture import (
+    _numpy_exact_slice as exact,
+)
+from holo.capture import (
+    _numpy_exact_xray as _exact_xray,
+)
+from holo.capture import (
+    cell_mask as mask_for,
+)
+from holo.capture import (
+    decode_slice as decode,
+)
+from holo.capture import (
+    render_xray as _render_xray,
+)
+
+__all__ = [
+    "assign_adaptive",
+    "assign_uniform",
+    "decode",
+    "encode",
+    "exact",
+    "exact_xray",
+    "mask_for",
+    "render_xray",
+    "uv_mask_for",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -83,112 +116,13 @@ def assign_uniform(mu, idx, cell, level=0):
     return per_cell
 
 
-def assign_adaptive(mu, idx, cell, budget, max_level):
-    """Refine only what needs it.
-
-    Start on the band's own lattice; any cell over `budget` members is
-    split into its eight children and the test repeats, to `max_level`.
-    A cell that is still over budget at the deepest level is kept and
-    reported rather than dropped — silently discarding the densest
-    splats in the scene would improve every number on the page while
-    making the reconstruction worse, which is exactly the kind of
-    metric that rewards amputation.
-    """
-    out, frontier = {}, [(0, np.asarray(idx))]
-    while frontier:
-        level, members = frontier.pop()
-        size = cell / (1 << level)
-        per_cell = {}
-        for i, k in zip(members, map(tuple, (mu[members] // size).astype(int))):
-            per_cell.setdefault(k, []).append(i)
-        for k, ids in per_cell.items():
-            if len(ids) > budget and level < max_level:
-                frontier.append((level + 1, np.asarray(ids)))
-            else:
-                out[(level, *k)] = ids
-    return out
-
-
-def mask_for(points, key, cell, reach):
-    """`capture.cell_mask`, with the cell's size read from its key."""
-    level = key[0]
-    size = cell / (1 << level)
-    lo = np.array(key[1:], dtype=np.float32) * size
-    nearest = np.clip(points, lo, lo + size)
-    return ((points - nearest) ** 2).sum(axis=1) <= reach * reach
-
-
-# ---------------------------------------------------------------------------
-# encode / decode / ground truth over variable-size cells
-# ---------------------------------------------------------------------------
-
 def encode(scene, per_band, books, dim):
-    from holo.spectral import SplatScene, spectral_bundle
-
     bundles, members = {}, {}
     for name, per_cell in per_band.items():
-        freqs = books[name][0]
-        bundles[name], members[name] = {}, {}
-        for k, raw in per_cell.items():
-            ids = np.asarray(raw)
-            sub = SplatScene(mu=scene.mu[ids], cov=scene.cov[ids],
-                             amp=scene.amp[ids])
-            bundles[name][k] = spectral_bundle(sub, freqs, chunk=2048)
-            members[name][k] = ids
+        bundles[name], members[name] = _encode_cells(
+            scene, per_cell, books[name][0])
     return bundles, members
 
-
-def decode(points, bundles, books, bands):
-    """`capture.decode_slice` with per-cell sizes.
-
-    The accel kernel takes (mask, weighted bundle) pairs and knows
-    nothing about lattices, so the variable-size cells cost nothing
-    here — only the masks change.
-    """
-    from holo import accel as _accel
-
-    n_ch = next(b.shape[0] for cells in bundles.values()
-                for b in cells.values())
-    out = np.zeros((len(points), n_ch), dtype=np.float32)
-    for name, cap, cell in bands:
-        freqs, _, weights = books[name]
-        reach = 3.0 * cap
-        pairs = [(mask_for(points, k, cell, reach), b * weights[None, :])
-                 for k, b in bundles[name].items()]
-        pairs = [(m, b) for m, b in pairs if m.any()]
-        if not pairs:
-            continue
-        if _accel.active():
-            out += _accel.cell_decode(freqs, points, pairs)
-        else:
-            for m, wb in pairs:
-                E = np.exp(1j * (points[m] @ freqs.T)).astype(np.complex64)
-                out[m] += (E @ wb.T.astype(np.complex64)).real
-    return out
-
-
-def exact(points, scene, members, bands, chunk=2048):
-    """`capture.exact_slice` over the same variable-size cells."""
-    inv_cov = np.linalg.inv(scene.cov.astype(np.float64)).astype(np.float32)
-    out = np.zeros((len(points), scene.channels), dtype=np.float32)
-    for name, cap, cell in bands:
-        reach = 3.0 * cap
-        for k, ids in members[name].items():
-            m = mask_for(points, k, cell, reach)
-            if not m.any():
-                continue
-            pts = points[m]
-            acc = np.zeros((len(pts), scene.channels), dtype=np.float32)
-            for slo in range(0, len(ids), chunk):
-                sub = ids[slo:slo + chunk]
-                diff = pts[None, :, :] - scene.mu[sub][:, None, :]
-                quad = np.einsum("npi,nij,npj->np", diff, inv_cov[sub], diff)
-                acc += np.exp(-0.5 * quad).T @ scene.amp[sub]
-            out[m] += acc
-    return out
-
-
-# ---------------------------------------------------------------------------
 
 def run_one(label, case, bands, assign, max_storage_gb=12.0):
     from holo.capture import band_of
@@ -331,106 +265,11 @@ if __name__ == "__main__":
 # X-ray over variable-size cells
 # ---------------------------------------------------------------------------
 
-def uv_mask_for(uv, key, cell, reach, center, u1, u2):
-    """`capture._cell_uv_mask` with the cell's size read from its key.
-
-    Same bound as the SDK's: the cell's circumscribed sphere, projected
-    to a disc and dilated by `reach`. Orthographic projection is a
-    contraction, so the 3D circumradius always covers the 2D footprint;
-    at level 0 this is the SDK mask exactly, which is what keeps the
-    published X-ray numbers reproducible under this path.
-
-    It is also the loose bound. Measured against the exact projected
-    hexagon on the two views the X-ray arm uses, the disc over-selects
-    by 1.28-1.54x at level 0 where a support-function rectangle
-    (h * ||u1||_1, h * ||u2||_1 — the SnugBox idea from Speedy-Splat,
-    arXiv 2412.00578) over-selects by 1.03-1.04x. Once `reach` exceeds
-    the cell, from level 2 down, every bound converges and the shape
-    stops mattering. The rectangle is not used here because it would
-    move level-0 numbers; it belongs in a change of its own.
-    """
-    level = key[0]
-    size = cell / (1 << level)
-    c3 = (np.asarray(key[1:], dtype=np.float32) + 0.5) * size \
-        - np.asarray(center, dtype=np.float32)
-    cuv = np.array([c3 @ u1, c3 @ u2], dtype=np.float32)
-    r = np.sqrt(3.0) / 2.0 * size + reach
-    return ((uv - cuv) ** 2).sum(axis=1) <= r * r
-
-
 def render_xray(bundles, books, cam, t_extent, bands, chunk=2048):
-    """`capture.render_xray` over variable-size cells; `cam` is
-    (view, center, half, res)."""
-    from holo import accel as _accel
-    from holo.capture import _pixel_grid, camera_basis_yup
-
-    view, center, half, res = cam
-    v, u1, u2 = camera_basis_yup(view)
-    uv, origins = _pixel_grid(center, v, u1, u2, half, res, t_extent)
-    n_ch = next(b.shape[0] for cells in bundles.values()
-                for b in cells.values())
-    out = np.zeros((len(origins), n_ch), dtype=np.float32)
-    for name, cap, cell in bands:
-        freqs, _, weights = books[name]
-        reach = 3.0 * cap
-        a = (freqs @ v).astype(np.float64)
-        T = float(t_extent)
-        F = np.where(np.abs(a) * T < 1e-6, T,
-                     (np.exp(1j * a * T) - 1.0)
-                     / (1j * np.where(a == 0, 1, a)))
-        wf = (weights * F).astype(np.complex64)
-        pairs = [(uv_mask_for(uv, k, cell, reach, center, u1, u2),
-                  b * wf[None, :]) for k, b in bundles[name].items()]
-        pairs = [(m, b) for m, b in pairs if m.any()]
-        if not pairs:
-            continue
-        if _accel.active():
-            out += _accel.cell_decode(freqs, origins, pairs)
-            continue
-        for plo in range(0, len(origins), chunk):
-            pts = origins[plo:plo + chunk]
-            E = np.exp(1j * (pts @ freqs.T)).astype(np.complex64)
-            for m, wb in pairs:
-                mm = m[plo:plo + chunk]
-                if mm.any():
-                    out[plo:plo + chunk][mm] += \
-                        (E[mm] @ wb.T.astype(np.complex64)).real
-    return out
+    """Compatibility adapter for the benchmark's packed camera."""
+    return _render_xray(bundles, books, *cam, t_extent, bands, chunk)
 
 
 def exact_xray(scene, members, cam, bands, chunk=1024):
-    """`capture.exact_xray` over variable-size cells — the rank-1
-    downdate form (#93), same masks as `render_xray` above; `cam` is
-    (view, center, half, res)."""
-    from holo.capture import _pixel_grid, camera_basis_yup
-
-    view, center, half, res = cam
-    v, u1, u2 = camera_basis_yup(view)
-    uv, _ = _pixel_grid(center, v, u1, u2, half, res, 0.0)
-    plane = (np.asarray(center, dtype=np.float32)
-             + uv[:, :1] * u1 + uv[:, 1:] * u2)
-    out = np.zeros((len(plane), scene.channels), dtype=np.float32)
-    ic64 = np.linalg.inv(scene.cov.astype(np.float64))
-    v64 = np.asarray(v, dtype=np.float64)
-    icv = ic64 @ v64
-    q = np.einsum("ni,i->n", icv, v64)
-    downdate = (ic64 - (icv[:, :, None] * icv[:, None, :])
-                / q[:, None, None]).astype(np.float32)
-    prefactor = np.sqrt(2 * np.pi / q).astype(np.float32)
-    for name, cap, cell in bands:
-        reach = 3.0 * cap
-        for k, ids in members[name].items():
-            m = uv_mask_for(uv, k, cell, reach, center, u1, u2)
-            if not m.any():
-                continue
-            pts = plane[m]
-            acc = np.zeros((len(pts), scene.channels), dtype=np.float32)
-            for slo in range(0, len(ids), chunk):
-                sub = ids[slo:slo + chunk]
-                delta = pts[None, :, :] - scene.mu[sub][:, None, :]
-                perp = np.einsum("npi,nij,npj->np", delta,
-                                 downdate[sub], delta)
-                line = prefactor[sub][:, None] * np.exp(-0.5 * perp)
-                acc += line.T @ scene.amp[sub]
-            out[m] += acc
-    return out
+    """Compatibility adapter for the benchmark's packed camera."""
+    return _exact_xray(scene, members, *cam, bands, chunk)

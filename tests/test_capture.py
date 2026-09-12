@@ -10,20 +10,23 @@ from holo.capture import (
     BANDS,
     S_HI,
     S_LO,
+    assign_adaptive,
     band_codebooks,
     band_of,
     build_scene,
+    cell_mask,
     decode_slice,
     encode_bands,
     exact_slice,
     exact_xray,
     fit_cells,
     load_splat,
+    matched_referee,
     parse_spz,
     render_mip,
     render_xray,
 )
-from holo.spectral import SplatScene
+from holo.spectral import SplatScene, spectral_bundle
 
 
 def _write_splat(path, pos, scale, rgba_u8, quat):
@@ -1054,3 +1057,112 @@ def test_crop_scene_file_writes_spz_when_asked(tmp_path):
     inside = np.all((pos >= -1) & (pos <= 1), axis=1)
     assert np.allclose(np.sort(cpos, axis=0),
                        np.sort(pos[inside], axis=0), atol=1.5 / (1 << 12))
+
+
+def _adaptive_fixture():
+    rng = np.random.default_rng(81)
+    mu = rng.uniform(0.05, 0.95, (128, 3)).astype(np.float32)
+    mu[:, 1] = 0.5
+    cov = np.tile(np.eye(3, dtype=np.float32) * 0.015**2, (128, 1, 1))
+    scene = SplatScene(mu, cov, np.ones((128, 1), dtype=np.float32))
+    bands = [("knot", 0.015, 1.0)]
+    books = band_codebooks(rng, bands, dim=512, s_floor=0.015)
+    return scene, np.full(128, 0.015), bands, books
+
+
+def test_budget_zero_reproduces_the_fixed_lattice():
+    scene, smax, bands, books = _adaptive_fixture()
+    scene.mu[:32, 0] -= 1.0
+    scene.mu[-32:, 0] += 1.0
+    # Freeze the original assignment and encode arithmetic independently:
+    # comparing the new default to budget=0 alone would prove nothing.
+    expected, expected_members = {}, {}
+    for b, (name, _cap, cell) in enumerate(bands):
+        per_cell = {}
+        for i in np.where(band_of(smax, bands) == b)[0]:
+            k = tuple((scene.mu[i] // cell).astype(int))
+            per_cell.setdefault(k, []).append(i)
+        expected[name], expected_members[name] = {}, {}
+        for k, raw in per_cell.items():
+            ids = np.array(raw)
+            sub = SplatScene(scene.mu[ids], scene.cov[ids], scene.amp[ids])
+            expected[name][k] = spectral_bundle(sub, books[name][0], chunk=2048)
+            expected_members[name][k] = ids
+    for kwargs in ({}, {"budget": 0}):
+        bundles, members = encode_bands(
+            scene, smax, books, bands, dim=512, verbose=False, **kwargs)
+        assert bundles.keys() == expected.keys()
+        for name, cells in expected.items():
+            assert list(bundles[name]) == list(cells)
+            for k, bundle in cells.items():
+                assert len(k) == 3
+                assert np.array_equal(bundles[name][k], bundle)
+                assert np.array_equal(members[name][k], expected_members[name][k])
+
+
+def test_assign_adaptive_splits_only_over_budget_cells():
+    mu = np.array([[0.1, 0.1, 0.1], [0.6, 0.1, 0.1],
+                   [0.6, 0.6, 0.1], [1.1, 0.1, 0.1]])
+    cells = assign_adaptive(mu, np.arange(4), 1.0, 2)
+    assert cells == {(0, 1, 0, 0): [3], (1, 0, 0, 0): [0],
+                     (1, 1, 0, 0): [1], (1, 1, 1, 0): [2]}
+    assert cells.overflow == {}
+    assert sorted(i for ids in cells.values() for i in ids) == list(range(4))
+    assert assign_adaptive(mu, [], 1.0, 2) == {}
+
+
+def test_assign_adaptive_stops_at_max_level_and_reports_the_overflow():
+    mu = np.full((5, 3), 0.1)
+    cells = assign_adaptive(mu, np.arange(5), 1.0, 2, max_level=2)
+    assert cells == {(2, 0, 0, 0): list(range(5))}
+    assert cells.overflow == cells
+    scene, smax, bands, books = _adaptive_fixture()
+    bundles, members = encode_bands(
+        scene, smax, books, bands, dim=512, verbose=False,
+        budget=1/64, max_level=0)
+    assert list(bundles["knot"]) == [(0, 0, 0, 0)]
+    assert np.array_equal(members["knot"].overflow[(0, 0, 0, 0)], np.arange(128))
+
+
+def test_level_mask_equals_cell_mask_at_the_halved_size():
+    rng = np.random.default_rng(82)
+    points = rng.uniform(-1, 1, (500, 3)).astype(np.float32)
+    for level in range(4):
+        key = (-1, 0, 1)
+        assert np.array_equal(
+            cell_mask(points, (level, *key), 1.0, 0.1),
+            cell_mask(points, key, 1.0 / 2**level, 0.1))
+
+
+def test_adaptive_decode_beats_the_fixed_lattice_on_a_dense_knot():
+    scene, smax, bands, books = _adaptive_fixture()
+    axis = np.linspace(0, 1, 20, dtype=np.float32)
+    x, z = np.meshgrid(axis, axis)
+    points = np.column_stack([x.ravel(), np.full(x.size, 0.5), z.ravel()])
+    points = points.astype(np.float32)
+    errors = []
+    for budget in (0, 1/64):
+        bundles, members = encode_bands(
+            scene, smax, books, bands, dim=512, verbose=False, budget=budget)
+        got = decode_slice(points, bundles, books, bands)
+        truth = exact_slice(points, scene, members, bands)
+        errors.append(np.linalg.norm(got - truth) / np.linalg.norm(truth))
+    # sqrt(N_local/2d): 128 members -> at most 8 per leaf predicts 1/4
+    # the noise for one consulted leaf; allow 1/2 for overlapping reach.
+    assert errors[1] < 0.5 * errors[0], errors
+
+
+def test_matched_referee_leaves_band_indices_unchanged():
+    scene, _smax, _bands, _books = _adaptive_fixture()
+    bands = [("a", 0.02, 1.0), ("b", 0.04, 0.5), ("c", 0.08, 0.25)]
+    smax = np.resize(np.array([0.01, 0.02, 0.03, 0.04, 0.08, 0.09]), 128)
+    blurred, widened, caps = matched_referee(scene, smax, bands, pix=0.01)
+    # f(x)=sqrt(x*x+sigma*sigma) is strictly increasing for positive x:
+    # s <= cap iff f(s) <= f(cap), so searchsorted indices are unchanged.
+    assert np.array_equal(band_of(smax, bands), band_of(widened, caps))
+    assert [b[2] for b in caps] == [b[2] for b in bands]
+    np.testing.assert_allclose(
+        blurred.cov, scene.cov + np.eye(3) * (0.01**2 / 12), rtol=1e-6)
+    np.testing.assert_allclose(
+        blurred.amp[:, 0] * np.sqrt(np.linalg.det(blurred.cov)),
+        scene.amp[:, 0] * np.sqrt(np.linalg.det(scene.cov)), rtol=1e-6)

@@ -24,6 +24,49 @@ single giant-d bundle is statistically stronger, but every query and
 update then touches the whole hologram; cells keep compute, mutation,
 and replication local (a cell is the CRDT sync unit — [sync.md](sync.md)).
 
+## Opt-in adaptive capture cells
+
+`holo.capture.encode_bands(..., budget=1/64)` splits only cells that exceed
+that fraction of the codebook dimension. The member limit is
+`max(1, floor(budget * dim))`: `d/64` means 128 at `d=8192` and 512 at
+`d=32768`. Capacity depends on members per dimension, so carrying a fixed
+count into a wider X-ray codebook would unnecessarily multiply storage.
+`assign_adaptive(mu, idx, cell, budget, max_level=8)` is the lower-level
+assignment operation; its budget is a member **count** because it has no
+codebook dimension.
+
+The default `budget=0` retains the fixed lattice, its three-coordinate
+keys, insertion order, and bundles bit-identically. Opting in produces
+`(level, i, j, k)` keys with size `cell / 2**level`. Slice and X-ray
+masks accept both formats, including mixed levels. They feed the existing
+accelerator's mask/bundle pairs; no new GPU kernel is needed.
+
+Subdivision stops at `max_level`. Overfull cells are retained, with all
+their members, and reported by `members[band].overflow` (a mapping from
+keys to member indices). The assignment dict has the same `.overflow`
+report. Zero disables subdivision in the assignment helper too.
+
+```python
+from holo.capture import encode_bands
+
+bundles, members = encode_bands(scene, smax, books, budget=1/64)
+overfull = {name: cells.overflow for name, cells in members.items()}
+```
+
+The committed twelve-capture sweep reports oak top-down error 4.5% and
+Wilson's Creek top-down error 28.4% with both fixes; the combined
+median top-down gain is 2.9x. The matched referee alone has median side
+gain 1.29x. Both fixes give a top-down range of 4.5-28.4%, at 3.6x the cells
+corpus-wide; springhouse cell ratio is 81x. These are the existing capture
+measurements, not a new experiment or a guarantee for other scenes.
+Evidence: [sweep findings](../results/gpu_sweep.md),
+[both fixes](../results/gpu_sweep_both.json), and
+[matched referee](../results/gpu_sweep_matched.json).
+
+Combine this with the [matched referee](real-scenes.md) only when wanted.
+Changing defaults would require a new capture sweep and storage and paper
+updates; this opt-in API does not change the published baseline.
+
 ## What kind of error is left, and what removes it
 
 Doubling the finest band's dimension bought 2-4% for +600 MB, which said

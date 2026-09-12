@@ -34,7 +34,7 @@ import traceback
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from holo.capture import matched_referee as _matched_referee
 
 
 def _describe_crop(path, row, crop_quantile=0.75, crop_margin=1.2):
@@ -77,11 +77,7 @@ def _slices(scene, box, bundles, members, books, row, bands, ac=None):
             ("top_down", slice_grid((0, box[0]), (0, box[2]), "y", y_slice)),
             ("side", slice_grid((0, box[2]), (0, box[1]), "x", x_slice))]:
         t1 = time.time()
-        # `ac` carries the variable-cell kernels when the encode used
-        # adaptive cells: its keys are (level, i, j, k) and the SDK's
-        # `cell_mask` takes a 3-tuple, so mixing them raises a broadcast
-        # error rather than quietly mis-masking — which is how this got
-        # caught.
+        # Compatibility adapters now use the SDK's level-aware kernels.
         if ac is None:
             truth = exact_slice(pts, scene, members, bands)
             t2 = time.time()
@@ -195,7 +191,9 @@ def _xrays(scene, smax, members, row, bands, ac=None, budget=0,
                   f"{gb:.0f} GB of bundles", flush=True)
             row["xray_skipped"] = f"{gb:.0f} GB projected"
             return [], {}
-        r_bundles, r_members = ac.encode(mip, per_band, r_books, DIM_R)
+        r_bundles, r_members = encode_bands(
+            mip, smax_r, r_books, RENDER_BANDS, DIM_R, verbose=False,
+            budget=budget / DIM, max_level=max_level)
     center_p, half, T, res = [0.5, 0.5, 0.5], 0.5, 2.0, 176
     xpanels = []
     for key, view in [("xray_a", [1.0, 0.0, 0.25]),
@@ -227,33 +225,6 @@ def _xrays(scene, smax, members, row, bands, ac=None, budget=0,
         xpanels.append((key, sharp, mip_gt, holo, err))
     return xpanels, errs
 
-
-def _matched_referee(scene, smax, bands):
-    """Blur the scene by one slice pixel and widen the bands to match.
-
-    The slices point-sample a field whose splats are mostly thinner than
-    a pixel — S_LO / PIX = 0.448, and the clamp puts most of a real
-    capture exactly on that floor — so the sharp referee asks what the
-    field is at infinitely small points while a renderer asks what it
-    averages over a pixel (`footprint_blur`, docs/real-scenes.md). The
-    matched pair encodes the field the referee measures.
-
-    The band caps MUST travel with the scales. `band_of` says so in its
-    own docstring: widening scales without widening bands puts splats
-    past the last cap and `encode_bands` refuses them. Transforming both
-    by the same sqrt(x^2 + sigma^2) keeps every splat in the band it
-    was already in — the map is strictly increasing, so `searchsorted`
-    returns identical indices — which is what makes this a clean
-    one-variable change. Only the referee moves.
-    """
-    from holo.capture import PIX, footprint_blur
-
-    sigma = PIX / np.sqrt(12.0)
-    blurred = footprint_blur(scene, PIX)
-    smax_b = np.sqrt(smax ** 2 + sigma ** 2)
-    bands_b = [(name, float(np.sqrt(cap ** 2 + sigma ** 2)), cell)
-               for name, cap, cell in bands]
-    return blurred, smax_b, bands_b
 
 
 def run_one(path, figures=None, crop_quantile=0.75, crop_margin=1.2,
@@ -297,14 +268,9 @@ def run_one(path, figures=None, crop_quantile=0.75, crop_margin=1.2,
         # Adaptive cells for the slice encode; `_xrays` applies the same
         # budget to the mip encode through the level-aware kernels.
         from bench import adaptive_cells as ac
-        bidx_a = band_of(smax, bands)
-        per_band = {}
-        for b, (name, _cap, cell) in enumerate(bands):
-            idx = np.where(bidx_a == b)[0]
-            per_band[name] = (ac.assign_adaptive(scene.mu, idx, cell,
-                                                 budget, max_level)
-                              if len(idx) else {})
-        bundles, members = ac.encode(scene, per_band, books, DIM)
+        bundles, members = encode_bands(
+            scene, smax, books, bands, budget=budget / DIM,
+            max_level=max_level, verbose=False)
     else:
         bundles, members = encode_bands(scene, smax, books, bands)
     row["budget"] = budget

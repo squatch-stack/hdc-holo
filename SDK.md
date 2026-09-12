@@ -28,6 +28,7 @@ or theory, (b) a deterministic test, and (c) a documented failure mode.**
 | Spectral encoder (per-splat anisotropic covariance, one codebook) | `holo/spectral.py` | capacity curves fit `d^-0.50` exactly (`results/capacity_curve.png`) |
 | Mixture-of-Gaussians codebooks (multi-scale scenes) | `holo/spectral.py`, `examples/run_mog.py` | 3-10x noise cut, penalty 16-33x -> 2.4-3.2x (`results/mog_penalty.png`) |
 | Scale bands + spatial chunking | `holo/spatial.py`, `examples/run_real_scene.py` | chunked beats global at equal d (test); locality = per-cell noise |
+| Adaptive capture cells + matched referee (opt-in) | `holo/capture.py`: `assign_adaptive`, `matched_referee`, `encode_bands(budget=...)` | Fixed-lattice bit-identity and mixed-level tests; committed `results/gpu_sweep_both.json`; [adaptive cells](docs/spatial.md), [matched referee](docs/real-scenes.md) |
 | Attribute/record payloads on splats (`what_is_at`, `where_is`) | `holo/attribute_field.py` | SNR cliff table; class-filter renders (`out/attribute_field.png`) |
 | CRDT replication incl. attributed scenes + records (Loro) | `holo/crdt.py`, `examples/live_sync.py` | convergence tests; bit-identical merges; TCP demo |
 | Ridge-fitting holograms (bundle = RFF weight vector) | `holo/fit.py` | fitted beats forward-encoded ~70x held-out (`out/fit_photo.png`) |
