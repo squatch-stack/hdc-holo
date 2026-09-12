@@ -1505,3 +1505,34 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
     codes work rather than where they all fail. Files:
     `bench/operator_bench.py`, `tests/test_operator_bench.py`,
     `results/operator_bench.md`.
+
+- **CLAIMED: lanes 5–8 from the same results** (opened 2026-09-12,
+  queued behind the four above on the same two Codex accounts; same
+  rules — exclusive files as listed, `tests.count` only in the
+  registry, this log append-only, no `holo/`, `quality/baseline.json`,
+  `paper/` or `bench/RECIPE.md`):
+  - `bench/factorized-cleanup` — the resonator as a cleanup memory:
+    brute force against a materialised product codebook vs
+    coarse-to-fine vs a resonator over the three position factors,
+    timed by `bench/operator_bench.py`'s contract, top-1 vs K and
+    load, the crossover as the finding. Files:
+    `bench/factorized_cleanup.py`, `tests/test_factorized_cleanup.py`,
+    `results/factorized_cleanup.md`, `out/factorized_cleanup/`.
+  - `research/change-detection` — the difference of two bundles in a
+    shared frame as a change map, against a drift null and a
+    primitive-level baseline (arXiv:2605.07203's idea without the
+    render), with the crop pairs as exact synthetic changes on real
+    data. Files: `bench/change_detection.py`,
+    `tests/test_change_detection.py`, `results/change_detection.md`,
+    `out/change/`.
+  - `research/shape-descriptor` — the radial mass profile the
+    frame-rule finding exposed, `radial_power`, subject-scaled whitened
+    correlation and Osada's D2, on the twelve captures and four crops
+    under a stated class hypothesis. Files:
+    `bench/shape_descriptor.py`, `tests/test_shape_descriptor.py`,
+    `results/shape_descriptor.md`, `out/shape/`.
+  - `docs/storage-position` — a results note positioning bundle bytes
+    at the measured knee against SPZ/SOG and the 3DGS entropy coders,
+    with one new per-capture table computed from the sweep JSON. Files:
+    `bench/storage_position.py`, `tests/test_storage_position.py`,
+    `results/storage_position.md`.
