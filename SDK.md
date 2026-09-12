@@ -1548,3 +1548,18 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   +8% at 8 and 32 KB), unlike the synthetic fixture's 31%: the
   coherent-crosstalk floor is what a finer magnitude grid runs into.
   One-bit magnitudes stay at ≈ 1.0. No `HQ` packer; D1's limit stands.
+
+- **Resonator Stage 1 is a negative, and so is the analogy question on
+  this corpus** (2026-09-12; `results/resonator_capture.md`, 5090). The
+  resonator does not converge on spectral bundles of captures at any
+  setting tried; whitened one-shot correlation localises the gun in
+  Wilson's Creek under eight added parents (0.769 → 0.652, error 0.15
+  units). A prototype of the cannon ⊕ research-library cannon finds the
+  gun at 0.436 / 0.7 units — and so does a prototype of a rock pile ⊕ a
+  cactus (0.409 / 0.7 units), and the rock pile alone (0.471). With two
+  candidates in one cube every probe, the gun's own codeword included,
+  prefers the denser placed cairn. At σ_rec = 0.5 units and d=8192 the
+  correlation scores compact mass, not identity — the place lane's
+  frame-rule finding from the object side. Not promoted; the note says
+  what a decisive version needs (mass-normalised codewords, balanced
+  candidates).
