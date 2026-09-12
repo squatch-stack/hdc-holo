@@ -1589,3 +1589,32 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   #105, #107, #113) and the factorised cleanup (#115: coarse-to-fine
   beats brute force from K=4096; the resonator wins on bytes, not time)
   are the same finding from two sides.
+
+- **The naive bundle difference is not a change detector** (2026-09-12;
+  `bench/change_detection.py`, `results/change_detection.md`; synthetic).
+  By linearity `S_after − S_before` is the change's spectrum, but decoded
+  at recognition blur its sidelobes spread over the cube: IoU 0.01–0.15
+  against the true region with 61–94% of the surviving mass outside it,
+  where a primitive-level nearest-neighbour baseline reaches 0.93 without
+  drift and 0.16–0.34 with it. The real cases (gun removed from Wilson's
+  Creek, cairn from redrock) were not run on that evidence. What a second
+  pass needs is a calibration of the difference map's sidelobes, not a
+  better threshold.
+- **Four shape descriptors in subject-scaled cubes; the accidental one is
+  the weakest** (2026-09-12; `bench/shape_descriptor.py`,
+  `results/shape_descriptor.md`; synthetic). Leave-one-out on spheres,
+  rods and discs: Osada's D2 100%, the alpha-mass radial profile 100%,
+  `radial_power` 89%, whitened phase correlation in the subject-scaled
+  cube 61%. Exact yaw invariance does not hold for the cube-and-sampled-
+  spectrum definitions and the tests carry the counterexamples. The
+  twelve-capture table is the next run and is a table, not a result.
+- **At the measured knee a bundle is 24× SPZ, not 384×** (2026-09-12;
+  `bench/storage_position.py`, `results/storage_position.md`). The README's
+  384× is the largest-scene row of a ratio that runs 384×–1475× with scene
+  size, comparing a queryable complex64 field to a compressed asset. At
+  the rate point D2 located — 4/4 at d=16384, 16 KB per cell — the
+  per-capture ratio over the twelve gallery captures is 19.5×–29.3×,
+  median 23.55× (cells × 16 KB against splats × 22 B SPZ v3). Entropy
+  coders reach ~30× on splats; what the bundle buys is stated as
+  capabilities an asset lacks without decoding. Block scaling did not
+  move the knee (D3); tiles as the unit of storage might.
