@@ -5,6 +5,7 @@ Usage:
   holo-facts index                 build the fuzzy chunk index
   holo-facts search "query" [-k 8] rank chunks by trigram cosine
   holo-facts calibrate             score histograms -> threshold advice
+  holo-facts supersede <id> (--value V | --auto) [--dry-run] [--root DIR]
   holo-facts new                   print a registry line template
   holo-facts mcp                   (phase 3 — not built yet)
 
@@ -18,8 +19,10 @@ import argparse
 import json
 import os
 import sys
+from contextlib import suppress
 
 from . import check as checkmod
+from .supersede import supersede
 
 _TEMPLATE = {
     "id": "module.claim_name", "statement": "… {value} …", "value": None,
@@ -53,6 +56,14 @@ def _build_parser():
     p_check.add_argument("--fuzzy", action="store_true",
                          help="add WARN-only fuzzy paraphrase probes")
     p_check.add_argument("--root", default=".")
+    p_super = sub.add_parser("supersede", help="update or repair a claim chain")
+    p_super.add_argument("id")
+    values = p_super.add_mutually_exclusive_group(required=True)
+    values.add_argument("--value", help="JSON value, or an unquoted string")
+    values.add_argument("--auto", action="store_true")
+    p_super.add_argument("--root", default=".")
+    p_super.add_argument("--note")
+    p_super.add_argument("--dry-run", action="store_true")
     sub.add_parser("new", help="print a registry line template")
     p_index = sub.add_parser("index", help="build the fuzzy chunk index")
     p_index.add_argument("--root", default=".")
@@ -65,6 +76,21 @@ def _build_parser():
     p_cal.add_argument("--root", default=".")
     sub.add_parser("mcp")
     return ap
+
+
+def _cmd_supersede(args, root):
+    value = args.value
+    if value is not None:
+        with suppress(json.JSONDecodeError):
+            value = json.loads(value)
+    try:
+        summary = supersede(root, args.id, value=value, auto=args.auto,
+                            note=args.note, dry_run=args.dry_run)
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError) as e:
+        print("supersede: %s" % e, file=sys.stderr)
+        return 2
+    print(summary)
+    return 0
 
 
 def _cmd_new(args, root):
@@ -157,7 +183,7 @@ def _cmd_check(args, root):
 
 COMMANDS = {"new": _cmd_new, "mcp": _cmd_mcp, "index": _cmd_index,
             "search": _cmd_search, "calibrate": _cmd_calibrate,
-            "check": _cmd_check}
+            "check": _cmd_check, "supersede": _cmd_supersede}
 
 #: `new` needs no repo at all; `mcp` resolves from its own working
 #: directory because the client, not the caller, chooses where it runs
