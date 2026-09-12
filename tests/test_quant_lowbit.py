@@ -127,3 +127,172 @@ def test_synthetic_cli_records_to_a_relative_output(tmp_path, monkeypatch):
     main(["--synthetic", "--output", "d2.jsonl"])
     row = json.loads((tmp_path / "d2.jsonl").read_text())
     assert row["id"] == "D2" and row["result"] == {"synthetic": True}
+
+
+@pytest.mark.parametrize("d,block", [(1, 32), (31, 16), (64, 32), (129, 64)])
+@pytest.mark.parametrize("mbits,pbits", [(1, 1), (2, 2), (1, 3), (4, 4)])
+@pytest.mark.parametrize("scale_code", ["e8m0", "u8"])
+def test_block_sizes_count_the_scales(d, block, mbits, pbits, scale_code):
+    from bench.quant_lowbit import quant_block
+
+    q, size = quant_block(rayleigh_bundle(d), mbits, pbits, block, scale_code)
+    assert size == ((d * mbits + 7) // 8 + (d * pbits + 7) // 8
+                    + (d + block - 1) // block + HEADER_BYTES)
+    assert q.shape == (d,) and q.dtype == np.complex64
+
+
+@pytest.mark.parametrize("bits", [1, 2, 4, 8, 16])
+@pytest.mark.parametrize("gamma", [0.5, 1.0, 0.7])
+def test_block_equals_vector_scale_when_block_is_d(bits, gamma):
+    from bench.quant_lowbit import quant_block
+
+    for v in (rayleigh_bundle(513), np.zeros(17, np.complex64)):
+        actual, _ = quant_block(v, bits, bits, len(v), "u8", gamma)
+        expected, _ = quant_polar(v, bits, bits, gamma, "max")
+        np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("scale_code", ["e8m0", "u8"])
+def test_block_scale_isolates_an_outlier(scale_code):
+    from bench.quant_lowbit import quant_block
+
+    rng = np.random.default_rng(22)
+    v = np.exp(1j * rng.uniform(-np.pi, np.pi, 8192)).astype(np.complex64)
+    v[0] *= 100
+    q, _ = quant_block(v, 2, 4, 32, scale_code)
+    assert np.count_nonzero(q[:32]) >= 1
+    assert np.all(np.mean(q[32:].reshape(-1, 32) != 0, axis=1) > 0.9)
+    assert np.all(quant_polar(v, 2, 4)[0][1:] == 0)
+
+
+@pytest.mark.parametrize("scale_code", ["e8m0", "u8"])
+def test_block_error_is_monotone_in_bits(scale_code):
+    from bench.quant_lowbit import quant_block
+
+    v = rayleigh_bundle()
+    errors = [np.linalg.norm(quant_block(v, b, b, 32, scale_code)[0] - v)
+              for b in (1, 2, 3, 4, 6, 8)]
+    assert np.all(np.diff(errors) < 0)
+
+
+def test_e8m0_scale_is_a_power_of_two_and_covers_the_block_max():
+    from bench.quant_lowbit import _block_scales, quant_block
+
+    maxima = np.array([0, 2.0 ** -140, 0.5, 1, np.nextafter(
+        np.float32(1), np.float32(2)), 3, 8, 100, 2.0 ** 127], np.float32)
+    scales = _block_scales(np.repeat(maxima, 3), 3, "e8m0")
+    expected = np.array([2.0 ** -127, 2.0 ** -127, 0.5, 1, 2, 4, 8,
+                         128, 2.0 ** 127], np.float32)
+    np.testing.assert_array_equal(scales, expected)
+    assert np.all(scales >= maxima)
+    np.testing.assert_array_equal(np.log2(scales), np.round(np.log2(scales)))
+    # Observe the scales through reconstruction, not only the helper.
+    v = np.repeat(np.array([0, 1, 3, 100], np.complex64), 3)
+    q, _ = quant_block(v, 1, 4, 3)
+    np.testing.assert_allclose(np.abs(q), np.repeat([0, 1, 4, 128], 3),
+                               rtol=2e-6, atol=1e-6)
+    with pytest.raises(ValueError, match="E8M0 range"):
+        quant_block(np.array([np.finfo(np.float32).max]), 2, 2)
+
+
+def test_mbits_zero_is_refused_for_blocks():
+    from bench.quant_lowbit import quant_block
+
+    with pytest.raises(ValueError, match="mbits"):
+        quant_block(np.ones(32), 0, 2)
+
+
+@pytest.mark.parametrize("scale_code", ["e8m0", "u8"])
+def test_block_zero_and_rounded_zero_scales(scale_code):
+    from bench.quant_lowbit import quant_block
+
+    v = np.zeros(65, np.complex64)
+    np.testing.assert_array_equal(quant_block(v, 2, 2, 32, scale_code)[0], v)
+    v[0] = 1000
+    v[32:] = 0.01
+    q, _ = quant_block(v, 2, 2, 32, scale_code)
+    assert np.all(np.isfinite(q))
+    if scale_code == "u8":
+        assert np.all(q[32:] == 0)
+
+
+@pytest.mark.parametrize("kwargs", [{"block": 0}, {"block": 1.5},
+                                   {"block": True}, {"scale_code": "bad"},
+                                   {"scale_bits": 4}, {"gamma": 0},
+                                   {"pbits": 0}])
+def test_invalid_block_settings_fail(kwargs):
+    from bench.quant_lowbit import quant_block
+
+    settings = {"mbits": 2, "pbits": 2}
+    settings.update(kwargs)
+    with pytest.raises(ValueError):
+        quant_block(np.ones(8), **settings)
+
+
+@pytest.mark.parametrize("v", [[], [[1]], [np.nan], [np.inf]])
+def test_invalid_block_vectors_fail(v):
+    from bench.quant_lowbit import quant_block
+
+    with pytest.raises(ValueError):
+        quant_block(v, 2, 2)
+
+
+def test_block_ladder_fits_payload_budgets():
+    from bench.quant_lowbit import LADDER_BLOCK, quant_block
+
+    for factor in (0.5, 1, 2):
+        for d, mbits, pbits, block in LADDER_BLOCK:
+            dimension = int(d * factor) // block * block
+            _, size = quant_block(np.ones(dimension), mbits, pbits, block)
+            assert dimension % block == 0
+            assert size - HEADER_BYTES <= int(16384 * factor)
+    for block in (16, 64):
+        d = next(d for d, m, p, b in LADDER_BLOCK if b == block)
+        assert d == (16384 // (block // 2 + 1)) * block
+        assert (d + block) // block * (block // 2 + 1) > 16384
+
+
+def test_d3_records_complete_grid(monkeypatch):
+    from bench import precision_battery as pb
+    from bench import quant_lowbit as ql
+    from holo import spectral
+
+    scenes, half = synthetic_cells(npoints=2, nsplats=1)
+    cells = ([(scene, scene.mu.copy()) for scene, _ in scenes], half)
+    monkeypatch.setattr(ql, "synthetic_cells", lambda: cells)
+    monkeypatch.setattr(ql, "LADDER_BLOCK", [(16, 2, 2, 4)])
+    result = pb.d3_blockscale(synthetic=True)
+    rows = [r for r in result.values() if isinstance(r, dict)]
+    assert len(rows) == 12  # Two scale codes and two references per budget.
+    expected = set()
+    for factor in (0.5, 1, 2):
+        budget = int(16384 * factor)
+        for code in ("e8m0", "u8"):
+            expected.add("B=%d/d=%d/m=2/p=2/block=4/%s" %
+                         (budget, int(16 * factor), code))
+        for d, bits in ((8192, 8), (16384, 4)):
+            expected.add("B=%d/d=%d/m=%d/p=%d/block=0/max" %
+                         (budget, int(d * factor), bits, bits))
+    assert {k for k in result if k.startswith("B=")} == expected
+    assert all(np.isfinite(r[field]) for r in rows for field in
+               ("median_rel_err", "median_drift", "raw_median_rel_err"))
+    monkeypatch.setattr(ql, "quant_block", lambda v, *_a, **_kw: (v, 0))
+    monkeypatch.setattr(ql, "quant_polar", lambda v, *_a, **_kw: (v, 0))
+    monkeypatch.setattr(spectral, "spectral_bundle",
+                        lambda _local, freqs: np.ones((1, len(freqs)), np.complex64))
+    result = pb.d3_blockscale(synthetic=True)
+    assert all(r["median_drift"] < 1e-6 for r in result.values()
+               if isinstance(r, dict))
+
+
+def test_d3_synthetic_cli_records(tmp_path, monkeypatch):
+    import json
+
+    from bench import precision_battery as pb
+    from bench.quant_lowbit import main
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(pb, "d3_blockscale", lambda synthetic: {"synthetic": synthetic})
+    main(["--experiment", "D3", "--synthetic", "--output", "d3.jsonl"])
+    row = json.loads((tmp_path / "d3.jsonl").read_text())
+    assert row["id"] == "D3" and row["result"] == {"synthetic": True}

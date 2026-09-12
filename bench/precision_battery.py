@@ -572,6 +572,70 @@ def d2_lowbit(synthetic=False):
     return out
 
 
+@experiment("D3", "D", 2.0, 12,
+            "block-scaled magnitudes at three equal-byte budgets")
+def d3_blockscale(synthetic=False):
+    """Compare 36 block settings and six same-run D2 references on 24 cells.
+
+    Scales count toward the payload; the common 17-byte header is extra.
+    Dimensions scale with budget and round down to whole blocks. All
+    variants at a given d share the codebook and raw decode for drift.
+    """
+    from bench.quant_lowbit import LADDER_BLOCK, candidates_block, synthetic_cells
+    from holo.capture import BANDS, S_LO
+    from holo.spectral import (
+        decode_field,
+        eval_scene_exact,
+        sample_frequencies,
+        spectral_bundle,
+    )
+
+    cells, _half = (synthetic_cells() if synthetic
+                    else cell_scenes("xfine", 24))
+    if len(cells) != 24:
+        raise ValueError("D3 requires 24 cells")
+    _, cap, _cell = BANDS[0]
+    n_comp = 3 + max(2, round(np.log2(cap / S_LO)))
+    rho = list(1.0 / np.geomspace(S_LO, cap, n_comp))
+    grid = {}
+    for factor in (0.5, 1, 2):
+        for d, mbits, pbits, block in LADDER_BLOCK:
+            dimension = max(block, int(d * factor) // block * block)
+            grid.setdefault(dimension, []).append(
+                (int(16384 * factor), mbits, pbits, block))
+        for d, mbits, pbits in ((16384, 4, 4), (8192, 8, 8)):
+            grid.setdefault(int(d * factor), []).append(
+                (int(16384 * factor), mbits, pbits, 0))
+    truth = [eval_scene_exact(local, pts)[:, 0] for local, pts in cells]
+    if any(np.linalg.norm(t) == 0 for t in truth):
+        raise ValueError("D3 requires nonzero truth in every cell")
+    out = {"fixture": "synthetic" if synthetic else "capture",
+           "ncells": len(cells), "dropped_points": [],
+           "fixture_seed": 7, "frequency_seed": 42, "gamma": 0.5,
+           "probe_counts": [len(pts) for _, pts in cells]}
+    for d, configs in sorted(grid.items()):
+        freqs = sample_frequencies(d, 3, rho, np.random.default_rng(42))
+        errors, drifts, raw_errors = [], [], []
+        for (local, pts), exact in zip(cells, truth):
+            bundle = spectral_bundle(local, freqs)[0].astype(np.complex64)
+            rows, vectors = candidates_block(bundle, configs)
+            decoded = decode_field(vectors, freqs, rho, pts, chunk=128)
+            raw = decoded[:, 0]
+            errors.append([rel(est, exact) for est in decoded[:, 1:].T])
+            drifts.append([rel(est, raw) for est in decoded[:, 1:].T])
+            raw_errors.append(rel(raw, exact))
+        for i, row in enumerate(rows):
+            row.update(median_rel_err=float(np.median(np.array(errors)[:, i])),
+                       median_drift=float(np.median(np.array(drifts)[:, i])),
+                       raw_median_rel_err=float(np.median(raw_errors)))
+            key = ("B=%d/d=%d/m=%d/p=%d/block=%d/%s" %
+                   (row["payload_budget"], d, row["mbits"], row["pbits"],
+                    row["block"], row["scale_code"]))
+            out[key] = row
+        print("    D3 d=%d: %d settings, 24 cells" % (d, len(rows)), flush=True)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------

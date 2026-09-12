@@ -239,3 +239,205 @@ The remaining sub-nibble question is a different one — whether 2-bit
 magnitudes with a *per-block* scale (not a per-vector one) close the gap
 — and that is a new experiment, not this ladder.
 
+## D3 (synthetic)
+
+Squatch Stack's block-scale experiment adds independent magnitude scales
+and keeps D2's seeded 24-cell fixture (330 splats and 1500 probes per cell),
+frequency seed 42, gamma 0.5, exact-field error, and drift against the raw
+decode at the same dimension. All variants at a dimension share the
+codebook, bundle, and batched readout. The two D2 max-scale references
+(4/4 and 8/8, no shrink) are recomputed inside this run. There are 42
+settings: 36 block-scale settings and six vector references.
+
+The motivation comes from the [OCP MX v1.0 specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf),
+[BATQuant, arXiv:2603.16590](https://arxiv.org/abs/2603.16590), and
+[DuQuant++, arXiv:2604.17789](https://arxiv.org/abs/2604.17789), read online
+on 2026-09-12. BATQuant describes block-wise affine shaping and clipping;
+DuQuant++ aligns outlier-aware rotations with microscaling groups. This
+experiment applies neither transformation. Our unsigned, companded
+magnitude codes are our definitions, not MXFP4 E2M1 or a reproduction of
+these papers. E8M0 supplies a covering power-of-two scale with exponent
+-127 through 127 (zero blocks use -127; larger required scales raise).
+The u8 alternative quantises each block max to a linear 8-bit fraction of
+the vector max held as float32. A rounded-down scale saturates magnitude
+codes at their maximum; a scale rounded to zero restores a zero block.
+Only 8-bit scales are defined. Rates are analytic; no packer is emitted.
+The common hypothetical header remains 17 bytes for comparability.
+
+The payload includes both bit streams and all scale bytes; the header
+is extra. The four requested block-32 dimensions are retained. The
+block-16 and block-64 suggestions need arithmetic corrections: with 2/2
+bits, a full block costs `block/2 + 1` bytes. Consequently, at 16,384
+bytes, `d = block * floor(16384 / (block/2 + 1))` is 29,120 or 31,744.
+No whole-block dimension lands on exactly 16,384 bytes because neither
+9 nor 33 divides it. The suggested 29,184 exceeds the budget (16,416
+bytes), while 31,488 leaves 148 bytes unused. The corrected points are
+the largest whole-block dimensions that fit. The other budgets multiply
+d by 0.5 or 2, retaining whole blocks; none was dropped.
+
+```
+  B       d    m/p  block  payload  unused
+16384   15872  4/4     32    16368      16
+16384   30720  2/2     32    16320      64
+16384   30720  1/3     32    16320      64
+16384   58240  1/1     32    16380       4
+16384   29120  2/2     16    16380       4
+16384   31744  2/2     64    16368      16
+16384   16384  4/4      0    16384       0
+16384    8192  8/8      0    16384       0
+```
+
+Reproduce the full synthetic measurement (JSONL appends a record per run):
+
+```sh
+HDC_BACKEND=numpy OPENBLAS_NUM_THREADS=1 .venv/bin/python -m bench.quant_lowbit \
+  --experiment D3 --synthetic --output /tmp/blockscale-d3.jsonl
+```
+
+Capture confirmation, with the path supplied by the maintainer:
+
+```sh
+HDC_BACKEND=numpy OPENBLAS_NUM_THREADS=1 .venv/bin/python -m bench.quant_lowbit \
+  --experiment D3 --capture "$SCENES/cannon.spz" \
+  --output /tmp/blockscale-d3-capture.jsonl
+```
+
+Run on 2026-09-12 with NumPy 1.26.4: **483.2 s, 1.71 GB peak RSS**.
+All three budgets completed in about eight minutes on CPU.
+
+Median relative reconstruction error against the exact field over 24 cells.
+`block=0` and `max/ref` identify the same-run D2 vector references; a dash
+means the scale code does not apply. Headers are additional to `B`.
+
+Error:
+
+```
+     B       d   m/p  block    e8m0      u8  max/ref
+  8192    4096   8/8      0       -       -  0.1008
+  8192    7936   4/4     32  0.0981  0.0965       -
+  8192    8192   4/4      0       -       -  0.1201
+  8192   14560   2/2     16  0.1632  0.1530       -
+  8192   15360   1/3     32  0.5947  0.3263       -
+  8192   15360   2/2     32  0.1983  0.1833       -
+  8192   15872   2/2     64  0.1913  0.1809       -
+  8192   29120   1/1     32  0.6387  0.3774       -
+ 16384    8192   8/8      0       -       -  0.1024
+ 16384   15872   4/4     32  0.0685  0.0667       -
+ 16384   16384   4/4      0       -       -  0.0970
+ 16384   29120   2/2     16  0.1491  0.1468       -
+ 16384   30720   1/3     32  0.6368  0.3298       -
+ 16384   30720   2/2     32  0.1832  0.1746       -
+ 16384   31744   2/2     64  0.2163  0.2003       -
+ 16384   58240   1/1     32  0.5743  0.3457       -
+ 32768   16384   8/8      0       -       -  0.0799
+ 32768   31744   4/4     32  0.0684  0.0651       -
+ 32768   32768   4/4      0       -       -  0.1023
+ 32768   58240   2/2     16  0.1256  0.1205       -
+ 32768   61440   1/3     32  0.5223  0.2764       -
+ 32768   61440   2/2     32  0.1464  0.1383       -
+ 32768   63488   2/2     64  0.1986  0.1861       -
+ 32768  116480   1/1     32  0.5807  0.3527       -
+```
+
+Drift against the unquantised decode at the same d:
+
+```
+     B       d   m/p  block    e8m0      u8  max/ref
+  8192    4096   8/8      0       -       -  0.0061
+  8192    7936   4/4     32  0.0463  0.0415       -
+  8192    8192   4/4      0       -       -  0.0621
+  8192   14560   2/2     16  0.1275  0.1215       -
+  8192   15360   1/3     32  0.5053  0.2686       -
+  8192   15360   2/2     32  0.1527  0.1443       -
+  8192   15872   2/2     64  0.1954  0.1807       -
+  8192   29120   1/1     32  0.5601  0.3275       -
+ 16384    8192   8/8      0       -       -  0.0043
+ 16384   15872   4/4     32  0.0377  0.0357       -
+ 16384   16384   4/4      0       -       -  0.0484
+ 16384   29120   2/2     16  0.1168  0.1135       -
+ 16384   30720   1/3     32  0.5435  0.2700       -
+ 16384   30720   2/2     32  0.1471  0.1378       -
+ 16384   31744   2/2     64  0.1924  0.1805       -
+ 16384   58240   1/1     32  0.5687  0.3433       -
+ 32768   16384   8/8      0       -       -  0.0031
+ 32768   31744   4/4     32  0.0327  0.0302       -
+ 32768   32768   4/4      0       -       -  0.0435
+ 32768   58240   2/2     16  0.1208  0.1163       -
+ 32768   61440   1/3     32  0.5302  0.2823       -
+ 32768   61440   2/2     32  0.1508  0.1393       -
+ 32768   63488   2/2     64  0.1891  0.1779       -
+ 32768  116480   1/1     32  0.5640  0.3420       -
+```
+
+Raw median relative error by dimension (shared across settings):
+
+```
+     d  raw error
+  4096     0.1007
+  7936     0.0855
+  8192     0.1024
+ 14560     0.0774
+ 15360     0.0878
+ 15872     0.0562
+ 16384     0.0798
+ 29120     0.0720
+ 30720     0.0771
+ 31744     0.0570
+ 32768     0.0891
+ 58240     0.0287
+ 61440     0.0292
+ 63488     0.0352
+116480     0.0248
+```
+
+### Reading D3
+
+- **No: (30,720, 2/2, 32) does not beat (16,384, 4/4).** At the
+  central budget the vector reference has error 0.09698; block u8 gives
+  0.17461 (absolute increase 0.07763, 1.80x / 80.0% worse) and E8M0 gives
+  0.18316 (increase 0.08619, 1.89x / 88.9% worse). The corresponding
+  drifts are 0.0484 versus 0.1378 and 0.1471. Even the best two-bit
+  configuration, block 16 with u8, loses to the vector 4/4 reference at
+  all three budgets (errors 0.1530, 0.1468, 0.1205 versus 0.1201,
+  0.0970, 0.1023).
+- **u8 wins over E8M0** in both error and drift for every matched row.
+  At 16 KB, 2/2 with block 32 improves from 0.1832 to 0.1746 (4.7%).
+  The difference is much larger with one-bit magnitudes: 1/3 improves
+  from 0.6368 to 0.3298 and 1/1 from 0.5743 to 0.3457. A power-of-two
+  covering scale leaves more unused element range than a linear scale.
+- **Smaller blocks help the two-bit stream.** At 16 KB, u8 error for
+  blocks 16/32/64 is 0.1468/0.1746/0.2003; drift is
+  0.1135/0.1378/0.1805. E8M0 has the same ordering. Drift increases with
+  block size at every budget for both scale codes. Half-budget exact
+  error has a small 32/64 reversal: these rows also change d and hence
+  the random codebook and raw error, so it is not a controlled
+  fixed-d estimate of the block-size effect.
+- **The one-bit rows remain far from competitive.** Across budgets,
+  1/3 errors are 0.2764–0.3298 with u8 and 0.5223–0.6368 with E8M0;
+  1/1 errors are 0.3457–0.3774 and 0.5743–0.6387. Three phase bits
+  improve on one at equal budgets with u8, but cannot repair the
+  magnitude loss enough to beat four-bit storage.
+- **Block-scaled 4/4 is the best measured row at each budget**, with u8
+  errors 0.0965/0.0667/0.0651. Some advantage over the vector reference
+  comes from different raw errors at the slightly different dimensions;
+  the raw table above prevents attributing the entire improvement to
+  quantisation. Its drift also beats the vector 4/4 drift at each
+  budget. This is evidence for exploring scales at four bits, not for
+  lowering the magnitude precision to two bits.
+
+This is **provisional until the maintainer reruns D3 on captures** using
+`--experiment D3 --capture ...`. The synthetic fixture does not reproduce
+real occupancy correlations or the coherent-crosstalk floor. On this
+fixture the answer below four bits is negative: the knee stays at four
+bits and D1's limit stands. A negative capture rerun would confirm that
+limit despite block scaling; these CPU results alone do not establish it
+for captures. No packer or claims-surface change is justified here.
+
+Validation: the quantizer file has 131 passing cases in 0.67 s (slowest
+case 0.39 s). The full suite reports `3 failed, 419 passed, 9 skipped in
+21.74s`; all three failures arise solely from `tests.count` (registry
+321, derived 333). Ruff is clean and `holo-quality check` reports
+`lint debt: 50 (baseline 50)`. `holo-facts check --strict` reports
+`1 FAIL, 25 WARN`, with `tests.count` the sole FAIL. Updating that
+registry and its cites is outside this lane and left to the maintainer.
+The original D2 functions, existing tests, and prior results are intact.
