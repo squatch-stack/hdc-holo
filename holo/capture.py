@@ -759,7 +759,70 @@ def band_of(smax, bands=None):
     return np.searchsorted(caps, smax, side="left")
 
 
-def encode_bands(scene, smax, books, bands=None, dim=DIM, verbose=True):
+class AdaptiveCells(dict):
+    """Cell membership mapping with an explicit, lossless overflow report."""
+
+    def __init__(self, *args, budget, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.budget = budget
+
+    @property
+    def overflow(self):
+        """Over-budget cells retained at the subdivision limit."""
+        return {k: ids for k, ids in self.items()
+                if self.budget and len(ids) > self.budget}
+
+
+def assign_adaptive(mu, idx, cell, budget, max_level=8):
+    """Refine only what needs it.
+
+    `budget` is a member count; encode_bands converts its fraction of d.
+    Zero disables splitting. The dict return exposes `.overflow`: keys
+    and member lists still above budget at max_level.
+
+    Start on the band's own lattice; any cell over `budget` members is
+    split into its eight children and the test repeats, to `max_level`.
+    A cell that is still over budget at the deepest level is kept and
+    reported rather than dropped — silently discarding the densest
+    splats in the scene would improve every number on the page while
+    making the reconstruction worse, which is exactly the kind of
+    metric that rewards amputation.
+    """
+    if budget < 0 or not np.isfinite(budget):
+        raise ValueError("budget must be finite and nonnegative")
+    if max_level < 0 or int(max_level) != max_level:
+        raise ValueError("max_level must be a nonnegative integer")
+    if cell <= 0 or not np.isfinite(cell):
+        raise ValueError("cell must be finite and positive")
+    out = AdaptiveCells(budget=budget)
+    frontier = [(0, np.asarray(idx, dtype=int))]
+    while frontier:
+        level, members = frontier.pop()
+        size = cell / (1 << level)
+        per_cell = {}
+        for i, k in zip(members, map(tuple, (mu[members] // size).astype(int))):
+            per_cell.setdefault(k, []).append(i)
+        for k, ids in per_cell.items():
+            if budget and len(ids) > budget and level < max_level:
+                frontier.append((level + 1, np.asarray(ids)))
+            else:
+                out[(level, *k)] = ids
+    return out
+
+
+def encode_bands(scene, smax, books, bands=None, dim=DIM, verbose=True,
+                 *, budget=0, max_level=8):
+    """Encode fixed cells, or opt into subdivision with a fraction of d.
+
+    `budget=0` preserves the original keys and bundles bit for bit.
+    `budget=1/64` limits each cell to max(1, floor(d/64)) members;
+    a fraction keeps capacity comparable across codebook dimensions.
+    Adaptive keys are (level, i, j, k); legacy keys remain (i, j, k).
+    Overfull leaves are kept in members[name] and reported through its
+    `.overflow` mapping, including when max_level is zero.
+    """
+    if budget < 0 or not np.isfinite(budget):
+        raise ValueError("budget must be finite and nonnegative")
     bands = bands or BANDS
     bundles, members = {}, {}
     bidx = band_of(smax, bands)
@@ -780,18 +843,20 @@ def encode_bands(scene, smax, books, bands=None, dim=DIM, verbose=True):
     for b, (name, _cap, cell) in enumerate(bands):
         idx = np.where(bidx == b)[0]
         freqs = books[name][0]
-        per_cell = {}
-        for i in idx:
-            k = tuple((scene.mu[i] // cell).astype(int))
-            per_cell.setdefault(k, []).append(i)
-        bundles[name], members[name] = {}, {}
+        if budget:
+            per_cell = assign_adaptive(
+                scene.mu, idx, cell, max(1, int(budget * dim)), max_level)
+            members[name] = AdaptiveCells(budget=per_cell.budget)
+        else:
+            per_cell = {}
+            for i in idx:
+                k = tuple((scene.mu[i] // cell).astype(int))
+                per_cell.setdefault(k, []).append(i)
+            members[name] = {}
+        bundles[name] = {}
         t0 = time.time()
-        for k, ids in per_cell.items():
-            ids = np.array(ids)
-            sub = SplatScene(mu=scene.mu[ids], cov=scene.cov[ids],
-                             amp=scene.amp[ids])
-            bundles[name][k] = spectral_bundle(sub, freqs, chunk=2048)
-            members[name][k] = ids
+        bundles[name], members[name] = _encode_cells(
+            scene, per_cell, freqs, members[name])
         if verbose:
             nbytes = len(per_cell) * scene.channels * dim * 8
             print(f"  {name}: {len(idx):,} splats -> {len(per_cell)} cells "
@@ -800,7 +865,22 @@ def encode_bands(scene, smax, books, bands=None, dim=DIM, verbose=True):
     return bundles, members
 
 
+def _encode_cells(scene, per_cell, freqs, members=None):
+    """Shared encoder for SDK and benchmark-assigned cell memberships."""
+    members = {} if members is None else members
+    bundles = {}
+    for k, ids in per_cell.items():
+        ids = np.array(ids)
+        sub = SplatScene(mu=scene.mu[ids], cov=scene.cov[ids], amp=scene.amp[ids])
+        bundles[k] = spectral_bundle(sub, freqs, chunk=2048)
+        members[k] = ids
+    return bundles, members
+
+
 def cell_mask(points, cell, cell_size, reach):
+    if len(cell) == 4:
+        cell_size /= 1 << cell[0]
+        cell = cell[1:]
     lo = np.array(cell, dtype=np.float32) * cell_size
     nearest = np.clip(points, lo, lo + cell_size)
     return ((points - nearest) ** 2).sum(axis=1) <= reach * reach
@@ -874,8 +954,10 @@ def fit_cells(scene, members, books, bands=None, lam=1e-3,
             near = scene.mu[near_ids] \
                 + (1.5 * spread * rng.standard_normal((n_pts // 2, 3))) \
                 .astype(np.float32)
-            lo = np.array(k, dtype=np.float32) * cell - reach
-            hi = lo + cell + 2 * reach
+            size = cell / (1 << k[0]) if len(k) == 4 else cell
+            coords = k[1:] if len(k) == 4 else k
+            lo = np.array(coords, dtype=np.float32) * size - reach
+            hi = lo + size + 2 * reach
             far = rng.uniform(lo, hi, (n_pts - n_pts // 2, 3)) \
                 .astype(np.float32)
             pts = np.clip(np.concatenate([near, far]), lo, hi) \
@@ -910,6 +992,16 @@ def decode_slice(points, bundles, books, bands=None, chunk=4096):
             if pairs:
                 out += _accel.cell_decode(freqs, points, pairs)
             continue
+        # Preserve the adaptive benchmark's masked NumPy GEMM arithmetic.
+        # The legacy lattice retains its original point-chunked path below.
+        if any(len(k) == 4 for k in bundles[name]):
+            for k, b in bundles[name].items():
+                m = cell_mask(points, k, cell, reach)
+                if m.any():
+                    E = np.exp(1j * (points[m] @ freqs.T)).astype(np.complex64)
+                    wb = b * weights[None, :]
+                    out[m] += (E @ wb.T.astype(np.complex64)).real
+            continue
         cells = {k: (b * weights[None, :]).T.astype(np.complex64)
                  for k, b in bundles[name].items()}
         for plo in range(0, len(points), chunk):
@@ -939,6 +1031,32 @@ def footprint_blur(scene, pix):
     preserved, peak lowered.
     """
     return render_mip(scene, pix / np.sqrt(12.0))
+
+
+def matched_referee(scene, smax, bands=None, pix=PIX):
+    """Blur the scene by one slice pixel and widen the bands to match.
+
+    The slices point-sample a field whose splats are mostly thinner than
+    a pixel — S_LO / PIX = 0.448, and the clamp puts most of a real
+    capture exactly on that floor — so the sharp referee asks what the
+    field is at infinitely small points while a renderer asks what it
+    averages over a pixel (`footprint_blur`, docs/real-scenes.md). The
+    matched pair encodes the field the referee measures.
+
+    The band caps MUST travel with the scales. `band_of` says so in its
+    own docstring: widening scales without widening bands puts splats
+    past the last cap and `encode_bands` refuses them. Transforming both
+    by the same sqrt(x^2 + sigma^2) keeps every splat in the band it
+    was already in — the map is strictly increasing, so `searchsorted`
+    returns identical indices — which is what makes this a clean
+    one-variable change. Only the referee moves.
+    """
+    sigma = pix / np.sqrt(12.0)
+    blurred = footprint_blur(scene, pix)
+    smax_b = np.sqrt(smax ** 2 + sigma ** 2)
+    bands_b = [(name, float(np.sqrt(cap ** 2 + sigma ** 2)), cell)
+               for name, cap, cell in (bands or BANDS)]
+    return blurred, smax_b, bands_b
 
 
 def exact_slice(points, scene, members, bands=None, chunk=2048,
@@ -1003,6 +1121,9 @@ def _pixel_grid(center, v, u1, u2, half, res, t_extent):
 def _cell_uv_mask(uv, cell, cell_size, reach, center, u1, u2):
     """Pixels whose ray passes within reach of the cell: distance on the
     image plane from the cell's projected footprint."""
+    if len(cell) == 4:
+        cell_size /= 1 << cell[0]
+        cell = cell[1:]
     c3 = (np.asarray(cell, dtype=np.float32) + 0.5) * cell_size \
         - np.asarray(center, dtype=np.float32)
     cuv = np.array([c3 @ u1, c3 @ u2], dtype=np.float32)
@@ -1125,6 +1246,13 @@ def exact_xray(scene, members, view, center, half, res, bands=None,
                 acc += line.T @ scene.amp[sub]
             out[m] += acc
     return out
+
+
+# The adaptive benchmark historically used NumPy referees even after the
+# CUDA patch replaced the public exact_* functions. Keep stable references
+# so importing its compatibility adapters after patching cannot move scores.
+_numpy_exact_slice = exact_slice
+_numpy_exact_xray = exact_xray
 
 
 # ---------------------------------------------------------------------------
