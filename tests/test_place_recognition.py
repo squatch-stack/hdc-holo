@@ -385,3 +385,122 @@ def test_no_tile_flag_leaves_output_unchanged(tmp_path, monkeypatch):
     actual = place.main(argv)
     assert actual == golden
     assert json.loads((tmp_path / "legacy.json").read_text()) == golden
+
+
+def test_flatten_none_is_identity():
+    scene = place.synthetic_scene(np.random.default_rng(12))
+    assert place.flatten(scene, 0.025, mode="none") is scene
+
+
+def test_flatten_voxel_equalises_occupied_voxels():
+    scene = SplatScene(
+        np.array([[0.01, 0, 0], [0.02, 0, 0], [0.11, 0, 0], [0.21, 0, 0]]),
+        np.tile(np.eye(3) * 0.001, (4, 1, 1)),
+        np.array([[1.0, 3], [3.0, 4], [20.0, 5], [0.0, 6]]),
+    )
+    original = scene.amp.copy()
+    flat = place.flatten(scene, 0.1, "voxel")
+    np.testing.assert_allclose(flat.amp[:, 0], [0.25, 0.75, 1, 0], atol=1e-7)
+    np.testing.assert_array_equal(flat.amp[:, 1], original[:, 1])
+    np.testing.assert_array_equal(scene.amp, original)
+    assert flat.mu is scene.mu and flat.cov is scene.cov
+    log = place.flatten(scene, 0.1, "log")
+    expected = np.log1p(np.array([4, 20]) / 12)
+    np.testing.assert_allclose([log.amp[:2, 0].sum(), log.amp[2, 0]],
+                               expected, rtol=1e-6, atol=1e-7)
+    assert np.isfinite(log.amp).all() and log.amp[3, 0] == 0
+
+
+def test_flatten_preserves_a_uniform_field_up_to_rounding():
+    axis = np.arange(4) * 0.1 + 0.025
+    mu = np.stack(np.meshgrid(axis, axis, axis), -1).reshape(-1, 3)
+    mu = np.repeat(mu, 2, axis=0)
+    scene = SplatScene(mu, np.tile(np.eye(3) * 0.004**2, (len(mu), 1, 1)),
+                      np.full((len(mu), 1), 0.5, np.float32))
+    freqs = sample_frequencies(256, 3, 10, np.random.default_rng(0))
+    np.testing.assert_allclose(place.flatten(scene, 0.1, "voxel").amp,
+                               scene.amp, rtol=1e-6, atol=1e-7)
+    np.testing.assert_allclose(place.fingerprint(scene, freqs, 0.1, "voxel"),
+                               place.fingerprint(scene, freqs, 0.1),
+                               rtol=2e-6, atol=1e-8)
+
+
+def test_crop_in_parent_survives_flattening():
+    rng = np.random.default_rng(31)
+    mu = rng.uniform(0.2, 0.7, (160, 3))
+    rest = rng.uniform(0.8, 0.95, (3, 3))
+    parent = SplatScene(np.concatenate([mu, rest]),
+                        np.tile(np.eye(3) * 0.004**2, (163, 1, 1)),
+                        np.ones((163, 1)))
+    crop = SplatScene(parent.mu[:160], parent.cov[:160], parent.amp[:160])
+    freqs = sample_frequencies(2048, 3, 40, rng)
+    for mode in ("none", "voxel", "log"):
+        score, offset = place.correlate(
+            place.fingerprint(crop, freqs, 0.025, mode),
+            place.fingerprint(parent, freqs, 0.025, mode), freqs,
+            place.translation_grid(5, 0.05), whiten=1,
+        )
+        assert score >= 0.9, (mode, score)
+        np.testing.assert_allclose(offset, np.zeros(3), atol=0.004)
+
+
+def test_default_output_is_unchanged():
+    scene = place.synthetic_scene(np.random.default_rng(9))
+    freqs = sample_frequencies(128, 3, 40, np.random.default_rng(2))
+    assert place.flatten(scene, 0.025, mode="none") is scene
+    np.testing.assert_array_equal(place.fingerprint(scene, freqs, 0.025),
+                                  place.fingerprint(scene, freqs, 0.025,
+                                                    flatten="none"))
+
+
+def test_dense_and_faint_copies_have_comparable_flattened_peaks():
+    rng = np.random.default_rng(13)
+    mu = rng.uniform(-0.07, 0.07, (40, 3))
+    shifts = np.array([[0.25, 0.5, 0.5], [0.75, 0.5, 0.5]])
+    cov = np.tile(np.eye(3) * 0.004**2, (40, 1, 1))
+    query = SplatScene(mu, cov, np.ones((40, 1)))
+    parent = SplatScene(np.concatenate([mu + t for t in shifts]),
+                        np.concatenate([cov, cov]),
+                        np.concatenate([np.ones((40, 1)) * 10, np.ones((40, 1))]))
+    freqs = sample_frequencies(2048, 3, 40, rng)
+    ratios = {}
+    for mode in ("none", "voxel"):
+        probe = place.fingerprint(query, freqs, 0.025, mode)
+        signal = place.fingerprint(parent, freqs, 0.025, mode)
+        heights = [place.correlate(probe, signal, freqs, t[None])[0] for t in shifts]
+        ratios[mode] = heights[1] / heights[0]
+    assert ratios["none"] < 0.2
+    assert 0.9 < ratios["voxel"] < 1.1
+
+
+@pytest.mark.parametrize("mode", ["voxel", "log"])
+def test_flatten_empty_nonpositive_and_invalid(mode):
+    empty = SplatScene(np.empty((0, 3)), np.empty((0, 3, 3)), np.empty((0, 1)))
+    assert place.flatten(empty, 0.1, mode).amp.shape == (0, 1)
+    scene = SplatScene(np.zeros((2, 3)), np.tile(np.eye(3), (2, 1, 1)),
+                      np.array([[-1.0], [1.0]]))
+    assert not place.flatten(scene, 0.1, mode).amp.any()
+    for sigma in (0, -1, np.nan, np.inf):
+        with pytest.raises(ValueError, match="sigma"):
+            place.flatten(scene, sigma, mode)
+    with pytest.raises(ValueError, match="mode"):
+        place.flatten(scene, 0.1, "bad")
+
+
+@pytest.mark.parametrize("mode", ["voxel", "log"])
+def test_flatten_reaches_tiles_and_yaw_descriptors(mode):
+    scene = place.synthetic_scene(np.random.default_rng(1))
+    freqs = sample_frequencies(128, 3, 40, np.random.default_rng(2))
+    angles = [0, np.pi / 2]
+    actual = place.tile_fingerprints([(np.zeros(3), scene, 1)], freqs,
+                                     0.025, angles, flatten=mode)
+    expected = [place.fingerprint(place.yaw_scene(scene, angle), freqs, 0.025,
+                                   flatten=mode) for angle in angles]
+    np.testing.assert_array_equal(actual[0], expected)
+
+
+def test_flatten_reports_bright_crop_similarity_loss():
+    rows = place.flatten_crop_control(dim=1024, seed=0)
+    assert rows["none"]["score"] >= 0.9
+    assert rows["voxel"]["score"] < 0.5
+    assert set(rows) == {"none", "voxel", "log"}

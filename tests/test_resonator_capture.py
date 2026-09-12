@@ -416,3 +416,66 @@ def test_parent_frame_instances_cli(fixture, monkeypatch, tmp_path):
     assert result["settings"]["band_floor"] == 0.3
     assert result["prototype"]["prototype"]["error_box"] is not None
     assert result["prototype"]["single"]["error_box"] is not None
+
+
+def test_light_object_finds_itself_after_flattening():
+    parent, scenes, centers, freqs, sigma = (
+        resonator_capture.flatten_composite_fixture(dim=2048, seed=0)
+    )
+    np.testing.assert_allclose(scenes[1].amp.sum() / scenes[0].amp.sum(),
+                               10, rtol=1e-6)
+    grid = translation_grid(17, 0.5) + 0.5
+    for mode, target in (("none", 1), ("voxel", 0)):
+        code = resonator_capture._center(scenes[0], freqs, sigma, mode)[0]
+        signal = resonator_capture.fingerprint(parent, freqs, sigma, mode)
+        _, position = correlate(code, signal, freqs, grid, whiten=1)
+        assert np.linalg.norm(position - centers[target]) < 0.04
+
+
+def test_flatten_synthetic_fixture_uses_same_mode_for_parent_and_codes():
+    f = synthetic_fixture(dim=128, seed=1, objects=2, flatten="voxel")
+    np.testing.assert_array_equal(
+        f["S"], resonator_capture.fingerprint(f["parent"], f["freqs"], f["sigma"],
+                                             flatten="voxel"),
+    )
+    for scene, code in zip(f["crops"], f["identity"]):
+        expected, _ = resonator_capture._center(scene, f["freqs"], f["sigma"],
+                                                flatten="voxel")
+        np.testing.assert_array_equal(code, expected)
+
+
+def test_capture_composite_cli_flattens_all_six_probes(monkeypatch, tmp_path):
+    parent, scenes, _, _, _ = resonator_capture.flatten_composite_fixture(128, 0)
+    sources = dict(zip(["light", "heavy", "first", "second", "foreign1", "foreign2"],
+                       scenes))
+    sources["parent"] = parent
+
+    def load(path):
+        s = sources[path]
+        return (s.mu, np.full((s.n, 3), 0.004),
+                np.column_stack([np.ones((s.n, 3)), s.amp[:, 0]]),
+                np.tile([1.0, 0, 0, 0], (s.n, 1)))
+
+    def box(path):
+        return np.zeros(3), 1.0
+
+    modes = []
+    original = resonator_capture.fingerprint
+
+    def record(scene, freqs, sigma, flatten="none"):
+        modes.append(flatten)
+        return original(scene, freqs, sigma, flatten)
+
+    monkeypatch.setattr(resonator_capture, "load_scene_file", load)
+    monkeypatch.setattr(resonator_capture, "crop_box", box)
+    monkeypatch.setattr(resonator_capture, "fingerprint", record)
+    output = tmp_path / "composite.json"
+    result = resonator_capture.main([
+        str(output), "parent", "--crop", "light", "--other-object", "heavy",
+        "--instances", "first", "second", "--foreign", "foreign1", "foreign2",
+        "--composite-test", "--flatten", "voxel", "--dim", "128", "--grid", "3",
+        "--sigma-units", "0.025",
+    ])
+    assert modes == ["voxel"] * 7
+    assert len(result["discrimination"]["voxel"]) == 6
+    assert json.loads(output.read_text()) == result

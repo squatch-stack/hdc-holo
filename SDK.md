@@ -1658,3 +1658,19 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   (0.49 and 0.64 of their positions coincide), not subsets, so
   `remove_subset` refuses them; a crop cut from the parent file is the
   follow-up.
+- **Encoding support instead of mass does not lift the mass-core
+  ceiling; it removes the signal the ceiling was made of** (2026-09-12;
+  `flatten(scene, sigma, mode)` in `bench/place_recognition.py`, threaded
+  through `bench/resonator_capture.py`; `results/place_recognition.md`
+  and `results/resonator_capture.md` "Flattened (captures)"). Dividing
+  each splat's alpha by its σ_rec-voxel's mass before the blur takes the
+  wide-capture block (wilsons-creek ↔ redrock) from 0.82 to 0.11 as
+  predicted — and the gun in its parent's cube from 0.88 to 0.17 with
+  the offset wandering, the composite test's six probes to 0.04–0.13
+  with the peaks off both objects, the E=8 corpus to 0 of 6 rank-1 with
+  every capture's best match a wrong one at 0.27–0.32, and the
+  springhouse pair "up" to 0.15 under that cross-talk. Log flattening
+  keeps the cairn dominance and halves the crop score. Synthetic
+  evidence had shown the trade (bright crop 0.9999 → 0.26) beside the
+  positive. Whole-capture bundles at d=8192 score compact mass or
+  nothing; raw sub-map tiles at E=4–8 stay the working localiser.

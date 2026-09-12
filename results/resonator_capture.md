@@ -298,3 +298,150 @@ seen from the object side.
   than phase projection does (a resolution-matched, whitened *and*
   mass-normalised codeword), tested on a composite with two candidates
   of comparable mass — the test above, with the mass balanced.
+
+## Flattened (synthetic)
+
+Seed 0, d=4096, sigma=0.025, full PHAT, grid 17 on [0,1]³ with existing
+local refinement. Each object has 64 splats with equal isotropic scale
+0.004; centers are [0.25,0.5,0.5] and [0.75,0.5,0.5]. Alpha is 1 versus 10.
+The light object is uniform in a centered 0.18-wide cube. The heavy object
+uses that arrangement plus independent position jitter sigma=0.025. Two
+light-class training instances independently jitter the light shape by
+sigma=0.004; the two foreign shapes are independent uniform arrangements.
+Every shape is independently centered. These are controlled related shapes,
+not synthetic cannon/cairn semantics. Frequency draws precede geometry draws,
+so the d=2048 regression and d=4096 report have different seeded geometries.
+Both meet the raw-heavy / voxel-light own-codeword control.
+
+The parent is assembled in splat space and flattened once as a whole;
+queries are independently flattened before their original alpha centroid is
+removed by the spectral translation call. Six probes × three modes follow.
+Each cell is **score; distance(light), distance(heavy); nearer**. Distances
+are box units. Search sees no truth coordinates; evaluation attaches them.
+
+| probe | none | voxel | log |
+|---|---|---|---|
+| light prototype | 0.4479; 0.5000, 0.0000; heavy | 0.5970; 0.0000, 0.5000; light | 0.4383; 0.5001, 0.0078; heavy |
+| light instance 1 | 0.4596; 0.5001, 0.0078; heavy | 0.5933; 0.0000, 0.5000; light | 0.4587; 0.5001, 0.0078; heavy |
+| light instance 2 | 0.4447; 0.5078, 0.0078; heavy | 0.5826; 0.0000, 0.5000; light | 0.4260; 0.5001, 0.0078; heavy |
+| foreign prototype | 0.2514; 0.4930, 0.0292; heavy | 0.1580; 0.5010, 0.0312; heavy | 0.2500; 0.5005, 0.0221; heavy |
+| heavy itself | 0.9865; 0.5000, 0.0000; heavy | 0.5903; 0.5000, 0.0000; heavy | 0.9747; 0.5000, 0.0000; heavy |
+| light itself | 0.4438; 0.5000, 0.0000; heavy | 0.6241; 0.0000, 0.5000; light | 0.4392; 0.5000, 0.0000; heavy |
+
+**Voxel succeeds on this discrimination control; log does not.** Raw and log
+send every probe, including the light object's own codeword, to the heavy
+object. Voxel sends the three light-class probes and the own codeword to the
+light object, the heavy codeword to the heavy object, and gives the foreign
+prototype a much weaker peak. A foreign probe's nearest candidate is only a
+distance label, not evidence of identity. This is a correlation result,
+not a new resonator convergence result.
+
+**Crop similarity is not generally retained.** The companion place study's
+bright crop drops from 0.999941 raw to 0.263885 voxel (log 0.892563), despite
+retaining location near zero. Its support-dominant crop control stays above
+0.9. Voxel also raises similarity to position-scrambled copies. The composite
+positive therefore does not justify promoting this descriptor on captures.
+
+```sh
+OPENBLAS_NUM_THREADS=1 HDC_BACKEND=numpy MPLCONFIGDIR=/tmp/flatten-mpl \
+  .venv/bin/python -m bench.resonator_capture /tmp/flatten-composite-4096.json \
+  --synthetic --composite-test --dim 4096 --grid 17
+```
+
+The synthetic composite branch reports all three modes. Ordinary synthetic
+resonator sweeps, comparisons, jittered prototypes, external parent/crop
+codewords and capture queries also accept `--flatten none|voxel|log`.
+Existing spectral superpositions of *separately encoded parents* still mean
+sums of separately flattened parents; nonlinear flattening does not commute
+with superposition. Use `--composite-test` for the discriminating splat-space
+composite. This distinction is material whenever occupied voxels overlap.
+
+### Exact capture composite commands (not run here)
+
+Use `cuda_module` from the companion place note and a caller-supplied SCENES.
+This ports the existing six-probe composite diagnostic into this lane's CLI;
+`results/resonator_diagnostics/composite_test.py` is outside the exclusive
+matrix and is unchanged (it does not accept `--flatten`). Capture runs select
+one mode; the synthetic run above compares all three. The other object is
+placed at [0.2,0.5,0.2] using the same weighted-median relocation rule.
+
+```sh
+for mode in none voxel log; do
+  cuda_module bench.resonator_capture "/tmp/flatten-composite-$mode.json" \
+    "$SCENES/wilsons-creek.spz" --crop "$SCENES/wilsons-creek-gun.spz" \
+    --instances "$SCENES/cannon.spz" "$SCENES/research-library-cannon.spz" \
+    --other-object "$SCENES/redrock-cairn.spz" \
+    --foreign "$SCENES/saguaro.spz" "$SCENES/oak.spz" \
+    --composite-test --sigma-units 0.5 --dim 8192 --grid 32 --flatten "$mode"
+done
+```
+
+JSON labels use light/heavy roles; in this command light=gun and heavy=cairn,
+light instances=cannon/research-library-cannon, foreign=saguaro/oak. Distances
+to the placed heavy object's actual alpha centroid replace distance to its
+weighted-median placement anchor; both target centroids are recorded. Full
+PHAT matches the original discriminating diagnostic; no band floor is applied
+by this branch. Real capture measurements remain pending.
+
+### Flatten lane validation
+
+Pre-flight: `<worktree>/holo/__init__.py` (rechecked at completion).
+Final full suite: `3 failed, 548 passed, 9 skipped in 68.34s (0:01:08)`.
+All three failures are claim tests caused solely by `tests.count`:
+registry 398 versus derived 410. Strict facts: `1 FAIL, 25 WARN`, with
+`tests.count` the only FAIL. Updating claims is outside this lane.
+Final combined lane suite: `89 passed in 30.84s`; slowest test 2.72 s.
+Separate file checks before the final bright-crop reporting test:
+place 30 passed in 1.90 s; resonator 58 passed in 20.95 s.
+The existing test files and notes retain their original contents as exact
+prefixes; all tests and result sections were appended. The frozen legacy
+JSON regression passed untouched. Ruff: `All checks passed!` for all four
+lane Python files. Quality: `lint debt: 50 (baseline 50)`. Diff whitespace
+check is clean. The figure was visually inspected and registered.
+
+```sh
+OPENBLAS_NUM_THREADS=1 HDC_BACKEND=numpy MPLCONFIGDIR=/tmp/flatten-mpl \
+  .venv/bin/python -m pytest tests -q --durations=5
+OPENBLAS_NUM_THREADS=1 HDC_BACKEND=numpy MPLCONFIGDIR=/tmp/flatten-mpl \
+  .venv/bin/python -m pytest tests/test_place_recognition.py tests/test_resonator_capture.py -q --durations=5
+.venv/bin/ruff check bench/place_recognition.py bench/resonator_capture.py tests/test_place_recognition.py tests/test_resonator_capture.py
+HDC_BACKEND=numpy .venv/bin/holo-quality check
+HDC_BACKEND=numpy .venv/bin/holo-facts check --strict
+```
+
+No commits, pushes, branch changes, installs or changes outside the permitted
+file matrix. Capture results are pending; both the composite positive and
+the bright-crop similarity regression need to be tested on those captures.
+
+## Flattened (captures)
+
+The six-probe composite on the 5090, 2026-09-12: Wilson's Creek with the
+cairn placed at [0.2, 0.5, 0.2] (the gun's centroid is [0.49, 0.50,
+0.49]), d=8192, σ_units 0.5, grid 32, full PHAT, one mode per run with
+the commands above. Cells are **score; distance to gun, distance to
+cairn; nearer**, distances in box units; "weak" is the tool's own
+weak-peak flag.
+
+| probe | none | voxel | log |
+|---|---|---|---|
+| gun prototype (cannon + rlib-cannon) | 0.481; 0.413, 0.004; cairn | 0.091; 0.475, 0.627; gun (weak) | 0.144; 0.410, 0.004; cairn |
+| cannon | 0.504; 0.377, 0.065; cairn | 0.125; 0.424, 0.525; gun | 0.105; 0.418, 0.011; cairn |
+| research-library-cannon | 0.506; 0.407, 0.003; cairn | 0.085; 0.354, 0.139; cairn (weak) | 0.100; 0.347, 0.153; cairn (weak) |
+| foreign prototype (saguaro + oak) | 0.434; 0.417, 0.058; cairn | 0.043; 0.499, 0.294; cairn (weak) | 0.047; 0.058, 0.405; gun (weak) |
+| cairn's own codeword | 0.898; 0.410, 0.003; cairn | 0.093; 0.341, 0.148; cairn (weak) | 0.267; 0.407, 0.003; cairn |
+| gun's own codeword | 0.269; 0.384, 0.025; cairn | 0.091; 0.424, 0.525; gun (weak) | 0.133; 0.407, 0.015; cairn |
+
+**Neither mode flips the test; voxel erases it.** Raw and log send every
+probe to the cairn, the gun's own codeword included (the ceiling as
+reported in "The discriminating test"). Voxel drops every score to
+0.04–0.13 against a phase null of about 0.04, flags four of six peaks
+as weak, and its "nearer: gun" rows are 0.42–0.48 from the gun — the
+peak has left both objects, so the label is a coin. Even the cairn's own
+codeword no longer finds the cairn (0.093, 0.148 away). The synthetic
+composite, where voxel flattening did put the light object's probes on
+the light object, was a two-object world with nothing else in it; the
+capture has a background whose support, once mass is equalised away,
+outweighs both objects. The prototype question therefore stays where
+#116 left it: unanswerable on whole-capture bundles because identity
+does not separate from mass, and flattening removes the mass without
+leaving identity behind.
