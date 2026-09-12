@@ -1575,3 +1575,17 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   fit in one tile. 4/6 against a 6/6 bar, and the four are the trivial
   ones. Not promoted; the ceiling is the object lane's: at d=8192 a
   whitened bundle scores compact mass before arrangement.
+
+- **At equal bytes FHRR and HRR tie; cleanup is the cost either way**
+  (2026-09-12; `bench/operator_bench.py` load curves on the 5090,
+  `results/operator_bench.md`). With N identical across rows and capped,
+  FHRR at d/2 and HRR at d recover the same fraction at every load
+  through 0.2 (0.946 / 0.946 at d=4096, 0.927 / 0.910 at 8192, 0.842 /
+  0.862 at 32768) and stay within noise at 0.5; FHRR at d holds more
+  only because it has twice the bytes. HyperSpace's "half the memory"
+  is a same-d statement. Cleanup is 13–17 ms at K=10⁴ against
+  sub-millisecond bind and similarity, HRR's one real GEMM 20–30%
+  cheaper than FHRR's two. The lane's earlier synthetic rows (#102,
+  #105, #107, #113) and the factorised cleanup (#115: coarse-to-fine
+  beats brute force from K=4096; the resonator wins on bytes, not time)
+  are the same finding from two sides.
