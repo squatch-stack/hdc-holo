@@ -47,7 +47,9 @@ pipeline actually uses they lose badly and always will — crosstalk is
 | SOG | 0.8 | 0.3% |
 | holographic bundles (d=8,192) | 382.8 | 17.4% |
 
-384x larger and 17% lossier ([the full table](results/baseline_table.md)).
+roughly 400× larger at complex64 and 17% lossier ([the full
+table](results/baseline_table.md)); at the measured 4-bit knee it is about
+24× the SPZ file ([the knee note](results/storage_position.md)).
 Use SPZ or SOG to *store* a scene. What a bundle buys is what a format
 cannot do at all: query the scene algebraically without decoding it
 (`what_is_at`, `where_is`), take a view as a closed-form bundle, add and
