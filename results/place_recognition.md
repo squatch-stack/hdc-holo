@@ -156,7 +156,7 @@ the search limit whichever limit is set. Not found.
 wc↔rr at 0.823 whitened means 82% of 8,192 frequency components have
 the same phase at one translation. Two different places cannot do that
 by arrangement, so something the fingerprints share is being scored.
-Six diagnostics on the box (`results/place_diagnostics/*_test.py`, same
+Six diagnostics on the box, then three that found it (`results/place_diagnostics/*_test.py`, same
 codebook, same search):
 
 | hypothesis | test | result |
@@ -168,14 +168,91 @@ codebook, same search):
 | a few enormous splats | remove the top 1% of splats by α·√det Σ (11–16% of mass) | full-vs-rest 0.98–1.00 in every capture; the top 1% of wc against the top 1% of rr scores 0.06; the remaining 99% score 0.82. It is the bulk. |
 | shared splats | exact position overlap between exports | 0.0000 for every pair; distinct md5, sizes, bounding boxes. |
 
-The mechanism is unidentified. What is known: it is carried by the bulk
-of the splats, at all frequencies, in the phase and not the envelope,
-between the four captures that are 388k–1.16M splats in a 30–40 unit
-cube, and not between those and the object scans (cannon, the station,
-the crops) or uniform fills. The next question for this tool is that
-one, and it is a question about what a d=8192 spectral bundle of a wide
-outdoor capture actually encodes at σ_rec = box/40 — not about the
-scorer.
+The mechanism was found the same day, in three more runs
+(`results/place_diagnostics/{precision,footprint,blob}_test.py`).
+
+## What the wide-capture block is
+
+**Not numerical.** Fingerprints for wilsons-creek, redrock and cannon
+computed three ways — CUDA float32 (as in every run above), NumPy
+float32, and a NumPy float64 re-implementation of `spectral_bundle` —
+agree component by component to a median relative error of 2–7e-7 in
+every magnitude decade down to 1e-5 of the maximum, with whitened phase
+agreement 1.0000; the wc↔rr score is 0.955 raw / 0.823 whitened from all
+three. The encoder is exact to float32 rounding on 388k-splat scenes.
+
+**It is the frame rule.** The radial alpha-mass profile of each wide
+capture in its normalised cube:
+
+```
+share of alpha mass by horizontal radius from the box centre, shells of 0.05
+                  0.05  0.10  0.15  0.20  0.25  0.30  0.35  0.40  0.45  0.50
+wilsons-creek     0.47  0.20  0.03  0.02  0.01  0.01  0.01  0.06  0.10  0.06
+redrock           0.43  0.22  0.06  0.05  0.04  0.03  0.03  0.02  0.04  0.04
+research-library  0.24  0.49  0.05  0.02  0.02  0.02  0.03  0.03  0.04  0.03
+oak               0.37  0.13  0.12  0.08  0.02  0.00  0.01  0.04  0.24  0.00
+cannon            0.05  0.08  0.07  0.07  0.11  0.10  0.11  0.14  0.18  0.05
+```
+
+Half or more of every wide capture's mass sits within 0.1 of the box of
+its centre — 2 to 4 scene units of a 30–40 unit cube — with the rest a
+thin halo. That is what `build_scene`'s crop does to a capture whose
+subject is dense and whose background is sparse floaters out to ±60
+units: the weighted median lands on the subject, the 75%-quantile radius
+is dragged out by the halo, and the 1.2× margin makes the subject a
+point. At σ_rec = box/40 a point is a pure phase ramp e^{−i w·c} with the
+same c for every such capture, and the translation search aligns it
+exactly. The whitened score then counts the components where the core
+dominates the halo — 82% for wc↔rr — and a capture that fills its box
+(cannon, the crops, the station) has no such core and does not join.
+Apodising the box faces changes nothing (self-similarity 0.998) because
+nothing lives near the faces; a uniform 2-D sheet cut by the cube
+scores 0.49 whitened against another such sheet, so the crop cube can
+contribute a block of its own, but it is not this one.
+
+**Removing the core removes the block.** Whitened wc/rr/rlib/oak block
+with splats inside a central radius deleted:
+
+| core removed | wc↔rr | wc↔rlib | rr↔rlib | wc↔oak | mass removed (wc / rr / rlib / oak) |
+|---|---|---|---|---|---|
+| none | 0.823 | 0.443 | 0.445 | 0.583 | — |
+| r < 0.04 | 0.479 | 0.635 | 0.423 | 0.058 | 67% / 81% / 92% / 71% |
+| r < 0.08 | 0.221 | 0.254 | 0.363 | 0.136 | 36% / 44% / 44% / 64% |
+| r < 0.15 | 0.071 | 0.057 | 0.139 | 0.155 | 30% / 29% / 22% / 45% |
+
+(The r < 0.04 row removes *less* mass than r < 0.08 for wc and rr
+because the innermost splats are the largest; what matters is the
+remaining core's share, and at r < 0.15 it is gone and so is the block,
+down to a null of 0.04.)
+
+**A subject-scaled frame reduces it and shows what the descriptor
+actually is.** Re-encoding each capture in a cube of 6× its half-mass
+radius (wc 15.2 units instead of 40.4, rr 9.0, rlib 6.6, oak 8.1):
+
+```
+whitened, subject-scaled frames
+          wc     rr   rlib    oak cannon
+wc     1.000  0.349  0.212  0.356  0.273
+rr     0.349  1.000  0.155  0.314  0.184
+rlib   0.212  0.155  1.000  0.249  0.196
+oak    0.356  0.314  0.249  1.000  0.685
+cannon 0.273  0.184  0.196  0.685  1.000
+```
+
+The old block drops to 0.16–0.36 and a new pair appears (oak↔cannon
+0.685): any rule that centres the mass and scales the cube by a mass
+quantile gives every capture a similar normalised radial profile, and at
+σ_rec = box/40 the fingerprint *is* that profile. The descriptor was
+never seeing the place; it was seeing the blob the frame rule makes of
+it. The true pairs still hold in the subject-scaled parent frame
+(gun 0.958 raw / 0.771 whitened, cairn 0.984 / 0.931, both at zero
+offset).
+
+What follows for the tool: the recognition resolution has to be set in
+scene units, not as a fraction of a box whose size is set by floaters,
+and the frame has to be chosen so that the subject spans many σ_rec —
+which at d=8192 means a smaller region, i.e. sub-map localisation, not a
+whole-capture descriptor. That is the next lane.
 
 ## Conclusion
 
@@ -191,9 +268,12 @@ scorer.
   control); position scrambling is not, on captures.
 - Whitening is the right scorer for arrangement and the wrong one for
   the radial question; both stay in the tool.
-- The wide-capture block is the open finding. Until it is explained, no
-  score between two wide captures from this tool should be read as a
-  match, and the descriptor should not be promoted.
+- The wide-capture block is explained: it is the point-like core that
+  the mass-centred crop makes of a dense subject with a sparse halo,
+  scored at a resolution that cannot see past it. Removing the core
+  removes the block. No score between two wide captures under the
+  default frame should be read as a match; the descriptor is not
+  promoted, and the next lane sets σ_rec in scene units.
 
 Figures: `out/place/similarity-corpus.png` (raw) and
 `out/place/similarity-corpus-whitened.png`.

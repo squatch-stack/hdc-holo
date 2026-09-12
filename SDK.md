@@ -1457,3 +1457,18 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   Tool changes that came out of the run: phase-surrogate null (scramble
   scored 0.999 on captures), `--frame`, `--whiten`. Not promoted.
 
+- **The wide-capture block is the frame rule, not the place** (2026-09-12,
+  same day; `results/place_recognition.md`, three more diagnostics). Not
+  numerical: float64 fingerprints agree with float32 to 2–7e-7 per
+  component and give the same 0.823. Every wide capture carries half or
+  more of its alpha mass within 0.1 of the box of its centre, because
+  `build_scene`'s mass-centred crop with a 75%-quantile radius turns a
+  dense subject with a 60-unit halo of floaters into a point; at
+  σ_rec = box/40 that point is a phase ramp the translation search aligns
+  for any two such captures. Deleting the core (r < 0.15, 22–45% of mass)
+  drops wc↔rr from 0.823 to 0.071 against a null of 0.04. In subject-scaled
+  cubes the block falls to 0.16–0.36 and a new pair appears (oak↔cannon
+  0.685): the descriptor at this resolution is the normalised radial mass
+  profile the frame rule produces, not the place. Next: σ_rec in scene
+  units and sub-map frames; whole-capture descriptors at d=8192 are out.
+
