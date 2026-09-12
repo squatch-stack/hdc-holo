@@ -28,10 +28,11 @@ Payload budgets are 8192, 16384 and 32768 bytes; headers are additional,
 matching D1's convention. The synthetic outcome is provisional.
 
 The D2 tables, the knee they locate and the packer decision are in
-results/quant_lowbit.md. In one line: on the synthetic fixture the knee is
-4+4 bits at every budget, nothing at one bit survives, and phase-only is
-not a rate point for a spectral bundle at any bit depth, so no HQ packer
-is written on this evidence; the real-cell rerun decides.
+results/quant_lowbit.md. In one line: the knee is 4+4 bits at every
+budget on the synthetic fixture and on two captures (where 2/2 at 4d is
+about 2x worse than 4/4 at 2d), nothing at one bit survives, and
+phase-only is not a rate point for a spectral bundle at any bit depth,
+so no HQ packer is written.
 
 Failure modes. (1) A max-derived scale lets one outlier eat the levels at
 one or two magnitude bits; p99.9 clipping recovers the bulk and the test
