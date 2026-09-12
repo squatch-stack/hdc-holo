@@ -1472,3 +1472,36 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   profile the frame rule produces, not the place. Next: σ_rec in scene
   units and sub-map frames; whole-capture descriptors at d=8192 are out.
 
+
+- **CLAIMED: four follow-on lanes from the 2026-09-12 results** (opened
+  2026-09-12, each cut from main after this bullet; exclusive files as
+  listed, `claims/registry.jsonl` only for `tests.count`, this log
+  append-only, nobody touches `holo/`, `quality/baseline.json`,
+  `paper/` or `bench/RECIPE.md`):
+  - `research/resonator-capture` — Renner's what-is-where on real
+    captures in the parent's cube (crop bundles as the identity
+    codebook, translation grids per axis as position factors,
+    coarse-to-fine), the one-shot `correlate` baseline it must beat,
+    and the analogy question: does a prototype superposed from two
+    cannon instances find the third it has never seen? Files:
+    `bench/resonator_capture.py`, `tests/test_resonator_capture.py`,
+    `results/resonator_capture.md`, `out/resonator_capture/`.
+  - `storage/block-scale` — D3: 1–2-bit magnitudes with a shared
+    per-block scale (MX-style e8m0 or u8, blocks of 16/32/64) at the
+    same three equal-byte budgets as D2, on the same 24 cells; the
+    question is whether block scaling moves the knee below four bits.
+    Files: `bench/quant_lowbit.py` (add), `bench/precision_battery.py`
+    (D3 only), `tests/test_quant_lowbit.py` (append),
+    `results/quant_lowbit.md` (append).
+  - `research/place-submap` — σ_rec in scene units and sub-map tiles of
+    fixed physical size matched by whitened phase correlation, against
+    the same 6/6 rank-1 bar; the whole-capture descriptor is retired
+    per the frame-rule finding. Files: `bench/place_recognition.py`
+    (add, defaults unchanged), `tests/test_place_recognition.py`
+    (append), `results/place_recognition.md` (append), `out/place/`.
+  - `bench/opbench-load-curve` — the equal-bytes accuracy row as a
+    load curve with N capped and identical across the three rows, so
+    the d=32768 column fits the budget and the verdict is taken where
+    codes work rather than where they all fail. Files:
+    `bench/operator_bench.py`, `tests/test_operator_bench.py`,
+    `results/operator_bench.md`.
