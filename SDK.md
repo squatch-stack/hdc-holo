@@ -1618,3 +1618,27 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   coders reach ~30× on splats; what the bundle buys is stated as
   capabilities an asset lacks without decoding. Block scaling did not
   move the knee (D3); tiles as the unit of storage might.
+
+- **CLAIMED: follow-up lanes after the 2026-09-12 results** (opened
+  2026-09-12; same rules as the two batches above):
+  - `research/density-flatten` — encode support instead of mass: a
+    `flatten` step (voxel / log) before the recognition blur, tested
+    against the three faces of the mass-core ceiling (the composite
+    discrimination test, the wide-capture block, the springhouse pair).
+    Files: `bench/place_recognition.py`, `bench/resonator_capture.py`
+    (adds only), their tests, both results notes, `out/place/`.
+  - `research/tile-change` — change detection as a drop in a tile's
+    before ↔ after whitened correlation on a shared lattice. Files:
+    `bench/change_detection.py` (add), `tests/test_change_detection.py`,
+    `results/change_detection.md`, `out/change/`.
+  - `chore/union-merge` — `.gitattributes` union merges for `SDK.md`,
+    `docs/figures.md` and `claims/registry.jsonl`, and `holo-facts
+    supersede <id> --auto` producing a valid chain from any merge state.
+    Files: `.gitattributes`, `holo/facts/`, `tests/test_facts_supersede.py`,
+    `claims/README.md`, `CONTRIBUTING.md`.
+  - `docs/storage-claim` — register the knee ratio and restate the
+    README's storage sentence with both numbers cited. Files:
+    `claims/registry.jsonl`, `README.md`, `docs/storage.md`.
+  - `paper/2026-09-results` — the paper catches up (§7 cost at the knee,
+    §8 related work, §9 limitations), owner-reviewed before merge.
+    Files: `paper/draft.md`, `paper/main.tex` (generated).
