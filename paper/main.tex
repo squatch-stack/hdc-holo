@@ -511,6 +511,18 @@ than by traversal, an entire view as a second vector of the same kind,
 and merge by addition with no coordination. A codec sells none of those,
 and sells bytes extremely well.
 
+The table is the complex64 row. Since it was measured, an equal-byte
+ladder run below the nibble --- on synthetic cells and then on two of
+the captures --- located the knee of the trade between dimension and
+precision at four bits per field: doubling the dimension while halving
+the bits wins down to four bits and loses below, one-bit magnitudes
+being worse than reporting zero, and a shared per-block scale of the
+kind the microscaling formats use cuts two-bit error by roughly a third
+without moving the knee. At that knee a bundle is about 24$\times$ the
+SPZ file of the same capture, median over the twelve gallery captures.
+The loss is smaller than the table shows and it is still a loss; the
+sentence that follows the table stands.
+
 Two observations survive the loss. The first is that the 8-bit magnitude
 codec is \emph{free}: four times smaller at slightly better error than
 the uncompressed bundle. Max-scaled quantization zeroes the smallest
@@ -566,6 +578,36 @@ merging~\cite{gillespie2026crdtmerge} in CRDT semantics is the nearest
 neighbour to \S5 --- different object, same shape, and the source of our
 sharpest contrast.
 
+\textbf{Replications and measured comparisons.} Three of the works above
+were met with experiments rather than citations. Renner et
+al.~\cite{renner2024resonator}'s resonator network, which factorizes a
+superposed scene into identity and position by iterating
+unbind-project-normalize, replicates on synthetic scenes with this
+repository's fractional-power position key: 100\% single-object and
+84.7\% three-object recovery at d = 4,096, with a capacity cliff where
+the product of codebook sizes exceeds the dimension by an order of
+magnitude. On real captures it does not converge, for a reason given in
+\S9; Yeung et al.~\cite{yeung2026cleanup}'s comparison of cleanup
+nonlinearities suggests the choice of projection is where a second
+attempt would start, and in-memory factorizers (Langenegger et
+al.~\cite{langenegger2023factorizer}) are where its cost would be paid.
+HyperSpace~\cite{snyder2026hyperspace}'s finding that HRR needs half the
+memory of FHRR is a same-dimension statement, and a phasor carries two
+real degrees of freedom; at equal bytes --- FHRR at half the dimension
+against HRR at full --- the two recover the same fraction of a bundled
+dictionary at every load through 0.2 of nominal capacity on three
+dimensions, so the choice between them is about operators, not capacity,
+and cleanup dominates the operator table for both. Quantized-phase
+FHRR's three-to-four-bit phases sit exactly at the knee \S7 reports. The
+matched referee of \S6 has a neural-field counterpart in Spectral
+Prefiltering of Neural Fields~\cite{yaldiz2025prefilter} (Yaldiz et
+al.), which pre-filters the target rather than the estimate for the same
+reason we blur the referee to the pixel footprint. And the phase-only
+correlation that scores arrangement in \S9 is Knapp and
+Carter~\cite{knapp1976gcc}'s PHAT weighting, with the well-known
+consequence that the peak becomes as narrow as the highest frequency
+present and needs a search grid that can see it.
+
 \textbf{Nearest neighbours.} VSA-OGM~\cite{snyder2024vsaogm} is the
 closest published relative overall: SSP-encoded occupancy fields with
 sparse local updates, achieving large latency and memory wins over dense
@@ -576,9 +618,8 @@ mixture'' bridge from the graphics side while retaining per-Gaussian
 parametric storage. CryoSplat~\cite{chen2025cryosplat} and
 R2-Gaussian~\cite{zha2024r2gaussian} both apply the Fourier slice
 theorem to Gaussian primitives for closed-form projection, per primitive
-rather than per view. HyperSpace~\cite{snyder2026hyperspace} is the
-nearest VSA-framework effort and contains no scene, splat, or
-replication content.
+rather than per view. HyperSpace is the nearest VSA-framework effort and
+contains no scene, splat, or replication content.
 
 \textbf{Scene memory and shared maps --- where the demand sits.} Two
 active lines frame what a fixed-size queryable scene is \emph{for}.
@@ -640,6 +681,36 @@ gives. Dynamic scenes are the natural extension of \S5's mergeable
 state, with the caveat that the underlying shift mechanism is
 established work and only the capture-scale combination would be new.
 
+\textbf{Where one vector stops describing a place.} A whole-capture
+bundle at d = 8,192, blurred to a fortieth of its cube, does not
+recognise places. On the twelve gallery captures --- one true
+re-capture, two exact crops of parents, three same-class objects as hard
+negatives --- phase correlation through the shift
+property~\cite{voelker2021ssp} ranked 0 of 6 known partners first, and
+the reason was measurable: a mass-centred crop of a capture whose
+subject is dense and whose background is a sparse halo puts half the
+alpha mass within a tenth of the cube of its centre, and at that
+resolution the fingerprint is that core's phase ramp, which the search
+aligns for any two such captures. The same ceiling surfaced from the
+object side: with two candidate objects in one cube, every probe --- the
+gun's own codeword included --- preferred the denser one, so a prototype
+superposed from two cannon instances ``finding'' a third was the
+target's mass, not the prototype's class. What survives is sub-map
+localisation: a crop encoded in its parent's cube is found at its
+offset, and tiles of fixed physical size find exact sub-regions under
+every distractor count tried. Encoding support rather than mass is the
+open experiment; until it is run, the honest statement is that the
+representation localises and does not recognise.
+
+\textbf{A note on the referee.} The relative-L2 error this paper reports
+is two different quantities depending on the scene: on some captures it
+measures reconstruction fidelity, on others the worst one percent of
+pixels carries nearly all of the squared error and the number is a spike
+detector. The share of squared error in the worst fraction of pixels,
+against the χ$^2$ reference an iid-Gaussian residual would give,
+separates the two readings, and every headline error in \S6 has been
+re-read under it.
+
 One result belongs here as evidence of generality rather than as a
 claim. The same capacity law and the same partition-plus-locality remedy
 transfer intact from geometric scenes to \emph{rule tables}, where a
@@ -662,14 +733,15 @@ and, more usefully, predicts well enough that its four failures are
 diagnostic.
 
 The cost is real and we have measured it: two orders of magnitude more
-storage than a modern splat codec, at fifty times the error, for a
+storage than a modern splat codec at complex64 and about 24$\times$ at
+the measured four-bit knee, at fifty times the error, for a
 representation that does not composite and therefore does not render
 what a rasterizer renders. What it offers in exchange is that a scene
 becomes an object with an algebra --- one where a query, a view, and a
 merge are the same operation applied differently, and where the noise
 budget of each is known before it is run.
 
-\begin{thebibliography}{30}
+\begin{thebibliography}{35}
 
 \bibitem{plate1995hrr}
 Tony A. Plate.
@@ -879,6 +951,44 @@ Scherer and Xiaonan Huang.
 Collaborative Ego-Motion and Photorealistic 3D Reconstruction.
 , 2024.
 \newblock arXiv:2412.09723.
+
+\bibitem{renner2024resonator}
+Alpha Renner and Lazar Supic and Andreea Danielescu and Giacomo Indiveri
+and Bruno A. Olshausen and Yulia Sandamirskaya and Friedrich T. Sommer
+and E. Paxon Frady.
+\newblock Neuromorphic visual scene understanding with resonator
+networks.
+\newblock \emph{Nature Machine Intelligence} \textbf{6}, 2024.
+\newblock arXiv:2208.12880.
+
+\bibitem{yeung2026cleanup}
+Calvin Yeung and Prathyush Poduval and Mohsen Imani.
+\newblock A comparative study of nonlinear cleanup rules in resonator
+networks.
+\newblock \emph{Frontiers in Artificial Intelligence} \textbf{9}, 2026.
+\newblock \texttt{doi:10.3389/frai.2026.1793314}.
+
+\bibitem{langenegger2023factorizer}
+Jovin Langenegger and Geethan Karunaratne and Michael Hersche and Luca
+Benini and Abu Sebastian and Abbas Rahimi.
+\newblock In-memory factorization of holographic perceptual
+representations.
+\newblock \emph{Nature Nanotechnology}, 2023.
+\newblock arXiv:2211.05052.
+\newblock \texttt{doi:10.1038/s41565-023-01357-8}.
+
+\bibitem{yaldiz2025prefilter}
+Mustafa B. Yaldiz and Ishit Mehta and Nithin Raghavan and Andreas
+Meuleman and Tzu-Mao Li and Ravi Ramamoorthi.
+\newblock Spectral Prefiltering of Neural Fields.
+\newblock \emph{arXiv:2510.08394}, 2025.
+
+\bibitem{knapp1976gcc}
+Charles H. Knapp and G. Clifford Carter.
+\newblock The generalized correlation method for estimation of time
+delay.
+\newblock \emph{IEEE Transactions on Acoustics, Speech, and Signal
+Processing} \textbf{24}(4):320--327, 1976.
 
 \end{thebibliography}
 

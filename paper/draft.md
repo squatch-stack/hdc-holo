@@ -438,6 +438,18 @@ than by traversal, an entire view as a second vector of the same kind,
 and merge by addition with no coordination. A codec sells none of
 those, and sells bytes extremely well.
 
+The table is the complex64 row. Since it was measured, an equal-byte
+ladder run below the nibble — on synthetic cells and then on two of the
+captures — located the knee of the trade between dimension and
+precision at four bits per field: doubling the dimension while halving
+the bits wins down to four bits and loses below, one-bit magnitudes
+being worse than reporting zero, and a shared per-block scale of the
+kind the microscaling formats use cuts two-bit error by roughly a third
+without moving the knee. At that knee a bundle is about 24× the SPZ
+file of the same capture, median over the twelve gallery captures. The
+loss is smaller than the table shows and it is still a loss; the
+sentence that follows the table stands.
+
 Two observations survive the loss. The first is that the 8-bit
 magnitude codec is *free*: four times smaller at slightly better error
 than the uncompressed bundle. Max-scaled quantization zeroes the
@@ -486,6 +498,34 @@ phase ramp is not a contribution of this work. And recent work wrapping
 neural-network model merging in CRDT semantics is the nearest
 neighbour to §5 — different object, same shape, and the source of our
 sharpest contrast.
+
+**Replications and measured comparisons.** Three of the works above
+were met with experiments rather than citations. Renner et al.'s
+resonator network, which factorizes a superposed scene into identity
+and position by iterating unbind-project-normalize, replicates on
+synthetic scenes with this repository's fractional-power position key:
+100% single-object and 84.7% three-object recovery at d = 4,096, with a
+capacity cliff where the product of codebook sizes exceeds the
+dimension by an order of magnitude. On real captures it does not
+converge, for a reason given in §9; Yeung et al.'s comparison of
+cleanup nonlinearities suggests the choice of projection is where a
+second attempt would start, and in-memory factorizers (Langenegger et
+al.) are where its cost would be paid. HyperSpace's finding that HRR
+needs half the memory of FHRR is a same-dimension statement, and a
+phasor carries two real degrees of freedom; at equal bytes — FHRR at
+half the dimension against HRR at full — the two recover the same
+fraction of a bundled dictionary at every load through 0.2 of nominal
+capacity on three dimensions, so the choice between them is about
+operators, not capacity, and cleanup dominates the operator table for
+both. Quantized-phase FHRR's three-to-four-bit phases sit exactly at
+the knee §7 reports. The matched referee of §6 has a neural-field
+counterpart in Spectral Prefiltering of Neural Fields (Yaldiz et al.),
+which pre-filters the target rather than the estimate for the same
+reason we blur the referee to the pixel footprint. And the phase-only
+correlation that scores arrangement in §9 is Knapp and Carter's PHAT
+weighting, with the well-known consequence that the peak becomes as
+narrow as the highest frequency present and needs a search grid that
+can see it.
 
 **Nearest neighbours.** VSA-OGM is the closest published relative
 overall: SSP-encoded occupancy fields with sparse local updates,
@@ -557,6 +597,35 @@ are the natural extension of §5's mergeable state, with the caveat that
 the underlying shift mechanism is established work and only the
 capture-scale combination would be new.
 
+**Where one vector stops describing a place.** A whole-capture bundle at
+d = 8,192, blurred to a fortieth of its cube, does not recognise places.
+On the twelve gallery captures — one true re-capture, two exact crops
+of parents, three same-class objects as hard negatives — phase
+correlation through the shift property ranked 0 of 6 known partners
+first, and the reason was measurable: a mass-centred crop of a capture
+whose subject is dense and whose background is a sparse halo puts half
+the alpha mass within a tenth of the cube of its centre, and at that
+resolution the fingerprint is that core's phase ramp, which the search
+aligns for any two such captures. The same ceiling surfaced from the
+object side: with two candidate objects in one cube, every probe —
+the gun's own codeword included — preferred the denser one, so a
+prototype superposed from two cannon instances "finding" a third was
+the target's mass, not the prototype's class. What survives is sub-map
+localisation: a crop encoded in its parent's cube is found at its
+offset, and tiles of fixed physical size find exact sub-regions under
+every distractor count tried. Encoding support rather than mass is the
+open experiment; until it is run, the honest statement is that the
+representation localises and does not recognise.
+
+**A note on the referee.** The relative-L2 error this paper reports is
+two different quantities depending on the scene: on some captures it
+measures reconstruction fidelity, on others the worst one percent of
+pixels carries nearly all of the squared error and the number is a
+spike detector. The share of squared error in the worst fraction of
+pixels, against the χ² reference an iid-Gaussian residual would give,
+separates the two readings, and every headline error in §6 has been
+re-read under it.
+
 One result belongs here as evidence of generality rather than as a
 claim. The same capacity law and the same partition-plus-locality
 remedy transfer intact from geometric scenes to *rule tables*, where a
@@ -578,7 +647,8 @@ supplied. One capacity law predicts the error of all three and, more
 usefully, predicts well enough that its four failures are diagnostic.
 
 The cost is real and we have measured it: two orders of magnitude more
-storage than a modern splat codec, at fifty times the error, for a
+storage than a modern splat codec at complex64 and about 24× at the
+measured four-bit knee, at fifty times the error, for a
 representation that does not composite and therefore does not render
 what a rasterizer renders. What it offers in exchange is that a scene
 becomes an object with an algebra — one where a query, a view, and a
