@@ -415,10 +415,31 @@ exactly the magnitude our measurements identify as necessary.
 **Figure 10.** The rate-distortion boundary is structural, not a bit depth. *Left, field task:* phase-only codes (HP, dotted) sit on a flat error floor no matter how many bytes are spent, while magnitude-preserving codes (HM solid, HG companded dashed) fall well below it; stars mark uncompressed complex64. *Right, map task:* for codeword retrieval, where magnitude carries nothing, the same phase-only codes are competitive at a fraction of the bytes. One representation, two tasks, opposite verdicts — which is the whole of the codec split.
 
 
-Taken together these four say something more useful than any of them
+**And one thing the law does not describe at all.** The four above are
+places the law bends. This one is outside it. `σ` is the noise a readout
+carries; it is not whether the readout is *right*. A decoded codeword
+must beat every competing codeword in the item memory, so the same
+`σ` yields a different error rate depending on how many competitors
+there are — and the law has no term for that count, since `R` is 1 for
+a codeword whether there are two of them or a hundred. Measured by
+holding the item count at 64 and varying only the vocabulary, the
+dimension needed to answer 90% of queries correctly runs 128, 256, 512
+for 2, 4 and 19 classes and then saturates through 48 and 106: a
+fourfold cost in `d` for a realistic vocabulary, with the required `σ`
+halving from 0.50 to 0.25. Every capacity statement in this paper is
+therefore a statement about noise, and converting one into a statement
+about accuracy needs the vocabulary size as well. We state this as a
+gap rather than close it: the missing piece is a standard decision
+bound among `k` alternatives at a given signal-to-noise ratio, and
+naming it is what keeps a reader from budgeting a dimension from `σ`
+alone, which is what we did before measuring this.
+
+Taken together these five say something more useful than any of them
 alone. The law is not a decoration: it predicts well enough that its
 failures are informative, and every failure here was found by measuring
-against it rather than by noticing an artifact.
+against it rather than by noticing an artifact — including the last
+one, which is a failure of the law's *scope* that only appeared when we
+asked it a question about accuracy that it was never posed to answer.
 
 ## 7. What it costs
 
@@ -510,6 +531,25 @@ neural-network model merging in CRDT semantics is the nearest
 neighbour to §5 — different object, same shape, and the source of our
 sharpest contrast.
 
+Conflict-free replication of *spatial* data is likewise occupied, and
+we say so because our own positioning notes claimed otherwise until we
+looked: a conflict-free voxel structure for distributed collaborative
+3D editing predates this work, and a vector-symbolic occupancy mapping
+published in 2026 fuses multiple agents' spatial memories over a shared
+basis and shared class encodings. Neither is a superposed continuous
+field, and neither replicates a representation whose codebook a peer
+regenerates rather than receives — but "CRDTs have not met volumetric
+data" is false, and the claim §5 can defend is the narrower one about
+what is being replicated. What we can add to that literature is a
+measurement rather than a category: merge time flat in the primitives
+per dirty cell over a 250× range, live state flat in the number of
+contributions, and the observation that summing peers is the wrong read
+rule wherever two contributors saw the same matter, since addition
+doubles it. Those hold under stated preconditions — one coordinate
+frame, one codebook, a bounded set of dirty cells — and the
+preconditions are the first thing a collaborative-mapping reader will
+ask about.
+
 **Replications and measured comparisons.** Three of the works above
 were met with experiments rather than citations. Renner et al.'s
 resonator network, which factorizes a superposed scene into identity
@@ -583,15 +623,34 @@ each.
 
 ## 9. Limitations and future work
 
-The hard limit is occlusion. Alpha compositing requires ordering and
-non-linear accumulation, neither of which superposition admits, so the
-representation renders what integrates. A hybrid — holographic density
-with a classical compositing pass — is the obvious shape of a solution
-and remains unexplored.
+The hard limit is occlusion, and it is a limit rather than an
+engineering gap. Alpha compositing accumulates as `1 - Π(1 - α_i)`,
+which is neither linear nor order-free, and an additively encoded
+bundle carries no ordering to recover — so no choice of codebook
+reaches it, and the representation renders what integrates. What
+remains open is narrower than "occlusion": whether a *bounded* surrogate
+is useful, in the manner of the moment-based order-independent
+transparency literature, with a classical compositing pass over a
+holographic density. That is a graphics question about approximation
+quality, not a question about superposition.
 
-Storage is large in absolute terms, as §7 quantifies. Rotation is not a
-phase ramp: translation is exactly a phase ramp, but rotation remixes
-frequencies across the codebook and needs a mechanism of its own.
+Rotation is closed in the same way, and it is worth separating the two
+halves. Translation is exactly a phase ramp because a shift multiplies
+every frequency by its own scalar. A rotation does not: it maps each
+frequency row to a different one, so with a *fixed* set of frequency
+rows drawn once from a continuous distribution there is no elementwise
+operator that rotates the field, and the ramp construction cannot be
+recovered by any choice of `d`. What this rules out is a fixed
+continuous codebook, not rotation itself. A codebook sampled on a
+discrete angular orbit rotates by permutation within that orbit, which
+is the classical steerability construction, and yaw is the case a
+gravity-aligned capture actually needs — so the honest statement is
+that rotation costs a redesign of the basis rather than an extra
+mechanism bolted to this one. Both facts were established by argument
+rather than by a failed experiment, which is why they appear here as
+limits and not as future work.
+
+Storage is large in absolute terms, as §7 quantifies.
 Determinism is semantic rather than bitwise — recomputed vectors agree
 to about a part in 10⁷, far under any decision threshold, but digests
 must hash transmitted bytes rather than recomputed sums. Banded and
@@ -606,7 +665,20 @@ The zero-sample analytic projection needs regularization from the start
 for the reasons the Fourier-extension literature gives. Dynamic scenes
 are the natural extension of §5's mergeable state, with the caveat that
 the underlying shift mechanism is established work and only the
-capture-scale combination would be new.
+capture-scale combination would be new. And §6's fifth entry — that the
+law describes noise rather than accuracy — wants closing properly: a
+decision bound among `k` alternatives would turn every `σ` in this
+paper into a budget a reader could act on, and we currently hand them
+half of one.
+
+**A note on what "fixed size" is worth.** Fixed size is a property of
+the representation, not an argument that it stores any particular thing
+more cheaply. Measured at object granularity against an exact table, a
+bundle's advantage at equal accuracy is a bounded factor rather than an
+order of magnitude, it exists only at §7's four-bit rate point, and
+§6's vocabulary cost works against it. We note this because the fixed-
+size property is easy to over-read; it bears on none of §3's algebraic
+queries, which are what the representation is for.
 
 **Where one vector stops describing a place.** A whole-capture bundle at
 d = 8,192, blurred to a fortieth of its cube, does not recognise places.
