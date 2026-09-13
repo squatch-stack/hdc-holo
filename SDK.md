@@ -1860,3 +1860,29 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   bring the claim back. Cost: 7 MB of annotation JSON. The 623 GB
   release was not downloaded, because the experiment's unit is an
   object and not geometry.
+
+- **The capacity law predicts the noise but not the decision, and a
+  richer vocabulary costs dimension** (2026-09-13;
+  `results/semantic_diagnostics/vocabulary_cost.py`,
+  `results/semantic_memory.md`). Yesterday's semantic note ended with a
+  conditional — that the memory advantage exists only where the object
+  vocabulary is open and dense. It is backwards. Holding the object
+  count at 64 and varying only the number of classes, the smallest
+  dimension reaching 90% accuracy goes 128 → 256 → 512 for 2 → 4 → 19
+  classes and then **saturates** through 48 and 106: a **4x dimension
+  cost** for a realistic vocabulary, with the required crosstalk sigma
+  halving from 0.50 to 0.25. `σ ~ √(N·R/2d)` has no term for this — R
+  is 1 for a codeword whether there are two or a hundred — because the
+  law describes the noise a readout carries and not the decision that
+  noise must survive, and that decision is against more competitors
+  when the vocabulary is larger. The law was right about sigma at every
+  point measured; it simply does not determine accuracy on its own, and
+  every capacity statement in this repository is a sigma statement.
+  A second real distribution supports the same conclusion from the
+  other side: ReplicaCAD's 90 scene configs (106 object templates, a
+  megabyte of JSON, no gate) have median 19 objects and max 120, and at
+  d=256 the hologram wins 84 of 90 scenes but **0 of the 6 scenes with
+  32 or more objects** — the dense scenes are the ones that lose,
+  because they are the ones that need the dimension. The advantage is
+  squeezed from both ends and the vocabulary end wins: at d=512 the
+  store is 549 bytes against a median table of 501.

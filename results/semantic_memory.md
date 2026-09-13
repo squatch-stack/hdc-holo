@@ -377,3 +377,66 @@ file before a lane depends on them.
 ```sh
 python results/semantic_diagnostics/arkit_objects.py --scans 600
 ```
+
+## A richer vocabulary costs dimension, which is the opposite of what we said
+
+The section above ended with a conditional: the memory advantage
+"exists only where the object vocabulary is open and dense". **That is
+backwards**, and a controlled measurement says so
+(`results/semantic_diagnostics/vocabulary_cost.py`).
+
+A second real distribution first. ReplicaCAD's 90 scene configs list
+their object instances as JSON — about a megabyte, no gate — and carry
+**106 object templates** against ARKitScenes' 19 classes:
+
+| | min | median | max | scenes with >= 64 |
+|---|---:|---:|---:|---:|
+| ARKitScenes, 600 scans, 19 classes | 1 | 7 | 44 | 0 |
+| ReplicaCAD, 90 scenes, 106 templates | 17 | 19 | 120 | 6 |
+
+Richer vocabulary, more objects — and still a median of 19. But on
+ReplicaCAD the dense scenes are the ones that **lose**: at d=256 the
+hologram wins 84 of 90 scenes overall and **0 of the 6** with 32 or
+more objects. That inversion is the clue.
+
+Holding the object count fixed at 64 and varying only the number of
+classes isolates it. The smallest dimension reaching 90% mean accuracy
+over five seeds:
+
+| classes | d* for 90% | crosstalk sigma at d* | cost against k=2 |
+|---:|---:|---:|---:|
+| 2 | 128 | 0.500 | 1.0x |
+| 4 | 256 | 0.354 | 2.0x |
+| 8 | 256 | 0.354 | 2.0x |
+| 19 | 512 | 0.250 | 4.0x |
+| 48 | 512 | 0.250 | 4.0x |
+| 106 | 512 | 0.250 | 4.0x |
+
+**The capacity law predicts the noise, not the decision.**
+`sigma ~ sqrt(N R / 2d)` has no term for the vocabulary: R is 1 for a
+codeword whether there are two of them or a hundred. But the readout
+has to beat every competing codeword, and more competitors means the
+same noise fails more often. The required sigma roughly halves across
+the vocabulary range — 0.50 to 0.25 — which is a **4x dimension cost**,
+and it then saturates: 19, 48 and 106 classes all need d=512.
+
+Two consequences.
+
+The advantage is squeezed from both ends. It grows with the object
+count, because a fixed store faces a growing table; it shrinks with the
+vocabulary, because accuracy demands more dimension. Real scenes have
+many of both, and in everything measured here the second effect wins:
+at d=512 the store is 549 bytes against ReplicaCAD's median table of
+501, so the advantage is gone before the objects run out.
+
+And the law has a missing term. This is not a failure of the law — it
+predicted the crosstalk correctly at every point above — but the law
+alone does not tell you the accuracy, and every capacity statement in
+this repository is a statement about sigma rather than about whether a
+readout is right. The gap is one line of theory (a decision among k
+alternatives at a given signal-to-noise ratio) and it is worth writing
+down before the next lane budgets a dimension from sigma alone.
+
+```sh
+python results/semantic_diagnostics/vocabulary_cost.py
+```
