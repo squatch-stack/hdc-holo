@@ -171,6 +171,27 @@ destroyed another session's uncommitted work once.
   your code, and the headroom check cannot see it coming. If a trainer
   is running and you only need a number, force `HDC_BACKEND=numpy`;
   otherwise wait for it.
+- **A long job on the remote box needs `setsid`, not just `nohup`.**
+  `nohup` makes the process ignore SIGHUP, but the job stays in the ssh
+  session's process group and sshd can signal that whole group when the
+  connection drops — so a twenty-minute sweep can die from a laptop lid
+  closing. `setsid` puts it in its own session and process group, which
+  is what actually detaches it. The shape that works, with stdin off a
+  terminal that may vanish and the GPU serialized behind one lock:
+
+  ```sh
+  setsid nohup flock -w 14400 ~/.hdc-gpu.lock <script> >> <log> 2>&1 < /dev/null &
+  ```
+
+  Verify rather than assume: the job's `pgid` must differ from the
+  launching shell's. Poll the log from fresh connections; do not hold
+  one open.
+- **Compare a rerun of a sweep field by field, never by checksum.** The
+  sweep JSON carries `t_*` wall-clock timings, so a byte comparison of
+  two correct runs always fails. Diff the non-timing fields and report
+  the timing ones separately — that is how #133's promotion was shown
+  to reproduce all 396 result fields across the twelve captures while
+  89 timing fields moved.
 - Replicated bundle blobs MUST go through `pack_bundle`/`unpack_bundle`
   (wire v1) — readers refuse raw complex64 bytes.
 - **Never `pip install -e .` from a clone or worktree.** The shared
