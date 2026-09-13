@@ -64,6 +64,17 @@ anisotropic covariance via importance-sampled mixture spectral
 codebooks; rendering by folding projection-slice factors into a
 random-feature bundle.
 
+*Narrowed 2026-09-12.* The CRDT entry above was too broad: ChainVoxel
+is conflict-free collaborative 3D **voxel** editing, so "CRDT applied
+to a volumetric representation" is occupied. What this sweep still
+found no hit for is narrower and is the form worth stating — a CRDT
+over a **continuous field** replicated as fixed-size vectors, where a
+peer decodes a contribution it never stored because the basis is
+derived rather than shipped. See the wedge-2 entry below for the full
+correction. Treat every other line in this section the same way: these
+are searches that found nothing, not proofs, and the one that was
+tested hardest turned out to be wrong.
+
 ## 0.2 delta (2026-08-26, second sweep)
 
 Prior art located for the analytic per-cell L2 projection direction
@@ -248,14 +259,33 @@ splats, or any appearance-bearing volumetric scene.
    the hologram's memory line is flat while every baseline grows with
    N. Acceptable accuracy at orders-of-magnitude less memory is a
    paper; parity would be more.
-2. **Mergeable replicated scene state.** No prior art combines CRDTs
-   with any volumetric representation; hash-derived codebooks (peers
-   decoding records they never stored) have no analogue in the
-   collaborative-SLAM literature. Experiment: two-device concurrent
-   capture, peer-to-peer delta sync over a metered link — bytes,
-   time-to-convergence, post-merge fidelity — against a
-   collaborative-GS baseline; the claim to prove is merge cost O(d),
-   independent of splat count.
+2. **Mergeable replicated scene state.** *Corrected 2026-09-12: this
+   entry used to claim that no prior art combined CRDTs with any
+   volumetric representation, and that hash-derived codebooks had no
+   analogue in collaborative SLAM. A sweep run specifically to falsify
+   those two sentences falsified them, and they are struck rather than
+   softened.* **ChainVoxel** (Imae and Hayashibara) is a conflict-free
+   voxel data structure for distributed collaborative 3D editing — a
+   direct counterexample to the first sentence — and a 2025 robotics
+   paper covers distributed synchronisation of robot knowledge at the
+   graph level. **VSA-OGM** (npj Unconventional Computing, 2026) fuses
+   multi-agent spatial memories over common spatial bases, class
+   encodings and tiles, which is a close functional analogue of a peer
+   interpreting another peer's compressed contributions without its
+   records; the narrower property that survives is deterministic
+   namespace and version interoperability, not unique shared-basis
+   decoding.
+
+   What is left is a systems claim rather than a category claim, and it
+   is measured: merge cost flat in splats per dirty cell, live state
+   flat in the number of contributions, and a read rule that survives
+   an overlap (`results/merge_capture.md`). State it with its
+   preconditions — one coordinate frame, one codebook, bounded dirty
+   cells — because those preconditions are what a collaborative-SLAM
+   reader will ask about first. The remaining experiment is two-device
+   concurrent capture with a joint solve, which tests the one thing the
+   split-one-capture study could not: genuinely independent primitives
+   for the same matter.
 3. **The HDC-community flagship-scale demo.** Cheapest to land: the
    community's spatial benchmark (HyperSpace) evaluates at 28×28
    cost-map scale and its stated anxieties are scaling and
@@ -290,6 +320,34 @@ from a bundle stays the representational-completeness demo).
   open-source demos), the MrNeRF Discord + awesome-3D-gaussian-
   splatting list, and the three.js forum's Showcase category.
 
+## 2026-09-12 delta (falsification sweep)
+
+Run against this page's own claims rather than for new neighbours, and
+it changed two of them. The full report, with every reference resolved
+live against arXiv, Crossref, DBLP or the publisher and with the
+unresolved items listed rather than dropped, is the landscape research
+note from that date.
+
+- **The wedge-2 novelty claim is false** and is struck above:
+  ChainVoxel, and VSA-OGM's multi-agent memory fusion over a common
+  basis. What survives is a measured systems result with stated
+  preconditions.
+- **The still-open list is narrowed** where it overlapped that claim.
+- **Two limits are now closed with arguments rather than left open.**
+  Exact rotation of a fixed Gaussian frequency codebook is impossible
+  under the current design (a discrete-yaw construction exists if the
+  basis changes), and exact linear alpha compositing is impossible
+  under independent additive encoding. Steerable filters and
+  order-independent transparency are the precedents; both belong in
+  §9's framing of what the representation cannot do.
+- **The capacity law has a standard covariance generalisation** that
+  yields an explicit corrected noise budget for this encoding. It does
+  not yet predict the whitened mass-core ranking as a scalar, and the
+  honest statement is that our law assumes items unlike each other
+  while a capture is nothing of the kind.
+
 Re-run this sweep before any writeup or release; log deltas here with
-the date. Track daily 3DGS postings via the awesome-gaussians list
+the date. **And point at least one sweep at this page's own claims**,
+because the sentence that had never been checked was the one that was
+wrong. Track daily 3DGS postings via the awesome-gaussians list
 (github.com/longxiang-ai/awesome-gaussians).
