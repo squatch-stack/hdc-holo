@@ -32,6 +32,7 @@ from pathlib import Path
 import matplotlib
 import numpy as np
 
+from bench import labelled_scene
 from holo.attribute_field import AttributeSplatField
 from holo.capture import load_scene_file
 from holo.fhrr import FHRR
@@ -103,14 +104,15 @@ def payloads(space, classes, fields=1, continuous=False):
                      for k in range(classes)])
 
 
-def encode_hologram(objects, d, sigma, space, fields=1, continuous=False):
+def encode_hologram(objects, d, sigma, space, fields=1, continuous=False,
+                    classes=CLASSES):
     if space.dim != d:
         raise ValueError("space dimension must equal d")
     field = AttributeSplatField(space, np.eye(3) * sigma ** 2)
-    codes = payloads(space, CLASSES, fields, continuous)
+    codes = payloads(space, classes, fields, continuous)
     for obj in objects:
         field.add_splat(obj["position"], codes[int(obj["label"])])
-    header = HEADER.pack(b"SM", 1, d, space.seed, CLASSES, fields,
+    header = HEADER.pack(b"SM", 1, d, space.seed, classes, fields,
                          sigma, continuous, 0)
     store = Store(header + field.S.astype("<c8").tobytes())
     return store, len(store.serialize())
@@ -196,8 +198,9 @@ def timed_query(store, points):
     return labels, float(np.median(samples))
 
 
-def measure(objects, d):
-    holo, _ = encode_hologram(objects, d, SIGMA, FHRR(d, seed=SEED))
+def measure(objects, d, classes=CLASSES):
+    holo, _ = encode_hologram(objects, d, SIGMA, FHRR(d, seed=SEED),
+                              classes=classes)
     table, _ = encode_table(objects)
     row = {"n": len(objects), "d": d,
            "sigma": float(np.sqrt(len(objects) / (2 * d)))}
@@ -289,11 +292,23 @@ def main(argv=None):
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--synthetic", action="store_true")
     source.add_argument("--capture", type=Path)
+    source.add_argument("--scene", type=Path)
+    parser.add_argument("--label-map", type=Path)
     parser.add_argument("--objects", type=int, nargs="+",
                         default=[8, 16, 32, 64, 128, 256, 512, 1024, 2048])
     parser.add_argument("--dims", type=int, nargs="+", default=[128, 256, 512])
     parser.add_argument("--figure", type=Path)
     args = parser.parse_args(argv)
+    if args.label_map and not args.scene:
+        parser.error("--label-map requires --scene")
+    if args.scene:
+        if args.figure:
+            parser.error("--figure is only supported by the assigned-label sweep")
+        try:
+            labelled_scene.run_scene(args.scene, args.label_map, args.dims)
+        except ValueError as exc:
+            parser.error(str(exc))
+        return
     rows = sweep(args.objects, args.dims, args.capture)
     print(json.dumps({"summary": summarize(rows),
                       "encoding_fork": encoding_fork(args.capture)}), flush=True)
