@@ -162,3 +162,4 @@ it is named here rather than approximated.
 
 | `out/place/flatten-synthetic.png` | `python -m bench.place_recognition /tmp/flatten-place.json --synthetic 3 --numpy --dim 4096 --grid 9 --limit 0.12 --yaws 4 --scrambles 4 --whiten 1 --flatten-study --figure out/place/flatten-synthetic.png` |
 | `out/merge/merge-fixture.png` | `python -m bench.merge_capture /tmp/merge-fixture.json data/fixtures/wilsons-creek-core.spz --dim 2048 --overlap 0.2 --drift 0,0.2,0.1 --figure out/merge/merge-fixture.png` | Merge fidelity by rule and region, wire bytes against the SPZ equivalent across the cell ladder, and state size against the number of contributions (`results/merge_capture.md`). |
+| `results/semantic_memory.png` | `HDC_BACKEND=numpy OPENBLAS_NUM_THREADS=1 python -m bench.semantic_memory --synthetic --figure results/semantic_memory.png` |

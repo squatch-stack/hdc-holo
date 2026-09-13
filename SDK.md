@@ -1796,3 +1796,44 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   that reason alone, which is why a `sha256` comparison would have
   reported a false failure and a field-wise diff is the right
   instrument. 1,091 s on the card.
+
+- **A fixed-size vector buys a constant factor of six on object
+  semantics, not a flat memory line** (2026-09-12;
+  `bench/semantic_memory.py`, `results/semantic_memory.md`; the real
+  in-repo crop first, then a seeded synthetic fixture, CPU).
+  `docs/related-work.md`'s first wedge promises "the plot where the
+  hologram's memory line is flat while every baseline grows with N".
+  Three preregistered gates, written into the module docstring before
+  the experiment existed:
+  - **Ninety percent of an exact table's accuracy at strictly fewer
+    bytes — passes, but only quantized.** At four-bit magnitude and
+    phase the hologram beats an exact object table on bytes at equal
+    accuracy from N=8 upward. **At complex64 there is no qualifying
+    crossover at any tested N**: the vector costs more than the table
+    it replaces until a load where its own accuracy has already gone.
+    The memory argument exists only at the four-bit knee, which makes
+    the knee a precondition for this wedge rather than a storage
+    curiosity.
+  - **The line is not flat.** Holding the 90% gate needs d=128 at
+    N=32, 256 at 64, 512 at 128 — the dimension doubles as the object
+    count doubles, which is exactly what `σ ~ √(N·R/2d)` requires. So
+    bytes grow linearly on both sides and the representation buys a
+    **constant factor of about 6x** (5.1, 5.7, 6.1 at those three
+    points), not an asymptotic win. Worth having, and worth not
+    describing as orders of magnitude.
+  - **The capacity knee is predicted to within the factor of two the
+    gate allowed, and lands exactly on its boundary.** Measured over
+    predicted is 2.00 at all three dimensions in both runs. Powers-of-
+    two sampling brackets the knee rather than locating it, so this is
+    boundary evidence and not a fitted law.
+  - **Open-vocabulary encoding measured and rejected.** Frequency-
+    encoding a continuous embedding proxy separates matching from
+    non-matching pairs by 0.70 and 0.68 sigma against a 2 sigma bar, so
+    the store uses discrete codewords. No bandwidth or load was retuned
+    to rescue it. This used a seeded embedding proxy, not CLIP, and is
+    not evidence about real language embeddings.
+  Query contract, stated because it narrows the result: `where_is`
+  needs candidate positions supplied from outside, and extents are not
+  reconstructed. Labels are assigned to capture-derived voxel regions,
+  not perceived — this is a capacity and byte-budget measurement, and
+  whether real scene statistics change it needs a labelled scene.
