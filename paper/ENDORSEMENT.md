@@ -38,11 +38,17 @@ draft confidential. Source: [endorsement help](https://info.arxiv.org/help/endor
 
 ### Categories for this submission
 
-- **Primary — cs.CV:** image processing, computer vision, pattern recognition,
-  and scene understanding; ACM I.2.10, I.4, and I.5.
-- **Cross-list — cs.NE:** neural networks, connectionism, genetic algorithms,
+- **Primary — cs.NE:** neural networks, connectionism, genetic algorithms,
   artificial life, and adaptive behavior; parts of ACM C.1.3, I.2.6, and I.5.
+- **Cross-list — cs.CV:** image processing, computer vision, pattern
+  recognition, and scene understanding; ACM I.2.10, I.4, and I.5.
 - **Cross-list — cs.RO:** robotics; ACM I.2.9.
+
+This page said cs.CV primary until 2026-09-12. The repo's own framing
+decision is cs.NE, and it is the right one: the paper's audience is the
+HD/VSA community, it performs no novel-view synthesis, and its storage
+section is a loss on the axis a vision reviewer weighs most. Leading
+with cs.CV invites the review the work is not asking for.
 
 Source: [arXiv category taxonomy](https://arxiv.org/category_taxonomy).
 
@@ -50,8 +56,9 @@ Source: [arXiv category taxonomy](https://arxiv.org/category_taxonomy).
 as high-level subject areas or related-category groups and names physics as
 the exception that uses individual classes. Thus cs.CV, cs.NE, and cs.RO
 appear to share the Computer Science endorsement domain. There is no public
-category-by-category eligibility table. Start with cs.CV and check whether
-either cross-list produces another endorsement request.
+category-by-category eligibility table. Check whether
+either cross-list produces another endorsement request. Start with
+cs.NE.
 
 Cross-list only where directly relevant. arXiv says more than one or two
 cross-lists is rarely appropriate, regards excessive or inappropriate
@@ -62,7 +69,7 @@ add or remove cross-lists or reclassify the primary category. Sources:
 
 ## Message to a prospective endorser
 
-> Subject: arXiv endorsement request for cs.CV
+> Subject: arXiv endorsement request for cs.NE
 >
 > Hello [RECIPIENT],
 >
@@ -71,13 +78,14 @@ add or remove cross-lists or reclassify the primary category. Sources:
 > superposed into a single fixed-size complex vector, and that three
 > capabilities then follow from one algebra rather than from three mechanisms.
 >
-> I have attached the paper PDF. Supporting material is the public gallery at
-> [GALLERY URL], the reproducible benchmark in `bench/scene_bench.py`, the
+> I have attached the paper PDF. Supporting material is the public gallery
+> of the captures the paper measures at [GALLERY URL], the reproducible
+> benchmark in `bench/scene_bench.py`, the
 > [hdc-holo package on PyPI](https://pypi.org/project/hdc-holo/), and archived
 > software DOI [10.5281/zenodo.22116367](https://doi.org/10.5281/zenodo.22116367).
 > The arXiv request is [ENDORSEMENT LINK OR CODE].
 >
-> Would you be willing to endorse this submission for cs.CV?
+> Would you be willing to endorse this submission for cs.NE?
 
 The descriptive sentences are copied from `paper/abstract.txt`.
 
@@ -98,14 +106,40 @@ The descriptive sentences are copied from `paper/abstract.txt`.
 
 ### Account, categories, and metadata
 
-- [ ] Select **cs.CV** primary and request **cs.NE** and **cs.RO** only when
+- [ ] Select **cs.NE** primary and request **cs.CV** and **cs.RO** only when
   each cross-list is directly justified; complete live endorsement prompts.
 - [ ] Title: **Hypervector Scene Memory: Gaussian Splats in Superposition**.
-- [ ] Authors: **Squatch Stack**. Confirm this public author identity satisfies
-  arXiv identity rules and is consistent in the account and manuscript.
-- [ ] Link the account to **[ORCID iD: 0000-0000-0000-0000]** after replacing
-  the placeholder. ORCID is linked through the account, not added to Authors.
-  Source: [ORCID help](https://info.arxiv.org/help/orcid.html).
+- [ ] **Decide the account name before starting the submission, not
+  during it.** Checked against arXiv's own pages on 2026-09-12:
+
+  - **The submitter's name is public on every abstract page.** The
+    Submission history block reads `From: <Name> [view email]` —
+    verified on a live abstract page, not inferred. Whatever name the
+    account carries is therefore published beside the paper, separately
+    from the Authors field.
+  - **An ORCID is optional.** arXiv "encourage[s] all arXiv authors to
+    link their ORCID iD", which is encouragement, not a requirement.
+    It is linked *through the account* rather than typed into the
+    author list, and the iD then shows on the arXiv user page.
+    Source: [ORCID help](https://info.arxiv.org/help/orcid.html).
+  - **arXiv states a misrepresentation rule, not a legal-name rule.**
+    Its identity policy says "It is a violation of our policies to
+    misrepresent your identity or organizational affiliation" and
+    "Each user may have only one registered arXiv account". The help
+    pages do **not** state that a legal name is required and do **not**
+    address pseudonyms or organisation names either way. Source:
+    [identity and affiliation](https://info.arxiv.org/help/policies/identity_and_affiliation.html).
+
+  So the ambiguity is real and is not resolvable from the documentation.
+  **Ask arXiv user support the one question — whether a studio name may
+  be the registered account name for a self-submitted paper — before
+  starting a submission.** An email costs a day; discovering the answer
+  mid-submission costs the submission.
+
+  ORCID is a separate and sharper question, because ORCID is explicitly
+  an identifier for a *person*. Recommendation for v1: **do not link
+  one.** It is optional, it buys nothing for a first submission, and it
+  is the one field that would tie a personal record to the work.
 - [ ] Paste `paper/abstract.txt` as ASCII plain text without an "Abstract"
   heading and verify it stays under arXiv's 1920-character maximum. The file is
   currently within the limit, and a repository test enforces it.
