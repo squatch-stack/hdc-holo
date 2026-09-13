@@ -57,7 +57,9 @@ two orders of magnitude larger than a modern splat codec at full
 precision, and about 24x larger at the four-bit rate where accuracy
 begins to fall. The contribution is not compression. It is that query,
 orthographic projection, and coordination-free merge become the *same
-operation* on the same object, with a measurable budget attached.
+operation* on the same object, with a measurable budget attached — and
+that the same law marks where the object stops being useful, which we
+report as four boundaries rather than as future work.
 
 ## 1. Introduction
 
@@ -86,9 +88,16 @@ encodings of N splats, weighted by their amplitudes, produces one vector
 whose inner product with the encoding of any query point returns the
 mixture's value there. The scene stops being a list.
 
-This paper reports what that buys, what it costs, and where it fails.
+This paper reports what that buys, what it costs, and where it fails —
+and gives the last of those equal standing with the first. Three
+capabilities follow from the algebra, and four boundaries close around
+them. Two of the boundaries are arguments rather than failed
+experiments, one is measured six ways on real captures, and one is a
+gap in the law itself. A representation whose limits are known is more
+useful than one whose limits are merely unreported, so §7 states them
+as results and not as apology.
 
-**Three claims.**
+**Three capabilities.**
 
 1. **A splat scene is one vector, and queries are algebra.** With
    importance-sampled mixture spectral codebooks, every splat keeps its
@@ -104,6 +113,15 @@ This paper reports what that buys, what it costs, and where it fails.
    two standard recipes close that single gap and make hypervector
    scene state mergeable without coordination.
 
+**Four boundaries.** Occlusion is outside superposition and no codebook
+reaches it (§7.1). Rotation is outside a *fixed continuous* codebook,
+which is a narrower and more actionable statement than "rotation is
+hard" (§7.2). A whole-capture bundle localises but does not recognise,
+which twelve captures and six diagnostics establish and which one
+plausible remedy makes worse (§7.3). And the capacity law describes the
+noise a readout carries rather than whether it is correct, so every
+`σ` in this paper is half of a budget (§6).
+
 **Two things we state up front rather than in a discussion section.**
 
 *The boundary.* This is an emission — tomographic — representation.
@@ -115,7 +133,7 @@ compete with rasterizers on photorealism.
 *The cost.* On the same capture, a holographic bundle is approximately
 400× larger at complex64 and about 24× larger at the measured four-bit
 knee, and 50× less accurate at reproducing the field than a current
-splat codec (§7). If the task is to store a scene and rasterize
+splat codec (§8). If the task is to store a scene and rasterize
 it later, the correct advice is to use the codec. The claims above are
 about capabilities the codecs do not provide, and the paper is written
 so that a reader can weigh that trade with real numbers.
@@ -125,7 +143,7 @@ so that a reader can weigh that trade with real numbers.
 **FHRR.** "Holographic" here is Plate's — every item is distributed
 across every component of one vector, so any part of the vector carries
 a degraded copy of the whole — and has nothing to do with display
-holography or computer-generated holograms, a collision §8 returns to.
+holography or computer-generated holograms, a collision §9 returns to.
 A hypervector is `d` unit-magnitude complex phasors. Binding
 is elementwise complex multiplication (phases add) and is exactly
 invertible by the conjugate; bundling is addition; a fixed random
@@ -151,7 +169,7 @@ including the shift property we use in §5.
 with position, covariance, opacity, and view-dependent colour, rendered
 by projecting and alpha-compositing them front-to-back.
 
-## 3. Claim 1 — A splat scene is one vector
+## 3. Capability 1 — A splat scene is one vector
 
 ### 3.1 Encoding
 
@@ -205,7 +223,7 @@ pass through one fixed pipeline, and slices decode at 19%/22% relative
 error against the *exact Gaussian mixture* evaluated cell-locally.
 Kernels agree across three compute backends to 2.5e-8. The same fixed
 pipeline has since run over all twelve captures of the public gallery,
-142,000 to 1,160,000 splats, without a per-scene setting; §9 reports
+142,000 to 1,160,000 splats, without a per-scene setting; §10 reports
 what that wider sweep says about the error metric itself.
 
 ![Figure 3](../results/capacity_curve.png)
@@ -224,7 +242,7 @@ no per-splat covariance, colour, rendering, learning, or replication.
 GVKF independently validates the "splatting is a kernel mixture" bridge
 from the graphics side while keeping per-Gaussian parametric storage.
 
-## 4. Claim 2 — A view is also just a bundle
+## 4. Capability 2 — A view is also just a bundle
 
 ### 4.1 Folding a view into the vector
 
@@ -276,7 +294,7 @@ matters needs a compositing pass outside the algebra.
 theorem for closed-form Gaussian projection — per primitive. Folding a
 whole *view* into one random-feature vector appears to be new.
 
-## 5. Claim 3 — Superposition is almost a CRDT
+## 5. Capability 3 — Superposition is almost a CRDT
 
 ### 5.1 The one missing axiom
 
@@ -351,7 +369,7 @@ so we doubled `d` on the densest capture and measured the result: a 2–4%
 improvement for 600 MB of additional storage. That negative result is
 what identifies the error as coherent, and it redirects the problem
 from "spend dimensions" to "decorrelate or denoise", which we return to
-in §9.
+in §10.
 
 **Fitting is sampling-limited at real density.** Because the readout is
 linear in the bundle, the bundle is literally the weight vector of a
@@ -441,7 +459,84 @@ against it rather than by noticing an artifact — including the last
 one, which is a failure of the law's *scope* that only appeared when we
 asked it a question about accuracy that it was never posed to answer.
 
-## 7. What it costs
+## 7. What one vector cannot do
+
+The boundaries below are results in the same sense as §§3–5. Two are
+arguments: no experiment could have come out differently and none was
+needed. One is measured, on the same twelve captures as everything
+else, and its most plausible remedy was tried and made matters worse.
+Reporting them here rather than in a closing paragraph is deliberate —
+they bound the claims above, and a reader deciding whether to use this
+representation needs them at the same resolution as the capabilities.
+
+### 7.1 Occlusion is outside superposition
+
+The hard limit is occlusion, and it is a limit rather than an
+engineering gap. Alpha compositing accumulates as `1 - Π(1 - α_i)`,
+which is neither linear nor order-free, and an additively encoded
+bundle carries no ordering to recover — so no choice of codebook
+reaches it, and the representation renders what integrates. What
+remains open is narrower than "occlusion": whether a *bounded* surrogate
+is useful, in the manner of the moment-based order-independent
+transparency literature, with a classical compositing pass over a
+holographic density. That is a graphics question about approximation
+quality, not a question about superposition.
+
+### 7.2 Rotation is outside a fixed continuous codebook
+
+Rotation is closed in the same way, and it is worth separating the two
+halves. Translation is exactly a phase ramp because a shift multiplies
+every frequency by its own scalar. A rotation does not: it maps each
+frequency row to a different one, so with a *fixed* set of frequency
+rows drawn once from a continuous distribution there is no elementwise
+operator that rotates the field, and the ramp construction cannot be
+recovered by any choice of `d`. What this rules out is a fixed
+continuous codebook, not rotation itself. A codebook sampled on a
+discrete angular orbit rotates by permutation within that orbit, which
+is the classical steerability construction, and yaw is the case a
+gravity-aligned capture actually needs — so the honest statement is
+that rotation costs a redesign of the basis rather than an extra
+mechanism bolted to this one. Both facts were established by argument
+rather than by a failed experiment, which is why they appear here as
+limits and not as future work.
+
+### 7.3 A whole-capture bundle localises but does not recognise
+
+A whole-capture bundle at d = 8,192, blurred to a fortieth of its cube,
+does not recognise places.
+On the twelve gallery captures — one true re-capture, two exact crops
+of parents, three same-class objects as hard negatives — phase
+correlation through the shift property ranked 0 of 6 known partners
+first, and the reason was measurable: a mass-centred crop of a capture
+whose subject is dense and whose background is a sparse halo puts half
+the alpha mass within a tenth of the cube of its centre, and at that
+resolution the fingerprint is that core's phase ramp, which the search
+aligns for any two such captures. The same ceiling surfaced from the
+object side: with two candidate objects in one cube, every probe —
+the gun's own codeword included — preferred the denser one, so a
+prototype superposed from two cannon instances "finding" a third was
+the target's mass, not the prototype's class. What survives is sub-map
+localisation: a crop encoded in its parent's cube is found at its
+offset, and tiles of fixed physical size find exact sub-regions under
+every distractor count tried. Encoding support rather than mass —
+dividing each splat's alpha by the mass of its recognition-scale voxel
+before the blur — removes the signal along with the ceiling: the
+unrelated wide-capture pair falls from 0.82 to 0.11 as intended, but a
+crop in its parent's cube falls from 0.88 to 0.17 with its recovered
+offset wandering a quarter of the cube, and on the tile matrix every
+capture's best match becomes a wrong one. At this dimension a
+whole-capture bundle scores compact mass or nothing, and the honest
+statement is that the representation localises and does not recognise.
+
+### 7.4 And the law describes noise, not accuracy
+
+The fourth boundary is §6's fifth entry and is not repeated here. It is
+listed among the boundaries because it has the same character as these
+three: it is a statement about what the representation and its theory
+do not give you, established by measurement, and knowing it changes
+what a reader should do next.
+
+## 8. What it costs
 
 A representation should be judged by a referee it did not choose. We
 score every candidate identically: reconstruct the field it encodes,
@@ -502,7 +597,7 @@ per-splat formats scale with detail, bundles scale with occupied
 volume, so a bundle's cost is predictable from a scene's extent before
 its contents are known.
 
-## 8. Related work
+## 9. Related work
 
 **Foundations.** The algebra is Plate's Holographic Reduced
 Representations in its Fourier form, with Kanerva's Sparse Distributed
@@ -558,7 +653,7 @@ synthetic scenes with this repository's fractional-power position key:
 100% single-object and 84.7% three-object recovery at d = 4,096, with a
 capacity cliff where the product of codebook sizes exceeds the
 dimension by an order of magnitude. On real captures it does not
-converge, for a reason given in §9; Yeung et al.'s comparison of
+converge, for a reason given in §7.3; Yeung et al.'s comparison of
 cleanup nonlinearities suggests the choice of projection is where a
 second attempt would start, and in-memory factorizers (Langenegger et
 al.) are where its cost would be paid. HyperSpace's finding that HRR
@@ -569,11 +664,11 @@ fraction of a bundled dictionary at every load through 0.2 of nominal
 capacity on three dimensions, so the choice between them is about
 operators, not capacity, and cleanup dominates the operator table for
 both. Quantized-phase FHRR's three-to-four-bit phases sit exactly at
-the knee §7 reports. The matched referee of §6 has a neural-field
+the knee §8 reports. The matched referee of §6 has a neural-field
 counterpart in Spectral Prefiltering of Neural Fields (Yaldiz et al.),
 which pre-filters the target rather than the estimate for the same
 reason we blur the referee to the pixel footprint. And the phase-only
-correlation that scores arrangement in §9 is Knapp and Carter's PHAT
+correlation that scores arrangement in §7.3 is Knapp and Carter's PHAT
 weighting, with the well-known consequence that the peak becomes as
 narrow as the highest frequency present and needs a search grid that
 can see it.
@@ -615,96 +710,29 @@ of distributed representations. The two share complex arithmetic and
 nothing else.
 
 **Graphics.** Rasterization is better at rasterizing, and the
-compression literature this work is measured against in §7 is better at
+compression literature this work is measured against in §8 is better at
 compression. The contribution here is not a faster or smaller renderer;
 it is that a scene, a view of it, and a merge of two edits to it are
 the same kind of object, with one budget that predicts the error of
 each.
 
-## 9. Limitations and future work
+## 10. Remaining limits and future work
 
-The hard limit is occlusion, and it is a limit rather than an
-engineering gap. Alpha compositing accumulates as `1 - Π(1 - α_i)`,
-which is neither linear nor order-free, and an additively encoded
-bundle carries no ordering to recover — so no choice of codebook
-reaches it, and the representation renders what integrates. What
-remains open is narrower than "occlusion": whether a *bounded* surrogate
-is useful, in the manner of the moment-based order-independent
-transparency literature, with a classical compositing pass over a
-holographic density. That is a graphics question about approximation
-quality, not a question about superposition.
-
-Rotation is closed in the same way, and it is worth separating the two
-halves. Translation is exactly a phase ramp because a shift multiplies
-every frequency by its own scalar. A rotation does not: it maps each
-frequency row to a different one, so with a *fixed* set of frequency
-rows drawn once from a continuous distribution there is no elementwise
-operator that rotates the field, and the ramp construction cannot be
-recovered by any choice of `d`. What this rules out is a fixed
-continuous codebook, not rotation itself. A codebook sampled on a
-discrete angular orbit rotates by permutation within that orbit, which
-is the classical steerability construction, and yaw is the case a
-gravity-aligned capture actually needs — so the honest statement is
-that rotation costs a redesign of the basis rather than an extra
-mechanism bolted to this one. Both facts were established by argument
-rather than by a failed experiment, which is why they appear here as
-limits and not as future work.
-
-Storage is large in absolute terms, as §7 quantifies.
+Storage is large in absolute terms, as §8 quantifies.
 Determinism is semantic rather than bitwise — recomputed vectors agree
 to about a part in 10⁷, far under any decision threshold, but digests
 must hash transmitted bytes rather than recomputed sums. Banded and
 clustered readout strategies pay off only when the data has structure
 to exploit: spatial locality for scenes, and its analogue elsewhere.
 
-The open directions follow the deviations in §6. The coherent
-dense-scene residual needs a denoiser rather than more dimensions, and
-the accidental shrinkage observed in §7 suggests that deliberate
-thresholding at the crosstalk noise level is the first thing to try.
-The zero-sample analytic projection needs regularization from the start
-for the reasons the Fourier-extension literature gives. Dynamic scenes
-are the natural extension of §5's mergeable state, with the caveat that
-the underlying shift mechanism is established work and only the
-capture-scale combination would be new. And §6's fifth entry — that the
-law describes noise rather than accuracy — wants closing properly: a
-decision bound among `k` alternatives would turn every `σ` in this
-paper into a budget a reader could act on, and we currently hand them
-half of one.
-
 **A note on what "fixed size" is worth.** Fixed size is a property of
 the representation, not an argument that it stores any particular thing
 more cheaply. Measured at object granularity against an exact table, a
 bundle's advantage at equal accuracy is a bounded factor rather than an
-order of magnitude, it exists only at §7's four-bit rate point, and
+order of magnitude, it exists only at §8's four-bit rate point, and
 §6's vocabulary cost works against it. We note this because the fixed-
 size property is easy to over-read; it bears on none of §3's algebraic
 queries, which are what the representation is for.
-
-**Where one vector stops describing a place.** A whole-capture bundle at
-d = 8,192, blurred to a fortieth of its cube, does not recognise places.
-On the twelve gallery captures — one true re-capture, two exact crops
-of parents, three same-class objects as hard negatives — phase
-correlation through the shift property ranked 0 of 6 known partners
-first, and the reason was measurable: a mass-centred crop of a capture
-whose subject is dense and whose background is a sparse halo puts half
-the alpha mass within a tenth of the cube of its centre, and at that
-resolution the fingerprint is that core's phase ramp, which the search
-aligns for any two such captures. The same ceiling surfaced from the
-object side: with two candidate objects in one cube, every probe —
-the gun's own codeword included — preferred the denser one, so a
-prototype superposed from two cannon instances "finding" a third was
-the target's mass, not the prototype's class. What survives is sub-map
-localisation: a crop encoded in its parent's cube is found at its
-offset, and tiles of fixed physical size find exact sub-regions under
-every distractor count tried. Encoding support rather than mass —
-dividing each splat's alpha by the mass of its recognition-scale voxel
-before the blur — removes the signal along with the ceiling: the
-unrelated wide-capture pair falls from 0.82 to 0.11 as intended, but a
-crop in its parent's cube falls from 0.88 to 0.17 with its recovered
-offset wandering a quarter of the cube, and on the tile matrix every
-capture's best match becomes a wrong one. At this dimension a
-whole-capture bundle scores compact mass or nothing, and the honest
-statement is that the representation localises and does not recognise.
 
 **A note on the referee.** The relative-L2 error this paper reports is
 two different quantities depending on the scene: on some captures it
@@ -724,7 +752,21 @@ law predicts when its budget is exceeded. That the law governs a domain
 containing no geometry is the strongest evidence available that it is a
 property of superposition rather than of splats.
 
-## 10. Conclusion
+The open directions follow the deviations in §6. The coherent
+dense-scene residual needs a denoiser rather than more dimensions, and
+the accidental shrinkage observed in §8 suggests that deliberate
+thresholding at the crosstalk noise level is the first thing to try.
+The zero-sample analytic projection needs regularization from the start
+for the reasons the Fourier-extension literature gives. Dynamic scenes
+are the natural extension of §5's mergeable state, with the caveat that
+the underlying shift mechanism is established work and only the
+capture-scale combination would be new. And §6's fifth entry — that the
+law describes noise rather than accuracy — wants closing properly: a
+decision bound among `k` alternatives would turn every `σ` in this
+paper into a budget a reader could act on, and we currently hand them
+half of one.
+
+## 11. Conclusion
 
 A 3D Gaussian splatting scene can be superposed into a single
 fixed-size complex vector, and once it is, three capabilities stop
