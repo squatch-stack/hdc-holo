@@ -1837,3 +1837,26 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   reconstructed. Labels are assigned to capture-derived voxel regions,
   not perceived — this is a capacity and byte-budget measurement, and
   whether real scene statistics change it needs a labelled scene.
+
+- **Real annotated rooms hold a median of seven objects, so the memory
+  wedge has nothing to win there** (2026-09-13; 600 ARKitScenes scans,
+  `results/semantic_diagnostics/arkit_objects.py`,
+  `results/semantic_memory.md` "Real annotations"). The synthetic sweep
+  found a 6x byte advantage at 128 objects. Across six hundred real
+  scans the distribution is min 1, median **7**, p95 28, max 44: twelve
+  reach 32 objects and **none reaches 64**. At those counts the only
+  configuration that both holds 90% accuracy and saves bytes is d=64 at
+  four bits, at 1.87x, winning on 317 of 600 scans; at d=256 the
+  hologram answers at 99.8% and **costs more than the table it
+  replaces**; at complex64 it wins 2 scans of 600 at best. A median
+  room's objects are 189 bytes as an exact table with perfect recall,
+  and no fixed-size vector improves on that by a margin worth having.
+  **This settles the closed-vocabulary case only** — these are 19
+  furniture classes, so the count measures what a benchmark chose to
+  annotate rather than what is in the room. The conditional that
+  replaces the wedge is sharper than the wedge: the advantage exists
+  only where the object vocabulary is open and dense, and counting what
+  an open-vocabulary detector yields per scene is the test that would
+  bring the claim back. Cost: 7 MB of annotation JSON. The 623 GB
+  release was not downloaded, because the experiment's unit is an
+  object and not geometry.
