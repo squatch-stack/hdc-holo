@@ -1784,3 +1784,15 @@ Python < 3.9, CUDA (the backend seam is where it would go later).
   before the suite, so the skip cannot come back silently. Same family
   as the codecs that corrupted above 16 bits and the band that dropped
   splats: the failure said nothing at all.
+
+- **The adaptive-cells promotion is bit-identical on the corpus, and the
+  proof is a field diff rather than a checksum** (2026-09-12; twelve
+  captures on the 5090, `python -m bench.sweep_scenes --footprint
+  --budget 128`). Moving `assign_adaptive` and the matched referee out
+  of `bench/` and into `holo/capture.py` (#133) owed a demonstration
+  that it changed no behaviour. It reproduces every one of the **396
+  non-timing fields** across the twelve rows exactly; the 89 fields
+  that moved are all `t_*` wall-clock. The file's checksum differs for
+  that reason alone, which is why a `sha256` comparison would have
+  reported a false failure and a field-wise diff is the right
+  instrument. 1,091 s on the card.
