@@ -304,3 +304,76 @@ Files created: `bench/semantic_memory.py`, `tests/test_semantic_memory.py`,
 `results/semantic_memory.md`, `results/semantic_memory.png`.
 Modified: one provenance row in `docs/figures.md`. No commits, pushes,
 branch changes, package installations, or out-of-lane source edits.
+
+## Real annotations: the operating point is not where the knee is
+
+Measured 2026-09-13 on **600 real ARKitScenes scans**
+(`results/semantic_diagnostics/arkit_objects.py`). Only the 3D
+object-detection annotation JSONs were fetched — about 7 MB in total —
+because this experiment's unit is an object, not geometry. The full
+3DOD release is 623 GB and none of it is needed to answer this.
+
+**Real annotated rooms do not reach the knee, or anywhere near it.**
+
+| objects per scan | min | p25 | median | p75 | p95 | max |
+|---|---:|---:|---:|---:|---:|---:|
+| 600 scans, 19 classes | 1 | 4 | **7** | 17 | 28 | 44 |
+
+Twelve of six hundred scans hold 32 objects. **None holds 64**, and the
+synthetic sweep's best case needed 128. So the 6x byte advantage
+measured above is real but sits in a regime that a 19-class furniture
+benchmark never enters.
+
+At the counts these scans actually contain:
+
+| d | four-bit accuracy | four-bit B | table B (median) | ratio | scans won at >=90% | complex64 B | complex64 wins |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 32 | 78.2% | 69 | 189 | 2.74x | 245/600 | 277 | 2/600 |
+| 64 | 90.7% | 101 | 189 | **1.87x** | 317/600 | 533 | 1/600 |
+| 128 | 97.5% | 165 | 189 | 1.15x | 265/600 | 1045 | 0/600 |
+| 256 | 99.8% | 293 | 189 | **0.65x** | 206/600 | 2069 | 0/600 |
+
+**Read the last two columns first.** At d=256 the hologram answers
+essentially perfectly and *costs more than the table it replaces*. At
+complex64 it never wins: 2 scans of 600 at the most generous setting,
+none at all past d=64. The only configuration that both holds 90% and
+saves bytes is d=64 at four bits, and it wins on **317 of 600 scans** —
+barely more than half, because a scan with four objects is already
+cheap to store exactly.
+
+So for wedge 1 as written, on this dataset, the answer is **no**. A
+median room's objects fit in 189 bytes as an exact table with perfect
+recall, and no fixed-size vector improves on that by a margin worth
+having.
+
+### What that does and does not settle
+
+It settles the *closed-vocabulary* case, and only that. These are
+ARKitScenes' 19 furniture classes — cabinet, chair, table, sink and so
+on — so "how many objects are in a room" here means "how many pieces of
+furniture a benchmark chose to annotate". ConceptGraphs and the
+open-vocabulary line build hundreds of objects per scene by detecting
+whatever is there, and that is the regime where the synthetic sweep
+says the advantage reaches 6x.
+
+The honest statement is therefore conditional, and it is sharper than
+the wedge it replaces: **the memory advantage exists only where the
+object vocabulary is open and dense. With a closed furniture
+vocabulary there is nothing to win, because the baseline is already
+tiny.** That is a testable next step rather than a dead end — count the
+objects an open-vocabulary detector produces per scene, and if the
+median lands past 64 the claim returns.
+
+### A schema note worth keeping
+
+The released files carry the boxes under `segments.obb`; `obbAligned`
+sits beside it. The seam had been written against `obbAligned` alone,
+from the benchmark scripts. Both exist in all 6,352 objects here, so
+neither reading is wrong — but the fixture had been authored from
+documentation rather than from a released file, and reading one
+decided it. Annotation formats are worth confirming against a real
+file before a lane depends on them.
+
+```sh
+python results/semantic_diagnostics/arkit_objects.py --scans 600
+```
