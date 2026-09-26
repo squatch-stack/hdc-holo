@@ -299,5 +299,5 @@ carries. A library earns its keep by being imported, and the previous
 licence (FSL-1.1-Apache-2.0) put a non-compete clause in the way of
 exactly that; releases 0.2.0 and 0.2.1 remain under it, as published.
 <!-- claims: allow project.license@0.2.1 -->
-If the work is useful, [sponsorship](https://github.com/sponsors/squatch-stack)
+If the work is useful, [sponsorship](https://github.com/sponsors/squatchlr)
 is what keeps it going.
